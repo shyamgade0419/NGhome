@@ -1,0 +1,18 @@
+# Force LF line endings in the repo (important: code deploys to Linux containers)
+* text=auto eol=lf
+
+# Binary files — never touch line endings
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.svg  binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.otf  binary
+*.eot  binary
+*.pdf  binary
+*.zip  binary
+*.node binary
