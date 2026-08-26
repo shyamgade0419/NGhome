@@ -1,0 +1,1031 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
+
+enum SystemRole {
+  PLATFORM_ADMIN
+  SOCIETY_ADMIN
+  SOCIETY_ACCOUNTANT
+  SOCIETY_STAFF
+  RESIDENT
+  COMMITTEE_MEMBER
+}
+
+enum BillingCycleType {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+  CUSTOM
+}
+
+enum CalculationType {
+  EQUAL_PER_FLAT
+  AREA_BASED
+  PER_PERSON
+  HYBRID
+  FIXED_CUSTOM
+  PERCENTAGE_BASED
+  WATER_USAGE_BASED
+  CUSTOM_FORMULA
+}
+
+enum BillingPeriodStatus {
+  DRAFT
+  CALCULATED
+  REVIEW
+  PUBLISHED
+  PARTIALLY_PAID
+  PAID
+  CLOSED
+}
+
+enum PaymentStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  UPI
+  CASH
+  CHEQUE
+  NEFT
+  RTGS
+  IMPS
+  OTHER
+}
+
+enum AccountType {
+  SAVINGS
+  CURRENT
+  FIXED_DEPOSIT
+  CASH
+  OTHER
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+}
+
+enum ExpenseStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PAID
+}
+
+enum SalaryStatus {
+  DRAFT
+  PROCESSED
+  PAID
+  CANCELLED
+}
+
+enum AnnouncementPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum AnnouncementAudience {
+  ALL_RESIDENTS
+  BUILDING
+  BLOCK
+  SPECIFIC_FLATS
+  COMMITTEE
+  STAFF
+  ALL
+}
+
+enum NotificationChannel {
+  PUSH
+  EMAIL
+  SMS
+  IN_APP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+enum DocumentAccessLevel {
+  PUBLIC
+  RESIDENTS_ONLY
+  ADMIN_ONLY
+  COMMITTEE_ONLY
+}
+
+enum WaterBillingModel {
+  PER_LITRE
+  PER_KL
+  FIXED_CHARGE
+  SLAB_BASED
+  FIXED_PLUS_USAGE
+  SOCIETY_ALLOCATION
+  CUSTOM
+}
+
+enum FlatStatus {
+  ACTIVE
+  VACANT
+  UNDER_RENOVATION
+  INACTIVE
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+  SUSPENDED
+}
+
+enum AuditAction {
+  LOGIN
+  LOGOUT
+  USER_CREATED
+  USER_MODIFIED
+  USER_DEACTIVATED
+  USER_DELETED
+  BILL_GENERATED
+  BILL_MODIFIED
+  BILL_PUBLISHED
+  PAYMENT_SUBMITTED
+  PAYMENT_APPROVED
+  PAYMENT_REJECTED
+  EXPENSE_CREATED
+  EXPENSE_MODIFIED
+  EXPENSE_APPROVED
+  ACCOUNT_TRANSACTION
+  FUND_TRANSACTION
+  CONFIG_CHANGED
+  PERIOD_CLOSED
+  OTHER
+}
+
+// ─── USER & AUTH ──────────────────────────────────────────────────────────────
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  phone           String?   @unique
+  passwordHash    String
+  firstName       String
+  lastName        String
+  isActive        Boolean   @default(true)
+  isPlatformAdmin Boolean   @default(false)
+  emailVerified   Boolean   @default(false)
+  phoneVerified   Boolean   @default(false)
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  refreshTokens      RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  memberships        SocietyMembership[]
+  auditLogs          AuditLog[]            @relation("AuditActor")
+  notificationRecords NotificationRecord[]
+  paymentSubmissions PaymentSubmission[]
+  createdExpenses    Expense[]             @relation("ExpenseCreator")
+  approvedExpenses   Expense[]             @relation("ExpenseApprover")
+  createdAnnouncements Announcement[]
+  createdMeetings    Meeting[]
+  uploadedDocuments  Document[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id           String   @id @default(uuid())
+  userId       String
+  tokenHash    String   @unique
+  expiresAt    DateTime
+  isRevoked    Boolean  @default(false)
+  // JWT payload context — stored so rotation works without decoding the opaque token
+  societyId    String?
+  membershipId String?
+  role         String?
+  flatId       String?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  isUsed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("password_reset_tokens")
+}
+
+// ─── SOCIETY STRUCTURE ────────────────────────────────────────────────────────
+
+model Society {
+  id                 String    @id @default(uuid())
+  name               String
+  displayName        String?
+  registrationNumber String?
+  address            String?
+  city               String?
+  state              String?
+  pincode            String?
+  country            String    @default("India")
+  email              String?
+  phone              String?
+  website            String?
+  logoUrl            String?
+  isActive           Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  configuration      SocietyConfiguration?
+  buildings          Building[]
+  memberships        SocietyMembership[]
+  billingRules       BillingRule[]
+  billingPeriods     BillingPeriod[]
+  accounts           Account[]
+  funds              Fund[]
+  expenses           Expense[]
+  expenseCategories  ExpenseCategory[]
+  employees          SocietyEmployee[]
+  announcements      Announcement[]
+  meetings           Meeting[]
+  documents          Document[]
+  auditLogs          AuditLog[]
+  notifications      Notification[]
+  statements         MonthlyStatement[]
+  waterConfigs       WaterBillingConfig[]
+  transactions       Transaction[]
+
+  @@map("societies")
+}
+
+model SocietyConfiguration {
+  id                           String           @id @default(uuid())
+  societyId                    String           @unique
+  currency                     String           @default("INR")
+  financialYearStartMonth      Int              @default(4)
+  billingCycle                 BillingCycleType @default(MONTHLY)
+  billingDueDay                Int              @default(10)
+  gracePeriodDays              Int              @default(5)
+  lateFeeType                  String?
+  lateFeeValue                 Decimal?         @db.Decimal(10, 2)
+  lateFeeMaxAmount             Decimal?         @db.Decimal(10, 2)
+  roundingRule                 String           @default("NEAREST")
+  invoicePrefix                String           @default("INV")
+  invoiceStartNumber           Int              @default(1)
+  invoiceCurrentNumber         Int              @default(1)
+  paymentVerificationRequired  Boolean          @default(true)
+  allowPaymentProofUpload      Boolean          @default(true)
+  showCorpusToResidents        Boolean          @default(false)
+  showFundBalancesToResidents  Boolean          @default(false)
+  showExpensesToResidents      Boolean          @default(false)
+  publishStatementToResidents  Boolean          @default(true)
+  publishMeetingMinutes        Boolean          @default(true)
+  notificationChannels         Json             @default("[]")
+  additionalConfig             Json             @default("{}")
+  createdAt                    DateTime         @default(now())
+  updatedAt                    DateTime         @updatedAt
+
+  society Society @relation(fields: [societyId], references: [id], onDelete: Cascade)
+
+  @@map("society_configurations")
+}
+
+model Building {
+  id          String    @id @default(uuid())
+  societyId   String
+  name        String
+  code        String?
+  description String?
+  totalFloors Int?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  society Society @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  floors  Floor[]
+  flats   Flat[]
+
+  @@unique([societyId, code])
+  @@index([societyId])
+  @@map("buildings")
+}
+
+model Floor {
+  id         String   @id @default(uuid())
+  buildingId String
+  number     Int
+  name       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  flats    Flat[]
+
+  @@unique([buildingId, number])
+  @@index([buildingId])
+  @@map("floors")
+}
+
+model Flat {
+  id            String     @id @default(uuid())
+  societyId     String
+  buildingId    String
+  floorId       String?
+  unitNumber    String
+  flatCode      String
+  area          Decimal?   @db.Decimal(10, 2)
+  bedrooms      Int?
+  bathrooms     Int?
+  category      String?
+  status        FlatStatus @default(ACTIVE)
+  ownershipType String?
+  parkingSlots  Int        @default(0)
+  additionalInfo Json      @default("{}")
+  isActive      Boolean    @default(true)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  deletedAt     DateTime?
+
+  building         Building            @relation(fields: [buildingId], references: [id])
+  floor            Floor?              @relation(fields: [floorId], references: [id])
+  memberships      SocietyMembership[]
+  maintenanceBills MaintenanceBill[]
+  waterReadings    WaterMeterReading[]
+  paymentSubmissions PaymentSubmission[]
+
+  @@unique([societyId, flatCode])
+  @@index([societyId])
+  @@index([buildingId])
+  @@map("flats")
+}
+
+model SocietyMembership {
+  id                   String           @id @default(uuid())
+  societyId            String
+  userId               String
+  flatId               String?
+  role                 SystemRole       @default(RESIDENT)
+  status               MembershipStatus @default(ACTIVE)
+  joinedAt             DateTime         @default(now())
+  leftAt               DateTime?
+  isPrimary            Boolean          @default(false)
+  additionalPermissions Json            @default("[]")
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  society Society @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  flat    Flat?   @relation(fields: [flatId], references: [id])
+
+  @@unique([societyId, userId, flatId])
+  @@index([societyId])
+  @@index([userId])
+  @@map("society_memberships")
+}
+
+// ─── BILLING ENGINE ───────────────────────────────────────────────────────────
+
+model BillingRule {
+  id              String          @id @default(uuid())
+  societyId       String
+  name            String
+  description     String?
+  calculationType CalculationType
+  isActive        Boolean         @default(true)
+  effectiveFrom   DateTime
+  effectiveTo     DateTime?
+  priority        Int             @default(0)
+  config          Json            @default("{}")
+  applicableTo    Json            @default("{}")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  society    Society              @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  components BillingRuleComponent[]
+  lineItems  BillLineItem[]
+
+  @@index([societyId])
+  @@map("billing_rules")
+}
+
+model BillingRuleComponent {
+  id              String          @id @default(uuid())
+  billingRuleId   String
+  name            String
+  description     String?
+  componentType   String
+  calculationType CalculationType
+  amount          Decimal?        @db.Decimal(10, 2)
+  rate            Decimal?        @db.Decimal(10, 4)
+  config          Json            @default("{}")
+  isActive        Boolean         @default(true)
+  order           Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  billingRule BillingRule @relation(fields: [billingRuleId], references: [id], onDelete: Cascade)
+
+  @@index([billingRuleId])
+  @@map("billing_rule_components")
+}
+
+model BillingPeriod {
+  id             String              @id @default(uuid())
+  societyId      String
+  periodYear     Int
+  periodMonth    Int
+  startDate      DateTime
+  endDate        DateTime
+  dueDate        DateTime
+  status         BillingPeriodStatus @default(DRAFT)
+  totalBilled    Decimal             @default(0) @db.Decimal(15, 2)
+  totalCollected Decimal             @default(0) @db.Decimal(15, 2)
+  totalPending   Decimal             @default(0) @db.Decimal(15, 2)
+  notes          String?
+  publishedAt    DateTime?
+  publishedById  String?
+  closedAt       DateTime?
+  closedById     String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  society          Society           @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  maintenanceBills MaintenanceBill[]
+  statement        MonthlyStatement?
+
+  @@unique([societyId, periodYear, periodMonth])
+  @@index([societyId])
+  @@map("billing_periods")
+}
+
+model MaintenanceBill {
+  id                  String   @id @default(uuid())
+  societyId           String
+  billingPeriodId     String
+  flatId              String
+  invoiceNumber       String
+  flatCode            String
+  flatArea            Decimal? @db.Decimal(10, 2)
+  flatCategory        String?
+  residentCount       Int      @default(0)
+  baseAmount          Decimal  @default(0) @db.Decimal(12, 2)
+  adjustments         Decimal  @default(0) @db.Decimal(12, 2)
+  waterCharges        Decimal  @default(0) @db.Decimal(12, 2)
+  lateFee             Decimal  @default(0) @db.Decimal(12, 2)
+  otherCharges        Decimal  @default(0) @db.Decimal(12, 2)
+  totalAmount         Decimal  @default(0) @db.Decimal(12, 2)
+  paidAmount          Decimal  @default(0) @db.Decimal(12, 2)
+  pendingAmount       Decimal  @default(0) @db.Decimal(12, 2)
+  calculationSnapshot Json     @default("{}")
+  notes               String?
+  dueDate             DateTime
+  isPaid              Boolean  @default(false)
+  isPublished         Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  billingPeriod      BillingPeriod       @relation(fields: [billingPeriodId], references: [id])
+  flat               Flat                @relation(fields: [flatId], references: [id])
+  lineItems          BillLineItem[]
+  paymentSubmissions PaymentSubmission[]
+
+  @@unique([societyId, billingPeriodId, flatId])
+  @@unique([societyId, invoiceNumber])
+  @@index([societyId])
+  @@index([billingPeriodId])
+  @@index([flatId])
+  @@map("maintenance_bills")
+}
+
+model BillLineItem {
+  id                String   @id @default(uuid())
+  maintenanceBillId String
+  billingRuleId     String?
+  componentName     String
+  componentType     String
+  description       String?
+  quantity          Decimal? @db.Decimal(10, 4)
+  rate              Decimal? @db.Decimal(10, 4)
+  amount            Decimal  @db.Decimal(12, 2)
+  calculationNote   String?
+  createdAt         DateTime @default(now())
+
+  maintenanceBill MaintenanceBill @relation(fields: [maintenanceBillId], references: [id], onDelete: Cascade)
+  billingRule     BillingRule?    @relation(fields: [billingRuleId], references: [id])
+
+  @@index([maintenanceBillId])
+  @@map("bill_line_items")
+}
+
+// ─── WATER BILLING ────────────────────────────────────────────────────────────
+
+model WaterBillingConfig {
+  id            String            @id @default(uuid())
+  societyId     String
+  name          String
+  billingModel  WaterBillingModel
+  isActive      Boolean           @default(true)
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  config        Json              @default("{}")
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  society      Society             @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  meterReadings WaterMeterReading[]
+
+  @@index([societyId])
+  @@map("water_billing_configs")
+}
+
+model WaterMeterReading {
+  id               String   @id @default(uuid())
+  societyId        String
+  flatId           String
+  waterConfigId    String?
+  billingPeriodId  String?
+  readingDate      DateTime
+  openingReading   Decimal  @db.Decimal(12, 3)
+  closingReading   Decimal  @db.Decimal(12, 3)
+  consumption      Decimal  @db.Decimal(12, 3)
+  unit             String   @default("KL")
+  effectiveRate    Decimal? @db.Decimal(10, 4)
+  calculatedAmount Decimal? @db.Decimal(12, 2)
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  flat        Flat                @relation(fields: [flatId], references: [id])
+  waterConfig WaterBillingConfig? @relation(fields: [waterConfigId], references: [id])
+
+  @@index([societyId])
+  @@index([flatId])
+  @@map("water_meter_readings")
+}
+
+// ─── ACCOUNTS & FUNDS ────────────────────────────────────────────────────────
+
+model Account {
+  id                  String      @id @default(uuid())
+  societyId           String
+  name                String
+  accountType         AccountType
+  bankName            String?
+  accountNumberMasked String?
+  ifscCode            String?
+  openingBalance      Decimal     @default(0) @db.Decimal(15, 2)
+  currentBalance      Decimal     @default(0) @db.Decimal(15, 2)
+  isActive            Boolean     @default(true)
+  description         String?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  society       Society       @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  transactions  Transaction[]
+  expenses      Expense[]
+  salaryRecords SalaryRecord[]
+  funds         Fund[]
+
+  @@index([societyId])
+  @@map("accounts")
+}
+
+model Fund {
+  id                   String   @id @default(uuid())
+  societyId            String
+  name                 String
+  description          String?
+  accountId            String?
+  openingBalance       Decimal  @default(0) @db.Decimal(15, 2)
+  currentBalance       Decimal  @default(0) @db.Decimal(15, 2)
+  isVisibleToResidents Boolean  @default(false)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  society      Society       @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  account      Account?      @relation(fields: [accountId], references: [id])
+  transactions Transaction[]
+
+  @@index([societyId])
+  @@map("funds")
+}
+
+model Transaction {
+  id               String          @id @default(uuid())
+  societyId        String
+  accountId        String?
+  fundId           String?
+  transactionType  TransactionType
+  amount           Decimal         @db.Decimal(15, 2)
+  transactionDate  DateTime
+  reference        String?
+  description      String
+  linkedEntityType String?
+  linkedEntityId   String?
+  balanceAfter     Decimal         @db.Decimal(15, 2)
+  createdById      String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  society Society  @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  account Account? @relation(fields: [accountId], references: [id])
+  fund    Fund?    @relation(fields: [fundId], references: [id])
+
+  @@index([societyId])
+  @@index([accountId])
+  @@index([fundId])
+  @@index([transactionDate])
+  @@map("transactions")
+}
+
+// ─── EXPENSES ─────────────────────────────────────────────────────────────────
+
+model ExpenseCategory {
+  id          String   @id @default(uuid())
+  societyId   String
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  society  Society   @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  expenses Expense[]
+
+  @@unique([societyId, name])
+  @@index([societyId])
+  @@map("expense_categories")
+}
+
+model Expense {
+  id              String        @id @default(uuid())
+  societyId       String
+  categoryId      String?
+  accountId       String?
+  vendorPayee     String?
+  description     String
+  amount          Decimal       @db.Decimal(12, 2)
+  expenseDate     DateTime
+  invoiceNumber   String?
+  referenceNumber String?
+  status          ExpenseStatus @default(PENDING)
+  isRecurring     Boolean       @default(false)
+  recurringConfig Json?
+  notes           String?
+  approvedAt      DateTime?
+  paidAt          DateTime?
+  createdById     String
+  approvedById    String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  society   Society          @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  category  ExpenseCategory? @relation(fields: [categoryId], references: [id])
+  account   Account?         @relation(fields: [accountId], references: [id])
+  createdBy User             @relation("ExpenseCreator", fields: [createdById], references: [id])
+  approvedBy User?           @relation("ExpenseApprover", fields: [approvedById], references: [id])
+  documents Document[]       @relation("ExpenseDocuments")
+
+  @@index([societyId])
+  @@index([expenseDate])
+  @@map("expenses")
+}
+
+// ─── SALARIES ─────────────────────────────────────────────────────────────────
+
+model SocietyEmployee {
+  id             String    @id @default(uuid())
+  societyId      String
+  name           String
+  designation    String
+  employeeCode   String?
+  phone          String?
+  email          String?
+  joinDate       DateTime?
+  exitDate       DateTime?
+  baseSalary     Decimal   @db.Decimal(10, 2)
+  isActive       Boolean   @default(true)
+  additionalInfo Json      @default("{}")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  society       Society        @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  salaryRecords SalaryRecord[]
+
+  @@index([societyId])
+  @@map("society_employees")
+}
+
+model SalaryRecord {
+  id               String       @id @default(uuid())
+  societyId        String
+  employeeId       String
+  accountId        String?
+  salaryMonth      Int
+  salaryYear       Int
+  baseSalary       Decimal      @db.Decimal(10, 2)
+  additions        Decimal      @default(0) @db.Decimal(10, 2)
+  deductions       Decimal      @default(0) @db.Decimal(10, 2)
+  netSalary        Decimal      @db.Decimal(10, 2)
+  status           SalaryStatus @default(DRAFT)
+  paymentDate      DateTime?
+  referenceNumber  String?
+  notes            String?
+  additionsDetail  Json?
+  deductionsDetail Json?
+  processedAt      DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  employee SocietyEmployee @relation(fields: [employeeId], references: [id])
+  account  Account?        @relation(fields: [accountId], references: [id])
+
+  @@unique([societyId, employeeId, salaryMonth, salaryYear])
+  @@index([societyId])
+  @@map("salary_records")
+}
+
+// ─── PAYMENTS ─────────────────────────────────────────────────────────────────
+
+model PaymentSubmission {
+  id                String        @id @default(uuid())
+  societyId         String
+  flatId            String
+  userId            String
+  maintenanceBillId String?
+  billingPeriodId   String?
+  amount            Decimal       @db.Decimal(12, 2)
+  paymentDate       DateTime
+  paymentMethod     PaymentMethod
+  referenceNumber   String?
+  utrNumber         String?
+  bankName          String?
+  chequeNumber      String?
+  notes             String?
+  status            PaymentStatus @default(PENDING)
+  reviewedAt        DateTime?
+  reviewedById      String?
+  reviewNotes       String?
+  approvedAt        DateTime?
+  rejectedAt        DateTime?
+  transactionId     String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  flat            Flat             @relation(fields: [flatId], references: [id])
+  user            User             @relation(fields: [userId], references: [id])
+  maintenanceBill MaintenanceBill? @relation(fields: [maintenanceBillId], references: [id])
+  documents       Document[]       @relation("PaymentDocuments")
+
+  @@index([societyId])
+  @@index([flatId])
+  @@index([userId])
+  @@map("payment_submissions")
+}
+
+// ─── MONTHLY STATEMENT ────────────────────────────────────────────────────────
+
+model MonthlyStatement {
+  id                String   @id @default(uuid())
+  societyId         String
+  billingPeriodId   String   @unique
+  title             String
+  periodYear        Int
+  periodMonth       Int
+  totalMaintenance  Decimal  @default(0) @db.Decimal(15, 2)
+  totalCollected    Decimal  @default(0) @db.Decimal(15, 2)
+  totalPending      Decimal  @default(0) @db.Decimal(15, 2)
+  totalExpenses     Decimal  @default(0) @db.Decimal(15, 2)
+  totalSalaries     Decimal  @default(0) @db.Decimal(15, 2)
+  totalWaterExpense Decimal  @default(0) @db.Decimal(15, 2)
+  otherExpenses     Decimal  @default(0) @db.Decimal(15, 2)
+  content           Json     @default("{}")
+  isPublished       Boolean  @default(false)
+  publishedAt       DateTime?
+  publishedById     String?
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  society       Society       @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  billingPeriod BillingPeriod @relation(fields: [billingPeriodId], references: [id])
+
+  @@index([societyId])
+  @@map("monthly_statements")
+}
+
+// ─── ANNOUNCEMENTS ────────────────────────────────────────────────────────────
+
+model Announcement {
+  id             String               @id @default(uuid())
+  societyId      String
+  title          String
+  content        String
+  priority       AnnouncementPriority @default(NORMAL)
+  audience       AnnouncementAudience @default(ALL_RESIDENTS)
+  audienceConfig Json                 @default("{}")
+  publishAt      DateTime?
+  expiresAt      DateTime?
+  isPublished    Boolean              @default(false)
+  publishedAt    DateTime?
+  createdById    String
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  society   Society  @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  createdBy User     @relation(fields: [createdById], references: [id])
+  documents Document[] @relation("AnnouncementDocuments")
+
+  @@index([societyId])
+  @@map("announcements")
+}
+
+// ─── MEETINGS ─────────────────────────────────────────────────────────────────
+
+model Meeting {
+  id          String   @id @default(uuid())
+  societyId   String
+  title       String
+  meetingDate DateTime
+  location    String?
+  agenda      String?
+  isPublished Boolean  @default(false)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  society   Society          @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  createdBy User             @relation(fields: [createdById], references: [id])
+  minutes   MeetingMinutes?
+  attendees MeetingAttendee[]
+  documents Document[]       @relation("MeetingDocuments")
+
+  @@index([societyId])
+  @@map("meetings")
+}
+
+model MeetingMinutes {
+  id          String    @id @default(uuid())
+  meetingId   String    @unique
+  content     String
+  summary     String?
+  isPublished Boolean   @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@map("meeting_minutes")
+}
+
+model MeetingAttendee {
+  id        String   @id @default(uuid())
+  meetingId String
+  name      String
+  flatCode  String?
+  role      String?
+  attended  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@map("meeting_attendees")
+}
+
+// ─── DOCUMENTS ────────────────────────────────────────────────────────────────
+
+model Document {
+  id               String              @id @default(uuid())
+  societyId        String
+  title            String
+  description      String?
+  fileName         String
+  fileKey          String
+  fileSize         Int
+  mimeType         String
+  storageProvider  String              @default("local")
+  accessLevel      DocumentAccessLevel @default(RESIDENTS_ONLY)
+  category         String?
+  linkedEntityType String?
+  linkedEntityId   String?
+  uploadedById     String
+  isActive         Boolean             @default(true)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  society       Society            @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  uploadedBy    User               @relation(fields: [uploadedById], references: [id])
+  expenses      Expense[]          @relation("ExpenseDocuments")
+  payments      PaymentSubmission[] @relation("PaymentDocuments")
+  announcements Announcement[]     @relation("AnnouncementDocuments")
+  meetings      Meeting[]          @relation("MeetingDocuments")
+
+  @@index([societyId])
+  @@map("documents")
+}
+
+// ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
+
+model Notification {
+  id             String               @id @default(uuid())
+  societyId      String
+  title          String
+  body           String
+  type           String
+  data           Json                 @default("{}")
+  channels       NotificationChannel[]
+  audience       AnnouncementAudience @default(ALL_RESIDENTS)
+  audienceConfig Json                 @default("{}")
+  scheduledAt    DateTime?
+  sentAt         DateTime?
+  createdAt      DateTime             @default(now())
+
+  society Society              @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  records NotificationRecord[]
+
+  @@index([societyId])
+  @@map("notifications")
+}
+
+model NotificationRecord {
+  id             String             @id @default(uuid())
+  notificationId String
+  userId         String
+  channel        NotificationChannel
+  status         NotificationStatus @default(PENDING)
+  sentAt         DateTime?
+  readAt         DateTime?
+  error          String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id])
+
+  @@index([notificationId])
+  @@index([userId])
+  @@map("notification_records")
+}
+
+// ─── AUDIT LOG ────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String      @id @default(uuid())
+  societyId  String?
+  actorId    String
+  action     AuditAction
+  entityType String?
+  entityId   String?
+  oldValues  Json?
+  newValues  Json?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json        @default("{}")
+  createdAt  DateTime    @default(now())
+
+  society Society? @relation(fields: [societyId], references: [id])
+  actor   User     @relation("AuditActor", fields: [actorId], references: [id])
+
+  @@index([societyId])
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

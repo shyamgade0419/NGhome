@@ -1,0 +1,94 @@
+import {
+  IsOptional, IsString, IsInt, IsBoolean, IsNumber, Min, Max, IsIn,
+} from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { BillingCycleType } from '@prisma/client';
+
+export class UpdateSocietyConfigDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  currency?: string;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 12 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  financialYearStartMonth?: number;
+
+  @ApiPropertyOptional({ enum: BillingCycleType })
+  @IsOptional()
+  @IsString()
+  billingCycle?: BillingCycleType;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 31 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(31)
+  billingDueDay?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  gracePeriodDays?: number;
+
+  @ApiPropertyOptional({ enum: ['FIXED', 'PERCENTAGE'] })
+  @IsOptional()
+  @IsString()
+  lateFeeType?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  lateFeeValue?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  lateFeeMaxAmount?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  invoicePrefix?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  paymentVerificationRequired?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  allowPaymentProofUpload?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  showCorpusToResidents?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  showFundBalancesToResidents?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  showExpensesToResidents?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  publishStatementToResidents?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  publishMeetingMinutes?: boolean;
+}

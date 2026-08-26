@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment files (NEVER commit)
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+
+# Uploads (local dev only)
+uploads/
+
+# Prisma
+prisma/migrations/dev.db
+prisma/*.db
+
+# TypeScript incremental compilation
+*.tsbuildinfo
+
+# Claude Code IDE config
+.claude/
+
+# Misc
+.nyc_output

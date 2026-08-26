@@ -1,0 +1,15 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+coverage
+uploads
+*.log
+.git
+.gitignore
+.dockerignore
+README.md
+prisma/*.db
+.idea
+.vscode

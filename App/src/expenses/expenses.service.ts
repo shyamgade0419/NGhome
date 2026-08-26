@@ -1,0 +1,168 @@
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { Prisma, ExpenseStatus } from '@prisma/client';
+import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
+
+export interface CreateExpenseDto {
+  categoryId?: string;
+  accountId?: string;
+  vendorPayee?: string;
+  description: string;
+  amount: number;
+  expenseDate: string;
+  invoiceNumber?: string;
+  referenceNumber?: string;
+  isRecurring?: boolean;
+  notes?: string;
+}
+
+@Injectable()
+export class ExpensesService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async create(societyId: string, createdById: string, dto: CreateExpenseDto) {
+    return this.prisma.expense.create({
+      data: {
+        societyId,
+        createdById,
+        categoryId: dto.categoryId,
+        accountId: dto.accountId,
+        vendorPayee: dto.vendorPayee,
+        description: dto.description,
+        amount: new Prisma.Decimal(dto.amount),
+        expenseDate: new Date(dto.expenseDate),
+        invoiceNumber: dto.invoiceNumber,
+        referenceNumber: dto.referenceNumber,
+        isRecurring: dto.isRecurring ?? false,
+        notes: dto.notes,
+        status: ExpenseStatus.PENDING,
+      },
+    });
+  }
+
+  async findAll(societyId: string, page: number, limit: number, status?: ExpenseStatus) {
+    const { skip, take } = getPaginationParams({ page, limit });
+    const where: Prisma.ExpenseWhereInput = {
+      societyId,
+      ...(status ? { status } : {}),
+    };
+
+    const [data, total] = await Promise.all([
+      this.prisma.expense.findMany({
+        skip,
+        take,
+        where,
+        include: {
+          category: { select: { id: true, name: true } },
+          account: { select: { id: true, name: true } },
+          createdBy: { select: { id: true, firstName: true, lastName: true } },
+        },
+        orderBy: { expenseDate: 'desc' },
+      }),
+      this.prisma.expense.count({ where }),
+    ]);
+
+    return { data, meta: buildPaginationMeta(total, page, limit) };
+  }
+
+  async findOne(societyId: string, id: string) {
+    const expense = await this.prisma.expense.findFirst({
+      where: { id, societyId },
+      include: {
+        category: true,
+        account: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, firstName: true, lastName: true } },
+        approvedBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+    if (!expense) throw new NotFoundException('Expense not found');
+    return expense;
+  }
+
+  async approve(societyId: string, expenseId: string, approvedById: string) {
+    // Fetch for scope verification; status gate moves inside the transaction
+    await this.findOne(societyId, expenseId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.expense.updateMany({
+        where: { id: expenseId, status: ExpenseStatus.PENDING },
+        data: {
+          status: ExpenseStatus.APPROVED,
+          approvedById,
+          approvedAt: new Date(),
+        },
+      });
+      if (count === 0) {
+        throw new ForbiddenException('Only pending expenses can be approved');
+      }
+
+      await tx.auditLog.create({
+        data: {
+          societyId,
+          actorId: approvedById,
+          action: 'EXPENSE_APPROVED',
+          entityType: 'Expense',
+          entityId: expenseId,
+        },
+      });
+
+      return tx.expense.findUnique({ where: { id: expenseId } });
+    });
+  }
+
+  async markPaid(societyId: string, expenseId: string, accountId: string, actorId: string) {
+    // Fetch expense data for amount; status gate is inside the transaction
+    const expense = await this.findOne(societyId, expenseId);
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Atomic status check-and-update
+      const { count } = await tx.expense.updateMany({
+        where: { id: expenseId, status: ExpenseStatus.APPROVED },
+        data: { status: ExpenseStatus.PAID, paidAt: new Date(), accountId },
+      });
+      if (count === 0) {
+        throw new ForbiddenException('Only approved expenses can be marked as paid');
+      }
+
+      // 2. Verify account belongs to society
+      const account = await tx.account.findFirst({ where: { id: accountId, societyId } });
+      if (!account) throw new NotFoundException('Account not found');
+
+      // 3. Atomic balance decrement — avoids read-modify-write race
+      const updatedAccount = await tx.account.update({
+        where: { id: accountId },
+        data: { currentBalance: { decrement: expense.amount } },
+      });
+
+      await tx.transaction.create({
+        data: {
+          societyId,
+          accountId,
+          transactionType: 'DEBIT',
+          amount: expense.amount,
+          transactionDate: new Date(),
+          description: `Expense: ${expense.description}`,
+          linkedEntityType: 'EXPENSE',
+          linkedEntityId: expenseId,
+          balanceAfter: updatedAccount.currentBalance,
+          createdById: actorId,
+        },
+      });
+
+      return tx.expense.findUnique({ where: { id: expenseId } });
+    });
+  }
+
+  async getCategories(societyId: string) {
+    return this.prisma.expenseCategory.findMany({
+      where: { societyId, isActive: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async createCategory(societyId: string, name: string, description?: string) {
+    return this.prisma.expenseCategory.create({
+      data: { societyId, name, description },
+    });
+  }
+}

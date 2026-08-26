@@ -1,0 +1,81 @@
+version: '3.9'
+
+# ─── Local development stack ──────────────────────────────────────────────────
+# Usage:
+#   Full stack:   docker-compose up --build
+#   DB only:      docker-compose up -d db
+#   API only:     docker-compose up -d db api
+#
+# The Web and API containers read from their respective .env files.
+# Make sure you have copied .env.example → .env in both App/ and Web/.
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nghome
+      POSTGRES_USER: nghome
+      POSTGRES_PASSWORD: nghome_dev_password
+    ports:
+      - "5432:5432"                  # Expose for local Prisma Studio / DBeaver
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nghome -d nghome"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── NestJS API ──────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ./App
+      dockerfile: Dockerfile
+      target: production
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://nghome:nghome_dev_password@db:5432/nghome
+      JWT_ACCESS_SECRET: dev-access-secret-change-in-prod
+      JWT_REFRESH_SECRET: dev-refresh-secret-change-in-prod
+      JWT_ACCESS_EXPIRATION: 15m
+      JWT_REFRESH_EXPIRATION: 7d
+      CORS_ORIGINS: http://localhost:3001
+      SWAGGER_ENABLED: "true"
+      PORT: 3000
+    volumes:
+      - api_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Next.js Web ─────────────────────────────────────────────────────────────
+  web:
+    build:
+      context: ./Web
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    environment:
+      API_URL: http://api:3000
+      COOKIE_SECRET: dev-cookie-secret-change-in-prod
+      NEXT_PUBLIC_APP_URL: http://localhost:3001
+      PORT: 3001
+
+volumes:
+  db_data:
+  api_uploads:
