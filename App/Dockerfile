@@ -3,6 +3,12 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Force development mode so npm ci installs ALL deps including devDependencies.
+# CI/CD systems (Coolify, GitHub Actions) often inject NODE_ENV=production at
+# build time, which causes npm to silently omit devDeps — breaking the NestJS
+# CLI and TypeScript compiler. This ENV is scoped to this stage only.
+ENV NODE_ENV=development
+
 # Install dependencies first (layer cache)
 COPY package*.json ./
 COPY prisma ./prisma/
