@@ -23,7 +23,7 @@ export default function RegisterCompleteScreen() {
         </Text>
 
         <View style={styles.tipCard}>
-          <Text style={styles.tipTitle}>What's next?</Text>
+          <Text style={styles.tipTitle}>What&apos;s next?</Text>
           <View style={styles.tipList}>
             {[
               'Add buildings and floors',

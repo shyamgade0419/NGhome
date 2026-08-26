@@ -1,7 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/hooks/useAuth';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
@@ -18,7 +17,6 @@ interface SettingItem {
 
 export default function SettingsScreen() {
   const { user, logout } = useAuth();
-  const router = useRouter();
 
   const items: SettingItem[] = [
     {

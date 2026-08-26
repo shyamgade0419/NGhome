@@ -1,6 +1,6 @@
 import apiClient from '@/api/client';
 import { ApiResponse, PaginatedResponse, PaginationQuery } from '@/api/types';
-import { BillingPeriod, MaintenanceBill, PaymentSubmission } from '@/types/billing.types';
+import { BillingPeriod, MaintenanceBill } from '@/types/billing.types';
 
 export const billingApi = {
   // ─── Admin: billing periods ────────────────────────────────────────────────

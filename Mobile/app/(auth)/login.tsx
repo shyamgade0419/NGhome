@@ -18,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthContext } from '@/auth/AuthContext';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
-import { colors, spacing, typography, radius } from '@/theme';
+import { colors, spacing, typography } from '@/theme';
 
 const schema = z.object({
   identifier: z

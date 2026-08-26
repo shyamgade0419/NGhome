@@ -105,12 +105,12 @@ export default function ResidentDashboard() {
                   activeOpacity={0.85}
                 >
                   <Ionicons name="card-outline" size={18} color={colors.textInverse} />
-                  <Text style={styles.payBtnText}>I've Made Payment</Text>
+                  <Text style={styles.payBtnText}>I&apos;ve Made Payment</Text>
                 </TouchableOpacity>
               )}
             </>
           ) : (
-            <Text style={styles.noBill}>No pending bill. You're all caught up!</Text>
+            <Text style={styles.noBill}>No pending bill. You&apos;re all caught up!</Text>
           )}
         </View>
 

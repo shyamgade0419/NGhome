@@ -1,15 +1,13 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
-  TouchableOpacity,
   Alert,
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { billingApi } from '@/api/endpoints/billing.api';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
@@ -17,7 +15,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusBadge, billingStatusVariant } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
-import { colors, spacing, typography, radius } from '@/theme';
+import { colors, spacing, typography } from '@/theme';
 import { BillingPeriod, billingPeriodName } from '@/types/billing.types';
 
 export default function MaintenanceScreen() {
@@ -30,7 +28,7 @@ export default function MaintenanceScreen() {
 
   const generateMutation = useMutation({
     mutationFn: billingApi.generateBills,
-    onSuccess: (result, periodId) => {
+    onSuccess: (result, _periodId) => {
       Alert.alert(
         'Bills Generated',
         `Generated: ${result.generated} bills\nErrors: ${result.errors}`,
