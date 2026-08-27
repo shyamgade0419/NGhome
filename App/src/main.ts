@@ -117,4 +117,17 @@ async function bootstrap() {
   }
 }
 
-bootstrap().catch(console.error);
+bootstrap().catch((error: unknown) => {
+  // Write a clear, structured error to stderr so it is visible in Coolify Runtime Logs
+  // even if the process exits before stdout flushes.
+  const msg   = error instanceof Error ? error.message : String(error);
+  const stack = error instanceof Error ? (error.stack ?? '') : '';
+  process.stderr.write(
+    `\n${'='.repeat(60)}\n` +
+    `BOOTSTRAP FAILED\n` +
+    `Error: ${msg}\n` +
+    (stack ? `${stack}\n` : '') +
+    `${'='.repeat(60)}\n`,
+  );
+  process.exit(1);
+});

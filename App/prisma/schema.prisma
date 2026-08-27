@@ -1,5 +1,10 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // Explicit targets so Prisma downloads the right binary for Alpine (musl + OpenSSL 3.x).
+  // Without this, auto-detection may select `linux-musl` (static) which can fail to dlopen
+  // on newer Alpine images, causing Prisma to fall back to the WASM engine and throw
+  // "URL must start with prisma://" at startup.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {

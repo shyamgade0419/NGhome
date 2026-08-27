@@ -41,11 +41,15 @@ RUN addgroup -g 1001 -S nodejs && \
 COPY package*.json ./
 COPY prisma ./prisma/
 
-RUN apk add --no-cache python3 make g++ && \
+RUN apk add --no-cache python3 make g++ openssl && \
     npm ci --only=production && \
     npx prisma generate && \
     npm cache clean --force && \
     apk del python3 make g++
+# ↑ openssl is intentionally kept after the del — the Prisma query engine
+#   (linux-musl-openssl-3.0.x) links against libssl.so.3 / libcrypto.so.3
+#   at runtime.  Removing it causes Prisma to fall back to the WASM engine
+#   which only accepts prisma:// URLs, crashing the app immediately.
 
 # Copy build output
 COPY --from=builder /app/dist ./dist
@@ -58,4 +62,8 @@ USER nestjs
 EXPOSE 3000
 
 # Run migrations then start
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main"]
+CMD ["sh", "-c", \
+  "echo '[NGHome-API] === Starting migration ===' && \
+   npx prisma migrate deploy && \
+   echo '[NGHome-API] === Migration complete. Starting application ===' && \
+   exec node dist/src/main"]
