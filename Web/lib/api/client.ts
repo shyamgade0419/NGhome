@@ -23,7 +23,13 @@ api.interceptors.response.use(
   (err) => {
     // The BFF proxy already attempts a token refresh server-side before returning a 401.
     // By the time 401 reaches here, refresh has already failed — redirect to login.
-    if (err.response?.status === 401) {
+    // Skip the redirect if we're already on a public page (login, register, etc.) to
+    // avoid an infinite reload loop: AuthContext calls /auth/me on mount, gets 401 while
+    // unauthenticated, which would otherwise trigger a reload of the same page forever.
+    const PUBLIC_PAGES = ['/login', '/register', '/forgot-password', '/reset-password', '/select-society'];
+    const onPublicPage = typeof window !== 'undefined' &&
+      PUBLIC_PAGES.some((p) => window.location.pathname.startsWith(p));
+    if (err.response?.status === 401 && !onPublicPage) {
       window.location.href = '/login';
     }
     return Promise.reject(err);
