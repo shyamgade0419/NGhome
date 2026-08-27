@@ -33,13 +33,19 @@ ENV NODE_ENV=production
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nestjs -u 1001
 
-# Install only production deps
+# Install only production deps.
+# argon2 requires a native addon compiled from C. Alpine uses musl libc so
+# there are no prebuilt musl binaries on npm — we must compile from source.
+# Adding build tools, compiling, then deleting them in ONE layer keeps the
+# final image small while producing a working native binary.
 COPY package*.json ./
 COPY prisma ./prisma/
 
-RUN npm ci --only=production --ignore-scripts && \
+RUN apk add --no-cache python3 make g++ && \
+    npm ci --only=production && \
     npx prisma generate && \
-    npm cache clean --force
+    npm cache clean --force && \
+    apk del python3 make g++
 
 # Copy build output
 COPY --from=builder /app/dist ./dist
