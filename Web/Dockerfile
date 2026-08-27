@@ -25,6 +25,11 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Ensure public/ exists — Next.js projects don't require it, but Docker's COPY
+# fails if the source path is absent. Creating it here guarantees the runner
+# stage COPY --from=builder /app/public ./public always succeeds.
+RUN mkdir -p /app/public
+
 # Build with standalone output (set in next.config.mjs)
 RUN npm run build
 
