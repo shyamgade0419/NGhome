@@ -135,7 +135,14 @@ export default function LoginPage() {
             </div>
           </form>
 
-          <p className="mt-8 text-center text-xs text-slate-400">
+          <p className="mt-8 text-center text-sm text-slate-500">
+            New society?{' '}
+            <Link href="/register" className="text-primary-600 font-medium hover:underline">
+              Register your society
+            </Link>
+          </p>
+
+          <p className="mt-4 text-center text-xs text-slate-400">
             NG Home Admin Portal · Access is restricted to authorized society administrators
           </p>
         </div>
