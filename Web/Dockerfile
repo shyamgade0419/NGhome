@@ -3,6 +3,11 @@ FROM node:20-alpine AS deps
 
 WORKDIR /app
 
+# Force development mode so npm ci installs ALL deps including devDependencies.
+# Coolify (and CI systems) may inject NODE_ENV=production as a build arg which
+# causes npm to silently skip devDeps — breaking the TypeScript/webpack build.
+ENV NODE_ENV=development
+
 COPY package*.json ./
 RUN npm ci
 
@@ -12,7 +17,8 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Accept public env vars at build time so Next.js can bake them into the bundle.
-# In Coolify set these as environment variables with "Build Variable" enabled.
+# NEXT_PUBLIC_* vars are embedded in the JS bundle at compile time — they must
+# be available during `npm run build`, not just at runtime.
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
