@@ -119,9 +119,16 @@ function Step1({
     contactEmail: societySchema.shape.contactEmail,
     contactPhone: societySchema.shape.contactPhone,
   });
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const { register, handleSubmit, formState: { errors } } = useForm<
+    Pick<SocietyData, 'name' | 'registrationNumber' | 'contactEmail' | 'contactPhone'>
+  >({
     resolver: zodResolver(schema),
-    defaultValues,
+    defaultValues: {
+      name: defaultValues?.name,
+      registrationNumber: defaultValues?.registrationNumber,
+      contactEmail: defaultValues?.contactEmail,
+      contactPhone: defaultValues?.contactPhone,
+    },
   });
 
   return (
@@ -177,9 +184,17 @@ function Step2({
     pinCode: societySchema.shape.pinCode,
     country: societySchema.shape.country,
   });
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const { register, handleSubmit, formState: { errors } } = useForm<
+    Pick<SocietyData, 'address' | 'city' | 'state' | 'pinCode' | 'country'>
+  >({
     resolver: zodResolver(schema),
-    defaultValues: { country: 'India', ...defaultValues },
+    defaultValues: {
+      country: defaultValues?.country ?? 'India',
+      address: defaultValues?.address,
+      city: defaultValues?.city,
+      state: defaultValues?.state,
+      pinCode: defaultValues?.pinCode,
+    },
   });
 
   return (
