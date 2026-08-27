@@ -349,7 +349,7 @@ function Step3({
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { setSession } = useAuth();
+  const { refreshUser } = useAuth();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
@@ -393,8 +393,8 @@ export default function RegisterPage() {
     };
 
     try {
-      const res = await axios.post('/api/auth/register-society', payload);
-      setSession(res.data.user, res.data.memberships);
+      await axios.post('/api/auth/register-society', payload);
+      await refreshUser();
       toast.success('Society registered! Welcome to NG Home 🎉');
       router.replace('/');
     } catch (err: any) {
