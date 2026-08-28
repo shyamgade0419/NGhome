@@ -148,8 +148,32 @@ export const societyApi = {
   // Returns { user, memberships } from the auth profile endpoint
   memberships: () => api.get('/auth/me'),
   residents: (params?: Record<string, unknown>) => api.get('/users/society', { params }),
+
+  // Buildings
   buildings: (params?: Record<string, unknown>) => api.get('/buildings', { params }),
+  createBuilding: (data: { name: string; code?: string; description?: string; totalFloors?: number }) =>
+    api.post('/buildings', data),
+  updateBuilding: (id: string, data: unknown) => api.patch(`/buildings/${id}`, data),
+  deleteBuilding: (id: string) => api.delete(`/buildings/${id}`),
+
+  // Flats
   flats: (params?: Record<string, unknown>) => api.get('/flats', { params }),
+  createFlat: (data: {
+    buildingId: string;
+    unitNumber: string;
+    flatCode: string;
+    floorId?: string;
+    area?: number;
+    bedrooms?: number;
+    bathrooms?: number;
+    category?: string;
+    status?: string;
+    ownershipType?: string;
+    parkingSlots?: number;
+  }) => api.post('/flats', data),
+  updateFlat: (id: string, data: unknown) => api.patch(`/flats/${id}`, data),
+  deleteFlat: (id: string) => api.delete(`/flats/${id}`),
+
   stats: () => api.get('/societies/my/stats'),
 };
 
