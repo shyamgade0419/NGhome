@@ -195,6 +195,22 @@ export const societyApi = {
   stats: () => api.get('/societies/my/stats'),
 };
 
+// Notifications
+export const notificationsApi = {
+  listMine: (params?: Record<string, unknown>) => api.get('/notifications/my', { params }),
+  markRead: (id: string) => api.patch(`/notifications/my/${id}/read`, {}),
+  send: (data: { title: string; message: string; type?: string; recipientIds?: string[] }) =>
+    api.post('/notifications', data),
+};
+
+// Users (society-scoped)
+export const usersApi = {
+  listSociety: (params?: Record<string, unknown>) => api.get('/users/society', { params }),
+  addMember: (data: { userId: string; flatId?: string; role: string; isPrimary?: boolean }) =>
+    api.post('/users/society/add-member', data),
+  removeMember: (userId: string) => api.delete(`/users/society/${userId}/remove`),
+};
+
 // Accounts & Funds
 export const accountsApi = {
   listAccounts: (params?: Record<string, unknown>) => api.get('/accounts', { params }),

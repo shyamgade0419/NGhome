@@ -3,12 +3,12 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Building2, Home, Shield, Bell, IndianRupee, ChevronRight,
-  Save, Plus, X, ToggleLeft, ToggleRight, ExternalLink,
+  Building2, Shield, Bell, IndianRupee, ChevronRight,
+  Save, Plus, X, ExternalLink, UserCog, Trash2,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
-import { societyApi, billingRulesApi } from '@/lib/api/endpoints';
+import { societyApi, billingRulesApi, usersApi } from '@/lib/api/endpoints';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -434,6 +434,112 @@ function BillingRulesSection({ admin }: { admin: boolean }) {
   );
 }
 
+/* ─── Roles & Permissions section ──────────────────────────────── */
+const ROLE_OPTIONS = [
+  { value: 'SOCIETY_ADMIN', label: 'Society Admin' },
+  { value: 'SOCIETY_ACCOUNTANT', label: 'Accountant' },
+  { value: 'SOCIETY_STAFF', label: 'Staff' },
+  { value: 'RESIDENT', label: 'Resident' },
+];
+
+const roleColor: Record<string, string> = {
+  SOCIETY_ADMIN: 'bg-red-50 text-red-700',
+  SOCIETY_ACCOUNTANT: 'bg-amber-50 text-amber-700',
+  SOCIETY_STAFF: 'bg-blue-50 text-blue-700',
+  RESIDENT: 'bg-green-50 text-green-700',
+};
+
+function RolesSection({ admin }: { admin: boolean }) {
+  const qc = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['society-members'],
+    queryFn: () => usersApi.listSociety({ limit: 100 }).then((r: any) => r.data ?? r),
+  });
+
+  const changeRoleMutation = useMutation({
+    mutationFn: ({ userId, role }: { userId: string; role: string }) =>
+      usersApi.addMember({ userId, role }),
+    onSuccess: () => {
+      toast.success('Role updated');
+      qc.invalidateQueries({ queryKey: ['society-members'] });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to update role'),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (userId: string) => usersApi.removeMember(userId),
+    onSuccess: () => {
+      toast.success('Member removed');
+      qc.invalidateQueries({ queryKey: ['society-members'] });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to remove member'),
+  });
+
+  const members: any[] = Array.isArray(data) ? data : (data?.data ?? []);
+
+  if (isLoading) return <div className="py-4"><PageSpinner /></div>;
+
+  if (members.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center">
+        <Shield size={24} className="mx-auto mb-2 text-slate-300" />
+        <p className="text-sm text-slate-500">No members found</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white overflow-hidden">
+      {members.map((m: any) => {
+        const role = m.memberships?.[0]?.role ?? 'RESIDENT';
+        const colorClass = roleColor[role] ?? 'bg-slate-100 text-slate-600';
+        return (
+          <div key={m.id} className="flex items-center gap-4 px-4 py-3">
+            {/* Avatar */}
+            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-primary-100 text-xs font-bold text-primary-700">
+              {initials(`${m.firstName} ${m.lastName}`)}
+            </div>
+            {/* Info */}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-slate-900 truncate">{m.firstName} {m.lastName}</p>
+              <p className="text-xs text-slate-500 truncate">{m.email}</p>
+            </div>
+            {/* Role */}
+            {admin ? (
+              <select
+                value={role}
+                onChange={(e) => changeRoleMutation.mutate({ userId: m.id, role: e.target.value })}
+                disabled={changeRoleMutation.isPending}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-primary-500"
+              >
+                {ROLE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            ) : (
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${colorClass}`}>
+                {ROLE_OPTIONS.find((o) => o.value === role)?.label ?? role.replace(/_/g, ' ')}
+              </span>
+            )}
+            {/* Remove */}
+            {admin && (
+              <button
+                onClick={() => removeMutation.mutate(m.id)}
+                disabled={removeMutation.isPending}
+                className="rounded-md p-1 text-slate-300 hover:bg-red-50 hover:text-red-500 transition-colors"
+                title="Remove from society"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ─── Main Page ─────────────────────────────────────────────────── */
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -506,28 +612,37 @@ export default function SettingsPage() {
           <BillingRulesSection admin={admin} />
         </Card>
 
-        {/* Roles & Permissions — coming soon */}
-        <Card padding="lg" className="opacity-60">
+        {/* Roles & Permissions */}
+        <Card padding="lg">
           <CardHeader>
             <div className="flex items-center gap-2">
-              <Shield size={18} className="text-slate-400" />
+              <UserCog size={18} className="text-primary-600" />
               <CardTitle>Roles & Permissions</CardTitle>
             </div>
-            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs text-slate-500">Coming Soon</span>
+            {!admin && (
+              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs text-slate-500">View only</span>
+            )}
           </CardHeader>
-          <p className="text-sm text-slate-500">Configure committee access levels and administrative roles.</p>
+          <p className="mb-4 text-sm text-slate-500">
+            Society members and their access roles.
+            {admin && ' Use the dropdown to change a member\'s role, or remove them from the society.'}
+          </p>
+          <RolesSection admin={admin} />
         </Card>
 
-        {/* Notification Preferences — coming soon */}
-        <Card padding="lg" className="opacity-60">
+        {/* Notifications — link to dedicated page */}
+        <Card padding="lg" className="cursor-pointer hover:border-primary-200 transition-colors" onClick={() => router.push('/notifications')}>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <Bell size={18} className="text-slate-400" />
-              <CardTitle>Notification Preferences</CardTitle>
+              <Bell size={18} className="text-primary-600" />
+              <CardTitle>Notifications</CardTitle>
             </div>
-            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs text-slate-500">Coming Soon</span>
+            <ChevronRight size={18} className="text-slate-400" />
           </CardHeader>
-          <p className="text-sm text-slate-500">Email and in-app notification settings for billing, payments, and community alerts.</p>
+          <p className="text-sm text-slate-500">View and manage society notifications. Admins can send announcements to all members.</p>
+          <p className="mt-2 flex items-center gap-1 text-xs font-medium text-primary-600">
+            <ExternalLink size={12} /> Go to Notifications
+          </p>
         </Card>
 
       </PageContainer>

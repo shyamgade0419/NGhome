@@ -15,6 +15,7 @@ import {
   Users,
   Home,
   Landmark,
+  Bell,
 } from 'lucide-react';
 import { cn, initials } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -29,6 +30,7 @@ const NAV = [
   { href: '/flats', icon: Home, label: 'Flats' },
   { href: '/reports', icon: BarChart3, label: 'Reports' },
   { href: '/community', icon: Megaphone, label: 'Community' },
+  { href: '/notifications', icon: Bell, label: 'Notifications' },
   { href: '/settings', icon: Settings, label: 'Settings' },
 ];
 

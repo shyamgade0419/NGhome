@@ -67,6 +67,7 @@ export default function DashboardPage() {
               icon={IndianRupee}
               iconColor="text-blue-600"
               iconBg="bg-blue-50"
+              href="/billing"
             />
             <StatCard
               label="Collected"
@@ -74,6 +75,7 @@ export default function DashboardPage() {
               icon={TrendingUp}
               iconColor="text-green-600"
               iconBg="bg-green-50"
+              href="/billing"
             />
             <StatCard
               label="Outstanding"
@@ -81,6 +83,7 @@ export default function DashboardPage() {
               icon={AlertCircle}
               iconColor="text-red-600"
               iconBg="bg-red-50"
+              href="/payments?status=PENDING"
             />
             <StatCard
               label="Total Expenses"
@@ -88,6 +91,7 @@ export default function DashboardPage() {
               icon={Wallet}
               iconColor="text-orange-600"
               iconBg="bg-orange-50"
+              href="/expenses"
             />
             <StatCard
               label="Bank Balance"
@@ -95,6 +99,7 @@ export default function DashboardPage() {
               icon={IndianRupee}
               iconColor="text-primary-600"
               iconBg="bg-primary-50"
+              href="/accounts"
             />
             <StatCard
               label="Corpus Fund"
@@ -102,6 +107,7 @@ export default function DashboardPage() {
               icon={IndianRupee}
               iconColor="text-purple-600"
               iconBg="bg-purple-50"
+              href="/accounts"
             />
           </div>
         </section>
@@ -118,6 +124,7 @@ export default function DashboardPage() {
               icon={Users}
               iconColor="text-teal-600"
               iconBg="bg-teal-50"
+              href="/residents"
             />
             <StatCard
               label="Flats"
@@ -125,6 +132,7 @@ export default function DashboardPage() {
               icon={Building2}
               iconColor="text-indigo-600"
               iconBg="bg-indigo-50"
+              href="/flats"
             />
           </div>
         </section>
