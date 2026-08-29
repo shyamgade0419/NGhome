@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building2, Shield, Bell, IndianRupee, ChevronRight,
   Save, Plus, X, ExternalLink, UserCog, Trash2,
+  Sparkles, Lock, CheckCircle2,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -542,6 +543,126 @@ function RolesSection({ admin }: { admin: boolean }) {
   );
 }
 
+/* ─── Platform Plan Section (Platform Admin only) ───────────────── */
+/*
+ * This section is ONLY visible to PLATFORM_ADMIN users. Societies never
+ * see it. It lets the platform operator define whether NG Home is free or
+ * subscription-gated, and pre-configure future pricing tiers — without
+ * activating billing until the switch is flipped.
+ *
+ * Current state: FREE for everyone. The toggle is OFF and cannot be turned
+ * on until the backend subscription API is wired up — at which point the
+ * "Activate" button becomes the real entry point.
+ */
+
+const TIERS = [
+  {
+    key: 'FREE',
+    name: 'Free',
+    price: '₹0 / mo',
+    features: ['Up to 50 flats', 'Billing & maintenance', 'Water readings', 'Community'],
+    color: 'border-slate-200 bg-slate-50',
+    badgeColor: 'bg-slate-100 text-slate-600',
+    current: true,
+  },
+  {
+    key: 'STARTER',
+    name: 'Starter',
+    price: '₹299 / mo',
+    features: ['Up to 150 flats', 'All Free features', 'Reports & PDF', 'WhatsApp reminders'],
+    color: 'border-primary-200 bg-primary-50',
+    badgeColor: 'bg-primary-100 text-primary-700',
+    current: false,
+  },
+  {
+    key: 'PROFESSIONAL',
+    name: 'Professional',
+    price: '₹799 / mo',
+    features: ['Unlimited flats', 'All Starter features', 'Priority support', 'Custom branding'],
+    color: 'border-violet-200 bg-violet-50',
+    badgeColor: 'bg-violet-100 text-violet-700',
+    current: false,
+  },
+] as const;
+
+function PlatformPlanSection() {
+  const [subscriptionEnabled, setSubscriptionEnabled] = useState(false);
+
+  return (
+    <Card padding="lg">
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Sparkles size={18} className="text-violet-500" />
+          <CardTitle>Platform &amp; Pricing</CardTitle>
+          <span className="rounded-full bg-violet-100 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">
+            Platform Admin
+          </span>
+        </div>
+      </CardHeader>
+
+      {/* Current status banner */}
+      <div className="mb-5 flex items-start gap-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
+        <CheckCircle2 size={18} className="mt-0.5 flex-shrink-0 text-green-600" />
+        <div>
+          <p className="text-sm font-semibold text-green-800">Free for all societies — no subscription required</p>
+          <p className="text-xs text-green-700 mt-0.5">
+            NG Home is currently free on both web and mobile. Enable subscription billing here when you&apos;re ready to monetise.
+          </p>
+        </div>
+      </div>
+
+      {/* Subscription gate toggle */}
+      <div className="mb-6 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-800">Enable subscription gating</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            When ON, societies must be on a paid plan to access premium features.
+            <span className="ml-1 font-medium text-amber-600">Backend billing API not yet connected — activating has no effect until wired.</span>
+          </p>
+        </div>
+        <Toggle
+          checked={subscriptionEnabled}
+          onChange={setSubscriptionEnabled}
+          disabled={true /* remove when backend is ready */}
+        />
+      </div>
+
+      {/* Pricing tiers preview */}
+      <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-400">Pricing tiers (preview — not yet active)</p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {TIERS.map((tier) => (
+          <div
+            key={tier.key}
+            className={`rounded-xl border-2 p-4 ${tier.color} relative`}
+          >
+            {tier.current && (
+              <span className="absolute right-3 top-3 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-green-700">
+                Active
+              </span>
+            )}
+            <p className="text-base font-bold text-slate-900">{tier.name}</p>
+            <p className="mt-0.5 text-lg font-extrabold text-slate-800 tabular-nums">{tier.price}</p>
+            <ul className="mt-3 space-y-1.5">
+              {tier.features.map((f) => (
+                <li key={f} className="flex items-center gap-1.5 text-xs text-slate-600">
+                  <CheckCircle2 size={12} className="flex-shrink-0 text-slate-400" />
+                  {f}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+
+      {/* Locked notice */}
+      <div className="mt-4 flex items-center gap-2 text-xs text-slate-400">
+        <Lock size={12} />
+        Pricing activation is locked until the subscription API is ready. Adjust tier names and prices here freely — they won&apos;t go live until you remove the <code className="text-slate-500">disabled</code> flag.
+      </div>
+    </Card>
+  );
+}
+
 /* ─── Main Page ─────────────────────────────────────────────────── */
 export default function SettingsPage() {
   const { user, activeMembership } = useAuth();
@@ -646,6 +767,9 @@ export default function SettingsPage() {
             <ExternalLink size={12} /> Go to Notifications
           </p>
         </Card>
+
+        {/* Platform & Pricing — platform admin only */}
+        {user?.isPlatformAdmin && <PlatformPlanSection />}
 
       </PageContainer>
     </>
