@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/Badge';
 import { formatCurrency, formatDate, cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { billingPeriodLabel } from '@/lib/types';
+import { can } from '@/lib/permissions';
 
 /* ── Types ────────────────────────────────────────────────────── */
 interface FlatReading {
@@ -95,9 +96,8 @@ function CostCard({
 /* ── Main Page ────────────────────────────────────────────────── */
 export default function WaterBillingPage() {
   const { activeMembership, user } = useAuth();
-  const isAdmin = activeMembership?.role === 'SOCIETY_ADMIN' ||
-    activeMembership?.role === 'SOCIETY_ACCOUNTANT' ||
-    !!user?.isPlatformAdmin;
+  // Staff can also enter readings (they do physical meter reads)
+  const isAdmin = can.enterWaterReadings(activeMembership?.role, user?.isPlatformAdmin);
 
   const [selectedPeriodId, setSelectedPeriodId] = useState('');
   const [costs, setCosts] = useState({

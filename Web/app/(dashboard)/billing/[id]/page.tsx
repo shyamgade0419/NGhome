@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Download, FileText, Printer, RefreshCw,
-  Send, CheckCircle2, Lock, Droplets,
+  Send, CheckCircle2, Lock, Droplets, MessageSquare,
 } from 'lucide-react';
 import Link from 'next/link';
 import { use } from 'react';
@@ -20,7 +20,84 @@ import { Button } from '@/components/ui/Button';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { formatCurrency, formatDate, cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
+import { can } from '@/lib/permissions';
 import toast from 'react-hot-toast';
+
+/* ── WhatsApp helpers ──────────────────────────────────────────
+   No API needed — wa.me links open WhatsApp with a pre-filled
+   message. On mobile they open the app; on desktop they open
+   WhatsApp Web. Admin chooses which contact or group to send to.
+──────────────────────────────────────────────────────────────── */
+function buildBillMessage(bill: MaintenanceBill, period: any, societyName = 'Society'): string {
+  const MONTHS = ['','January','February','March','April','May','June',
+    'July','August','September','October','November','December'];
+  const month = `${MONTHS[period.periodMonth] ?? ''} ${period.periodYear}`;
+  const due   = period.dueDate ? new Date(period.dueDate).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) : '';
+  const total = parseFloat(bill.totalAmount);
+  const pending = parseFloat(bill.pendingAmount ?? '0');
+  const water = parseFloat(bill.waterCharges ?? '0');
+
+  const lines: string[] = [
+    `🏢 *${societyName} — ${month} Maintenance*`,
+    '',
+    `Flat: *${bill.flatCode ?? bill.flat?.flatCode ?? ''}*  |  Invoice: ${bill.invoiceNumber ?? ''}`,
+    `Due Date: *${due}*`,
+    '',
+    `💰 Total Amount: *₹${total.toLocaleString('en-IN')}*`,
+  ];
+
+  if (water > 0) {
+    lines.push(`   • Maintenance: ₹${parseFloat(bill.baseAmount).toLocaleString('en-IN')}`);
+    lines.push(`   • Water Charges: ₹${water.toLocaleString('en-IN')}`);
+  }
+
+  if (bill.isPaid) {
+    lines.push('', '✅ *Payment received — Thank you!*');
+  } else if (pending > 0) {
+    lines.push('', `⚠️ *Balance Due: ₹${pending.toLocaleString('en-IN')}*`);
+    lines.push(`Please pay before ${due} to avoid late fees.`);
+  }
+
+  lines.push('', `_${societyName} Management_`);
+  return lines.join('\n');
+}
+
+function buildGroupMessage(period: any, bills: MaintenanceBill[], societyName = 'Society'): string {
+  const MONTHS = ['','January','February','March','April','May','June',
+    'July','August','September','October','November','December'];
+  const month = `${MONTHS[period.periodMonth] ?? ''} ${period.periodYear}`;
+  const due   = period.dueDate ? new Date(period.dueDate).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) : '';
+  const unpaid = bills.filter(b => !b.isPaid && b.isPublished).length;
+  const total  = bills.length;
+
+  const lines: string[] = [
+    `🏢 *${societyName} — ${month} Maintenance*`,
+    '',
+    'Dear Residents,',
+    '',
+    `Your maintenance bills for *${month}* are now published.`,
+    '',
+    `📅 *Due Date: ${due}*`,
+  ];
+
+  if (unpaid > 0) {
+    lines.push('', `⚠️ ${unpaid} of ${total} flats are yet to pay.`);
+  }
+
+  lines.push(
+    '',
+    '📱 Log in to the NG Home portal to view your individual bill and payment details.',
+    '',
+    'For queries, contact the society admin.',
+    '',
+    `_${societyName} Management_`,
+  );
+  return lines.join('\n');
+}
+
+function openWhatsApp(message: string): void {
+  window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener');
+}
 
 const MONTH_NAMES = [
   '', 'January', 'February', 'March', 'April', 'May', 'June',
@@ -31,9 +108,7 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
   const { id } = use(params);
   const qc = useQueryClient();
   const { user, activeMembership } = useAuth();
-  const isAdmin = activeMembership?.role === 'SOCIETY_ADMIN' ||
-    activeMembership?.role === 'SOCIETY_ACCOUNTANT' ||
-    !!user?.isPlatformAdmin;
+  const isAdmin = can.manageBilling(activeMembership?.role, user?.isPlatformAdmin);
 
   const [activeTab, setActiveTab] = useState<'bills' | 'report' | 'water'>('bills');
 
@@ -170,6 +245,21 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
                   )}
                 </>
               )}
+              {isAdmin && status === 'PUBLISHED' && bills.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => openWhatsApp(buildGroupMessage(
+                    period,
+                    bills,
+                    /* societyName */ undefined,
+                  ))}
+                  title="Open WhatsApp with a pre-filled group reminder"
+                >
+                  <MessageSquare size={13} className="mr-1.5 text-green-600" />
+                  WhatsApp Reminder
+                </Button>
+              )}
               {bills.length > 0 && (
                 <Button size="sm" variant="secondary" onClick={handleDownload}>
                   <Download size={13} className="mr-1.5" /> Download PDF
@@ -297,6 +387,7 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
                     <Th>Paid</Th>
                     <Th>Pending</Th>
                     <Th>Status</Th>
+                    {isAdmin && <Th></Th>}
                   </Tr>
                 </Thead>
                 <Tbody>
@@ -318,6 +409,20 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
                           {bill.isPaid ? 'Paid' : bill.isPublished ? 'Unpaid' : 'Draft'}
                         </Badge>
                       </Td>
+                      {isAdmin && (
+                        <Td>
+                          {bill.isPublished && !bill.isPaid && (
+                            <button
+                              onClick={() => openWhatsApp(buildBillMessage(bill, period))}
+                              title={`WhatsApp reminder for Flat ${bill.flatCode}`}
+                              className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50 transition-colors"
+                            >
+                              <MessageSquare size={13} />
+                              <span className="hidden sm:inline">Remind</span>
+                            </button>
+                          )}
+                        </Td>
+                      )}
                     </Tr>
                   ))}
                 </Tbody>
