@@ -16,27 +16,46 @@ import {
   Home,
   Landmark,
   Bell,
+  Droplets,
+  FileText,
 } from 'lucide-react';
 import { cn, initials } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
 
-const NAV = [
+/* Admin + Staff nav */
+const ADMIN_NAV = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/billing', icon: Receipt, label: 'Billing' },
+  { href: '/billing/my', icon: FileText, label: 'My Bills' },
   { href: '/payments', icon: CreditCard, label: 'Payments' },
   { href: '/expenses', icon: Wallet, label: 'Expenses' },
   { href: '/accounts', icon: Landmark, label: 'Accounts' },
   { href: '/residents', icon: Users, label: 'Residents' },
   { href: '/flats', icon: Home, label: 'Flats' },
+  { href: '/water', icon: Droplets, label: 'Water Billing' },
   { href: '/reports', icon: BarChart3, label: 'Reports' },
   { href: '/community', icon: Megaphone, label: 'Community' },
   { href: '/notifications', icon: Bell, label: 'Notifications' },
   { href: '/settings', icon: Settings, label: 'Settings' },
 ];
 
+/* Resident-only nav */
+const RESIDENT_NAV = [
+  { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { href: '/billing/my', icon: FileText, label: 'My Bills' },
+  { href: '/community', icon: Megaphone, label: 'Community' },
+  { href: '/notifications', icon: Bell, label: 'Notifications' },
+];
+
+const ADMIN_ROLES = ['SOCIETY_ADMIN', 'SOCIETY_ACCOUNTANT', 'SOCIETY_STAFF', 'PLATFORM_ADMIN'];
+
 export function Sidebar() {
   const pathname = usePathname();
-  const { user, logout } = useAuth();
+  const { user, activeMembership, logout } = useAuth();
+
+  const role = activeMembership?.role ?? user?.currentRole ?? '';
+  const isAdmin = ADMIN_ROLES.includes(role) || !!user?.isPlatformAdmin;
+  const NAV = isAdmin ? ADMIN_NAV : RESIDENT_NAV;
 
   return (
     <aside className="flex h-screen w-60 flex-col border-r border-slate-200 bg-white">
@@ -54,7 +73,12 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5 scrollbar-thin">
         {NAV.map(({ href, icon: Icon, label }) => {
-          const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
+          // Exact match for '/', prefix match for everything else
+          // But /billing/my must not match /billing
+          const active =
+            href === '/'
+              ? pathname === '/'
+              : pathname === href || pathname.startsWith(href + '/');
           return (
             <Link
               key={href}
@@ -82,7 +106,7 @@ export function Sidebar() {
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-semibold text-slate-900">{user?.displayName}</p>
             <p className="truncate text-[10px] text-slate-400">
-              {user?.currentRole?.replace(/_/g, ' ')}
+              {(role || 'User').replace(/_/g, ' ')}
             </p>
           </div>
           <button

@@ -330,6 +330,26 @@ export class BillingService {
     return bill;
   }
 
+  /** Returns all bills for a period with line items — for holistic report / PDF download */
+  async getPeriodReport(societyId: string, periodId: string) {
+    const period = await this.findPeriod(societyId, periodId);
+    const bills = await this.prisma.maintenanceBill.findMany({
+      where: { societyId, billingPeriodId: periodId },
+      include: {
+        lineItems: { orderBy: { componentName: 'asc' } },
+        flat: { select: { id: true, flatCode: true, area: true, bedrooms: true } },
+      },
+      orderBy: { flatCode: 'asc' },
+    });
+
+    const society = await this.prisma.society.findUnique({
+      where: { id: societyId },
+      select: { name: true, displayName: true, address: true, city: true, state: true },
+    });
+
+    return { society, period, bills };
+  }
+
   async adjustBill(
     societyId: string,
     billId: string,

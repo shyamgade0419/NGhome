@@ -88,6 +88,14 @@ export class BillingController {
     return this.billingService.closePeriod(societyId, periodId, user.id);
   }
 
+  @Get('periods/:periodId/report')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
+  @ApiOperation({ summary: 'Get full period report with all bills + line items (for PDF download)' })
+  getPeriodReport(@SocietyId() societyId: string, @Param('periodId') periodId: string) {
+    return this.billingService.getPeriodReport(societyId, periodId);
+  }
+
   @Get('periods/:periodId/bills')
   @UseGuards(RolesGuard)
   @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)

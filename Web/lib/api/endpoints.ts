@@ -69,6 +69,13 @@ export const billingApi = {
 
   getBill: (billId: string): Promise<{ data: MaintenanceBill }> =>
     api.get(`/billing/bills/${billId}`),
+
+  // Full period report for PDF / holistic view (admin)
+  getPeriodReport: (periodId: string) => api.get(`/billing/periods/${periodId}/report`),
+
+  // Resident: view own bills
+  getMyBills: (params?: Record<string, unknown>) => api.get('/billing/my-bills', { params }),
+  getMyBill: (billId: string) => api.get(`/billing/my-bills/${billId}`),
 };
 
 // Billing rules
@@ -193,6 +200,33 @@ export const societyApi = {
   deleteFlat: (id: string) => api.delete(`/flats/${id}`),
 
   stats: () => api.get('/societies/my/stats'),
+};
+
+// Water billing
+export const waterApi = {
+  listConfigs: () => api.get('/water/configs'),
+  createConfig: (data: unknown) => api.post('/water/configs', data),
+  listReadings: (params?: Record<string, unknown>) => api.get('/water/readings', { params }),
+
+  // Society Allocation: batch enter readings + composite costs for a period
+  allocatePeriodCosts: (
+    periodId: string,
+    data: {
+      readingDate: string;
+      municipalWaterBill: number;
+      tankerCost: number;
+      commonElectricityBill: number;
+      electricityWaterPercent: number;
+      readings: { flatId: string; openingReading: number; closingReading: number; notes?: string }[];
+    },
+  ) => api.post(`/water/periods/${periodId}/allocate`, data),
+
+  getPeriodSummary: (periodId: string) => api.get(`/water/periods/${periodId}/summary`),
+};
+
+// Billing period report (all bills + line items)
+export const billingReportApi = {
+  getPeriodReport: (periodId: string) => api.get(`/billing/periods/${periodId}/report`),
 };
 
 // Notifications
