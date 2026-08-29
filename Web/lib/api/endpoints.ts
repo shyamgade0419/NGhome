@@ -76,6 +76,7 @@ export const billingRulesApi = {
   list: () => api.get('/billing-rules'),
   create: (data: unknown) => api.post('/billing-rules', data),
   update: (id: string, data: unknown) => api.patch(`/billing-rules/${id}`, data),
+  toggle: (id: string, isActive: boolean) => api.patch(`/billing-rules/${id}/toggle`, { isActive }),
   delete: (id: string) => api.delete(`/billing-rules/${id}`),
 };
 
@@ -148,6 +149,23 @@ export const societyApi = {
   // Returns { user, memberships } from the auth profile endpoint
   memberships: () => api.get('/auth/me'),
   residents: (params?: Record<string, unknown>) => api.get('/users/society', { params }),
+
+  // Society details & config
+  getMySociety: () => api.get('/societies/my'),
+  updateMySociety: (data: {
+    name?: string; displayName?: string; address?: string;
+    city?: string; state?: string; pincode?: string; email?: string; phone?: string;
+  }) => api.patch('/societies/my', data),
+  getConfig: () => api.get('/societies/my/config'),
+  updateConfig: (data: {
+    currency?: string; billingCycle?: string; billingDueDay?: number;
+    financialYearStartMonth?: number; gracePeriodDays?: number;
+    lateFeeType?: string; lateFeeValue?: number; lateFeeMaxAmount?: number;
+    invoicePrefix?: string; paymentVerificationRequired?: boolean;
+    allowPaymentProofUpload?: boolean; showCorpusToResidents?: boolean;
+    showFundBalancesToResidents?: boolean; showExpensesToResidents?: boolean;
+    publishStatementToResidents?: boolean; publishMeetingMinutes?: boolean;
+  }) => api.patch('/societies/my/config', data),
 
   // Buildings
   buildings: (params?: Record<string, unknown>) => api.get('/buildings', { params }),
