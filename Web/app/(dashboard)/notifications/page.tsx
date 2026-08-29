@@ -79,10 +79,12 @@ function ComposeModal({ onClose }: { onClose: () => void }) {
 
 /* ─── Main Page ──────────────────────────────────────────────────── */
 export default function NotificationsPage() {
-  const { user } = useAuth();
+  const { user, activeMembership } = useAuth();
   const qc = useQueryClient();
   const [showCompose, setShowCompose] = useState(false);
-  const canSend = user?.currentRole === 'SOCIETY_ADMIN' || user?.currentRole === 'SOCIETY_STAFF';
+  const canSend = activeMembership?.role === 'SOCIETY_ADMIN' ||
+    activeMembership?.role === 'SOCIETY_STAFF' ||
+    !!user?.isPlatformAdmin;
 
   const { data, isLoading } = useQuery({
     queryKey: ['notifications-mine'],

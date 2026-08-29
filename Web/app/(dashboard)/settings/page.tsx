@@ -21,7 +21,9 @@ import { initials, roleLabel } from '@/lib/utils';
 import toast from 'react-hot-toast';
 
 /* ─── helpers ───────────────────────────────────────────────────── */
-const isAdmin = (role?: string) => role === 'SOCIETY_ADMIN';
+// Admin = SOCIETY_ADMIN in current society, OR platform admin (full access)
+const isSocietyAdmin = (membershipRole?: string, isPlatformAdmin?: boolean) =>
+  membershipRole === 'SOCIETY_ADMIN' || !!isPlatformAdmin;
 
 function Toggle({
   checked, onChange, disabled,
@@ -542,9 +544,9 @@ function RolesSection({ admin }: { admin: boolean }) {
 
 /* ─── Main Page ─────────────────────────────────────────────────── */
 export default function SettingsPage() {
-  const { user } = useAuth();
+  const { user, activeMembership } = useAuth();
   const router = useRouter();
-  const admin = isAdmin(user?.currentRole);
+  const admin = isSocietyAdmin(activeMembership?.role, user?.isPlatformAdmin);
 
   return (
     <>
