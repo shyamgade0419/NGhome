@@ -18,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthContext } from '@/auth/AuthContext';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
-import { colors, spacing, typography } from '@/theme';
+import { colors, spacing, typography, radius } from '@/theme';
 
 const schema = z.object({
   identifier: z
@@ -148,13 +148,24 @@ export default function LoginScreen() {
             </View>
           </View>
 
-          {/* Register */}
+          {/* Register new society */}
           <View style={styles.registerRow}>
             <Text style={styles.registerText}>New society? </Text>
             <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
               <Text style={styles.registerLink}>Register here</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Resident join via invite code */}
+          <TouchableOpacity
+            style={styles.joinRow}
+            onPress={() => router.push('/(auth)/register/join-code')}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="key-outline" size={16} color={colors.primary} />
+            <Text style={styles.joinText}>Have an invite code? </Text>
+            <Text style={styles.joinLink}>Join your society</Text>
+          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -233,6 +244,29 @@ const styles = StyleSheet.create({
   },
   registerLink: {
     ...typography.bodyMedium,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+
+  joinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.base,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  joinText: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+  },
+  joinLink: {
+    ...typography.bodySmall,
     color: colors.primary,
     fontWeight: '600',
   },

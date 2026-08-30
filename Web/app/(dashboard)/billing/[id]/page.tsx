@@ -95,8 +95,24 @@ function buildGroupMessage(period: any, bills: MaintenanceBill[], societyName = 
   return lines.join('\n');
 }
 
-function openWhatsApp(message: string): void {
-  window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener');
+/**
+ * Open WhatsApp with a pre-filled message.
+ * If phone is provided, opens directly in that contact's chat.
+ * Otherwise opens WhatsApp Web / app so admin picks the contact.
+ *
+ * Phone format: accepts "+91 98765 43210" or "9876543210" — we strip
+ * non-digits and prepend 91 (India) if no country code present.
+ */
+function openWhatsApp(message: string, phone?: string | null): void {
+  let url: string;
+  if (phone) {
+    const digits = phone.replace(/\D/g, '');
+    const e164 = digits.length === 10 ? `91${digits}` : digits;
+    url = `https://wa.me/${e164}?text=${encodeURIComponent(message)}`;
+  } else {
+    url = `https://wa.me/?text=${encodeURIComponent(message)}`;
+  }
+  window.open(url, '_blank', 'noopener');
 }
 
 const MONTH_NAMES = [
@@ -111,6 +127,7 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
   const isAdmin = can.manageBilling(activeMembership?.role, user?.isPlatformAdmin);
 
   const [activeTab, setActiveTab] = useState<'bills' | 'report' | 'water'>('bills');
+  const [remindAllOpen, setRemindAllOpen] = useState(false);
 
   /* Period + bills */
   const { data: period, isLoading: periodLoading } = useQuery({
@@ -178,6 +195,7 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
   if (!period) return <div className="p-8 text-slate-500">Billing period not found.</div>;
 
   const bills: MaintenanceBill[] = billsData?.data ?? [];
+  const unpaidBills = bills.filter((b) => b.isPublished && !b.isPaid);
   const status = period.status;
   const canGenerate = isAdmin && ['DRAFT', 'CALCULATED'].includes(status);
   const canPublish = isAdmin && ['CALCULATED', 'REVIEW'].includes(status);
@@ -246,19 +264,30 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
                 </>
               )}
               {isAdmin && status === 'PUBLISHED' && bills.length > 0 && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => openWhatsApp(buildGroupMessage(
-                    period,
-                    bills,
-                    /* societyName */ undefined,
-                  ))}
-                  title="Open WhatsApp with a pre-filled group reminder"
-                >
-                  <MessageSquare size={13} className="mr-1.5 text-green-600" />
-                  WhatsApp Reminder
-                </Button>
+                <>
+                  {/* Remind All — opens direct wa.me/PHONE links per unpaid resident */}
+                  {unpaidBills.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setRemindAllOpen(true)}
+                      title={`Send individual WhatsApp reminders to ${unpaidBills.length} unpaid residents`}
+                    >
+                      <MessageSquare size={13} className="mr-1.5 text-green-600" />
+                      Remind All ({unpaidBills.length})
+                    </Button>
+                  )}
+                  {/* Group broadcast — one message for the society WhatsApp group */}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => openWhatsApp(buildGroupMessage(period, bills))}
+                    title="Open WhatsApp with a pre-filled group message"
+                  >
+                    <MessageSquare size={13} className="mr-1.5 text-green-600" />
+                    Group Message
+                  </Button>
+                </>
               )}
               {bills.length > 0 && (
                 <Button size="sm" variant="secondary" onClick={handleDownload}>
@@ -413,8 +442,15 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
                         <Td>
                           {bill.isPublished && !bill.isPaid && (
                             <button
-                              onClick={() => openWhatsApp(buildBillMessage(bill, period))}
-                              title={`WhatsApp reminder for Flat ${bill.flatCode}`}
+                              onClick={() => openWhatsApp(
+                                buildBillMessage(bill, period),
+                                (bill as any).residentPhone ?? (bill as any).flat?.primaryResident?.phone,
+                              )}
+                              title={
+                                (bill as any).residentPhone
+                                  ? `WhatsApp Flat ${bill.flatCode} directly`
+                                  : `WhatsApp reminder for Flat ${bill.flatCode}`
+                              }
                               className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50 transition-colors"
                             >
                               <MessageSquare size={13} />
@@ -641,6 +677,122 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
           main { padding: 0 !important; }
         }
       `}</style>
+
+      {/* ── Remind All Unpaid modal ──────────────────────────────────────────
+           Lists every unpaid published bill with a direct WhatsApp button.
+           When the resident's phone number is on file, the button opens
+           wa.me/PHONE?text=… — no searching for the contact needed.
+           When no phone is stored, it falls back to wa.me/?text=… so admin
+           picks the contact manually.
+      ────────────────────────────────────────────────────────────────────── */}
+      {remindAllOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 print:hidden"
+          onClick={() => setRemindAllOpen(false)}
+        >
+          <div
+            className="w-full max-w-lg mx-0 sm:mx-4 bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[85vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between px-5 py-4 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                  <MessageSquare size={16} className="text-green-600" />
+                  Send WhatsApp Reminders
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {unpaidBills.length} unpaid {unpaidBills.length === 1 ? 'flat' : 'flats'} ·{' '}
+                  {unpaidBills.filter((b) => !!(b as any).residentPhone).length} with saved numbers
+                </p>
+              </div>
+              <button
+                onClick={() => setRemindAllOpen(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* List */}
+            <div className="overflow-y-auto flex-1 divide-y divide-slate-50">
+              {unpaidBills.map((bill) => {
+                const phone = (bill as any).residentPhone ?? (bill as any).flat?.primaryResident?.phone;
+                const residentName = (bill as any).residentName ?? (bill as any).flat?.primaryResident?.displayName;
+                const pending = parseFloat(bill.pendingAmount ?? '0');
+                return (
+                  <div key={bill.id} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
+                    {/* Flat info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-900">{bill.flatCode}</p>
+                      {residentName && (
+                        <p className="text-xs text-slate-500 truncate">{residentName}</p>
+                      )}
+                      {phone && (
+                        <p className="text-xs text-green-600 font-mono">{phone}</p>
+                      )}
+                    </div>
+
+                    {/* Pending amount */}
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-bold text-red-600 tabular-nums">
+                        {formatCurrency(pending)}
+                      </p>
+                      <p className="text-[10px] text-slate-400">pending</p>
+                    </div>
+
+                    {/* WhatsApp button */}
+                    <button
+                      onClick={() => openWhatsApp(buildBillMessage(bill, period), phone)}
+                      className={cn(
+                        'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors shrink-0',
+                        phone
+                          ? 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200'
+                          : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200',
+                      )}
+                      title={phone ? `Open chat with ${phone}` : 'Open WhatsApp (pick contact manually)'}
+                    >
+                      <MessageSquare size={12} />
+                      {phone ? 'Send' : 'Remind'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between gap-3 bg-slate-50 rounded-b-2xl">
+              {/* Copy all phone numbers that we have */}
+              {unpaidBills.some((b) => !!(b as any).residentPhone) ? (
+                <button
+                  onClick={() => {
+                    const nums = unpaidBills
+                      .map((b) => (b as any).residentPhone)
+                      .filter(Boolean)
+                      .join(', ');
+                    navigator.clipboard.writeText(nums);
+                    toast.success('Phone numbers copied — paste into a WhatsApp broadcast list');
+                  }}
+                  className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 transition-colors"
+                >
+                  <CheckCircle2 size={13} />
+                  Copy all numbers
+                </button>
+              ) : (
+                <p className="text-xs text-slate-400">
+                  Phone numbers will appear here once residents register.
+                </p>
+              )}
+              <button
+                onClick={() => setRemindAllOpen(false)}
+                className="text-xs font-medium text-slate-600 hover:text-slate-900 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
