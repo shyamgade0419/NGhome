@@ -41,6 +41,13 @@ export function roleLabel(role: string): string {
   return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+export function formatFileSize(bytes: number): string {
+  if (!bytes) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export const PAYMENT_METHODS: Record<string, string> = {
   UPI: 'UPI',
   BANK_TRANSFER: 'Bank Transfer',

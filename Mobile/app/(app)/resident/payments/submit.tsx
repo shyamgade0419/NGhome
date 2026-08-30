@@ -8,6 +8,7 @@ import {
   Platform,
   Alert,
   TouchableOpacity,
+  Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { paymentsApi } from '@/api/endpoints/payments.api';
 import { billingApi } from '@/api/endpoints/billing.api';
+import { societiesApi } from '@/api/endpoints/societies.api';
 import { billingPeriodName } from '@/types/billing.types';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -62,6 +64,13 @@ export default function SubmitPaymentScreen() {
     queryFn: () => billingApi.getMyBill(activePeriod!.id),
     enabled: !!activePeriod?.id,
   });
+
+  const { data: societyConfig } = useQuery({
+    queryKey: ['society-config'],
+    queryFn: societiesApi.getSocietyConfig,
+  });
+
+  const upiId = (societyConfig as any)?.additionalConfig?.upiId as string | undefined;
 
   const submitMutation = useMutation({
     mutationFn: paymentsApi.submitPayment,
@@ -188,6 +197,32 @@ export default function SubmitPaymentScreen() {
               </View>
             </View>
 
+            {/* UPI deep-link card — shown only when UPI is selected and society has a UPI ID */}
+            {selectedMethod === 'UPI' && upiId && myBill && (
+              <TouchableOpacity
+                style={styles.upiCard}
+                onPress={() => {
+                  const amount = parseFloat(myBill.pendingAmount).toFixed(2);
+                  const note = activePeriod ? billingPeriodName(activePeriod) : 'Maintenance';
+                  const upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent('Society')}&am=${amount}&tn=${encodeURIComponent(note)}&cu=INR`;
+                  Linking.openURL(upiLink).catch(() =>
+                    Alert.alert('No UPI App', 'Could not open a UPI app. Please install PhonePe, GPay, or Paytm.'),
+                  );
+                }}
+                activeOpacity={0.85}
+              >
+                <View style={styles.upiCardLeft}>
+                  <Ionicons name="qr-code-outline" size={28} color={colors.primary} />
+                  <View style={styles.upiCardText}>
+                    <Text style={styles.upiCardTitle}>Pay ₹{parseFloat(myBill.pendingAmount).toLocaleString('en-IN')} via UPI</Text>
+                    <Text style={styles.upiCardSub}>Opens PhonePe · GPay · Paytm · BHIM</Text>
+                    <Text style={styles.upiCardId}>{upiId}</Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+              </TouchableOpacity>
+            )}
+
             <Controller
               control={control}
               name="referenceNumber"
@@ -287,4 +322,20 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   disclaimerText: { ...typography.bodySmall, color: colors.info, flex: 1, lineHeight: 18 },
+
+  upiCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.primaryLight,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+  },
+  upiCardLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, flex: 1 },
+  upiCardText: { flex: 1 },
+  upiCardTitle: { ...typography.labelLarge, color: colors.primary },
+  upiCardSub: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },
+  upiCardId: { ...typography.bodySmall, color: colors.primary, fontFamily: 'monospace', marginTop: 2 },
 });

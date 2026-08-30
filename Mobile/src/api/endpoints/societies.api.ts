@@ -68,6 +68,11 @@ export const societiesApi = {
 
   // ─── Join code ─────────────────────────────────────────────────────────────
 
+  getSocietyConfig: async () => {
+    const { data } = await apiClient.get<ApiResponse<Record<string, any>>>('/societies/my/config');
+    return data.data;
+  },
+
   /** Return the current join/invite code for this society (admin only). */
   getJoinCode: async (): Promise<{ joinCode: string; generatedAt: string | null }> => {
     const { data } = await apiClient.get<ApiResponse<{ joinCode: string; generatedAt: string | null }>>(

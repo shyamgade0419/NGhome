@@ -91,4 +91,9 @@ export class UpdateSocietyConfigDto {
   @IsOptional()
   @IsBoolean()
   publishMeetingMinutes?: boolean;
+
+  @ApiPropertyOptional({ description: 'Society UPI ID for direct payment (stored in additionalConfig)' })
+  @IsOptional()
+  @IsString()
+  upiId?: string;
 }

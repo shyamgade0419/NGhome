@@ -172,6 +172,7 @@ export const societyApi = {
     allowPaymentProofUpload?: boolean; showCorpusToResidents?: boolean;
     showFundBalancesToResidents?: boolean; showExpensesToResidents?: boolean;
     publishStatementToResidents?: boolean; publishMeetingMinutes?: boolean;
+    upiId?: string;
   }) => api.patch('/societies/my/config', data),
 
   // Buildings
@@ -252,6 +253,53 @@ export const usersApi = {
   addMember: (data: { userId: string; flatId?: string; role: string; isPrimary?: boolean }) =>
     api.post('/users/society/add-member', data),
   removeMember: (userId: string) => api.delete(`/users/society/${userId}/remove`),
+};
+
+// Salaries
+export const salariesApi = {
+  listEmployees: () => api.get('/salaries/employees'),
+  createEmployee: (data: {
+    name: string; designation: string; employeeCode?: string;
+    phone?: string; email?: string; joinDate?: string; baseSalary: number;
+  }) => api.post('/salaries/employees', data),
+  listRecords: (params?: { month?: number; year?: number }) =>
+    api.get('/salaries/records', { params }),
+  processSalary: (data: {
+    employeeId: string; salaryMonth: number; salaryYear: number;
+    baseSalary?: number; additions?: number; deductions?: number;
+    accountId?: string; notes?: string;
+  }) => api.post('/salaries/process', data),
+  paySalary: (recordId: string) => api.post(`/salaries/${recordId}/pay`),
+};
+
+// Meetings
+export const meetingsApi = {
+  list: (params?: Record<string, unknown>) => api.get('/meetings', { params }),
+  create: (data: { title: string; meetingDate: string; location?: string; agenda?: string }) =>
+    api.post('/meetings', data),
+  get: (id: string) => api.get(`/meetings/${id}`),
+  addMinutes: (id: string, data: { content: string; summary?: string }) =>
+    api.post(`/meetings/${id}/minutes`, data),
+};
+
+// Documents
+export const documentsApi = {
+  list: (params?: { category?: string }) => api.get('/documents', { params }),
+  create: (data: {
+    title: string; description?: string; fileName: string;
+    fileKey: string; fileSize: number; mimeType: string;
+    accessLevel: string; category?: string;
+  }) => api.post('/documents', data),
+  get: (id: string) => api.get(`/documents/${id}`),
+  remove: (id: string) => api.delete(`/documents/${id}`),
+};
+
+// Audit Logs
+export const auditLogsApi = {
+  list: (params?: {
+    page?: number; limit?: number; action?: string;
+    entityType?: string; fromDate?: string; toDate?: string;
+  }) => api.get('/audit-logs', { params }),
 };
 
 // Accounts & Funds

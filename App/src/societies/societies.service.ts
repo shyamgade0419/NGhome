@@ -91,13 +91,33 @@ export class SocietiesService {
 
   async updateConfiguration(societyId: string, dto: UpdateSocietyConfigDto) {
     await this.findOne(societyId);
+
+    // upiId has no DB column; store it in the existing additionalConfig JSON field
+    const { upiId, ...configFields } = dto as UpdateSocietyConfigDto & { upiId?: string };
+
+    let additionalConfigPatch: Prisma.InputJsonValue | undefined;
+    if (upiId !== undefined) {
+      const current = await this.prisma.societyConfiguration.findUnique({
+        where: { societyId },
+        select: { additionalConfig: true },
+      });
+      const existing = (current?.additionalConfig as Record<string, unknown>) ?? {};
+      additionalConfigPatch = { ...existing, upiId } as Prisma.InputJsonValue;
+    }
+
+    const data: Prisma.SocietyConfigurationUpdateInput = {
+      ...configFields,
+      ...(additionalConfigPatch !== undefined ? { additionalConfig: additionalConfigPatch } : {}),
+    };
+
     return this.prisma.societyConfiguration.upsert({
       where: { societyId },
       create: {
-        ...dto,
+        ...configFields,
+        ...(additionalConfigPatch !== undefined ? { additionalConfig: additionalConfigPatch } : {}),
         societyId,
       } as Prisma.SocietyConfigurationUncheckedCreateInput,
-      update: dto as Prisma.SocietyConfigurationUpdateInput,
+      update: data,
     });
   }
 

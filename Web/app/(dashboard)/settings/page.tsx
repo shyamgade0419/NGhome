@@ -150,6 +150,7 @@ function BillingConfigSection({ admin }: { admin: boolean }) {
         showExpensesToResidents: data.showExpensesToResidents ?? false,
         publishStatementToResidents: data.publishStatementToResidents ?? false,
         publishMeetingMinutes: data.publishMeetingMinutes ?? false,
+        upiId: (data.additionalConfig as any)?.upiId ?? '',
       });
     }
   }, [data]);
@@ -173,6 +174,7 @@ function BillingConfigSection({ admin }: { admin: boolean }) {
         showExpensesToResidents: form.showExpensesToResidents,
         publishStatementToResidents: form.publishStatementToResidents,
         publishMeetingMinutes: form.publishMeetingMinutes,
+        upiId: form.upiId || undefined,
       }),
     onSuccess: () => {
       toast.success('Configuration saved');
@@ -275,6 +277,25 @@ function BillingConfigSection({ admin }: { admin: boolean }) {
             />
           </div>
         ))}
+      </div>
+
+      <SectionDivider title="UPI Payment" icon={<IndianRupee size={14} />} />
+      <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-4">
+        <p className="mb-3 text-xs text-emerald-700">
+          Set your society&apos;s UPI ID so residents can pay directly via PhonePe, GPay, Paytm, or BHIM — no payment gateway fees.
+        </p>
+        <Input
+          label="Society UPI ID"
+          placeholder="societyname@okicici"
+          value={form.upiId ?? ''}
+          onChange={inp('upiId')}
+          disabled={!admin}
+        />
+        {form.upiId && (
+          <p className="mt-2 text-[11px] text-emerald-600">
+            Residents will see a &ldquo;Pay via UPI&rdquo; button with a deep link to open their UPI app automatically.
+          </p>
+        )}
       </div>
 
       {admin && (
