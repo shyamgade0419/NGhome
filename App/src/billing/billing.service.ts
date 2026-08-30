@@ -282,7 +282,22 @@ export class BillingService {
         skip,
         take,
         where: { societyId, billingPeriodId: periodId },
-        include: { flat: { select: { id: true, flatCode: true } } },
+        include: {
+          flat: {
+            select: {
+              id: true,
+              flatCode: true,
+              // Include primary resident so the admin can send direct WhatsApp reminders
+              memberships: {
+                where: { status: 'ACTIVE', isPrimary: true, role: 'RESIDENT' },
+                take: 1,
+                select: {
+                  user: { select: { phone: true, firstName: true, lastName: true } },
+                },
+              },
+            },
+          },
+        },
         orderBy: { flatCode: 'asc' },
       }),
       this.prisma.maintenanceBill.count({ where: { societyId, billingPeriodId: periodId } }),

@@ -4,6 +4,7 @@ import { CreateSocietyDto } from './dto/create-society.dto';
 import { UpdateSocietyConfigDto } from './dto/update-society-config.dto';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
+import { generateUniqueJoinCode } from '../common/utils/join-code.util';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
@@ -120,5 +121,93 @@ export class SocietiesService {
     ]);
 
     return { buildings, flats, members, currentPeriod: activePeriod };
+  }
+
+  // ─── Join-code endpoints ────────────────────────────────────────────────────
+
+  /**
+   * Public lookup — resolves a join code to the society's name + flat list.
+   * Returns only what a prospective resident needs to fill the join form.
+   * No authentication required; the join code itself is the gate.
+   */
+  async findByJoinCode(joinCode: string) {
+    const code = joinCode.toUpperCase().trim();
+    const society = await this.prisma.society.findUnique({
+      where: { joinCode: code },
+      include: {
+        buildings: {
+          where: { isActive: true, deletedAt: null },
+          include: {
+            flats: {
+              where: { isActive: true, deletedAt: null },
+              select: { id: true, flatCode: true, unitNumber: true },
+              orderBy: { flatCode: 'asc' },
+            },
+          },
+          orderBy: { name: 'asc' },
+        },
+      },
+    });
+
+    if (!society || !society.isActive || society.deletedAt) {
+      throw new NotFoundException('Society not found for this join code');
+    }
+
+    const flats = society.buildings.flatMap((b) =>
+      b.flats.map((f) => ({ id: f.id, flatCode: f.flatCode })),
+    );
+
+    return {
+      id: society.id,
+      name: society.name,
+      displayName: society.displayName,
+      flats,
+    };
+  }
+
+  /**
+   * Admin-only — return the current join code for the admin's society.
+   * Generates one on the fly if the society was created before this feature.
+   */
+  async getJoinCode(societyId: string): Promise<{ joinCode: string; generatedAt: Date | null }> {
+    let society = await this.prisma.society.findUnique({
+      where: { id: societyId },
+      select: { id: true, joinCode: true, joinCodeGeneratedAt: true, isActive: true },
+    });
+    if (!society) throw new NotFoundException('Society not found');
+
+    // Back-fill for societies created before this feature
+    if (!society.joinCode) {
+      const newCode = await generateUniqueJoinCode(this.prisma);
+      society = await this.prisma.society.update({
+        where: { id: societyId },
+        data: { joinCode: newCode, joinCodeGeneratedAt: new Date() },
+        select: { id: true, joinCode: true, joinCodeGeneratedAt: true, isActive: true },
+      });
+    }
+
+    return {
+      joinCode: society.joinCode!,
+      generatedAt: society.joinCodeGeneratedAt,
+    };
+  }
+
+  /**
+   * Admin-only — rotate the join code. Invalidates the old code immediately.
+   * Existing members are unaffected; only new join attempts use the new code.
+   */
+  async regenerateJoinCode(societyId: string): Promise<{ joinCode: string; generatedAt: Date }> {
+    const society = await this.prisma.society.findUnique({ where: { id: societyId } });
+    if (!society) throw new NotFoundException('Society not found');
+
+    const newCode = await generateUniqueJoinCode(this.prisma);
+    const now = new Date();
+
+    await this.prisma.society.update({
+      where: { id: societyId },
+      data: { joinCode: newCode, joinCodeGeneratedAt: now },
+    });
+
+    return { joinCode: newCode, generatedAt: now };
   }
 }

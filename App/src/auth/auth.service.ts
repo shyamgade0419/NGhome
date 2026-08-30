@@ -17,11 +17,13 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { SelectSocietyDto } from './dto/select-society.dto';
 import { RegisterSocietyDto } from './dto/register-society.dto';
+import { JoinSocietyDto } from './dto/join-society.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
 import { AuditAction, SystemRole } from '@prisma/client';
+import { generateJoinCode, generateUniqueJoinCode } from '../common/utils/join-code.util';
 
 // ─── Canonical response shapes ────────────────────────────────────────────────
 
@@ -276,7 +278,8 @@ export class AuthService {
     const passwordHash = await argon2.hash(dto.admin.password);
 
     const result = await this.prisma.$transaction(async (tx) => {
-      // Create society
+      // Create society — generate a unique join code for resident self-registration
+      const joinCode = await generateUniqueJoinCode(tx);
       const society = await tx.society.create({
         data: {
           name: dto.society.name,
@@ -288,6 +291,8 @@ export class AuthService {
           country: dto.society.country,
           email: dto.society.contactEmail,
           phone: dto.society.contactPhone,
+          joinCode,
+          joinCodeGeneratedAt: new Date(),
           configuration: { create: {} },
         },
       });
@@ -650,6 +655,152 @@ export class AuthService {
       case 'm': date.setMinutes(date.getMinutes() + value); break;
     }
     return date;
+  }
+
+  // ─── Resident join-society ─────────────────────────────────────────────────
+
+  /**
+   * Register a new resident via the society's invite code.
+   * Creates: User (if new) + SocietyMembership (RESIDENT, ACTIVE).
+   * Issues a fully scoped session so the resident lands in the app immediately.
+   *
+   * If the email already exists globally but has no membership in this society,
+   * a membership is added to the existing account. The supplied password is
+   * ignored in that case — the resident uses their existing password.
+   */
+  async joinSociety(
+    dto: JoinSocietyDto,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<AuthResponse> {
+    const code = dto.joinCode.toUpperCase().trim();
+
+    // 1. Resolve society by join code
+    const society = await this.prisma.society.findUnique({
+      where: { joinCode: code },
+    });
+    if (!society || !society.isActive || society.deletedAt) {
+      throw new BadRequestException(
+        'Join code not found or expired. Ask your admin for the current code.',
+      );
+    }
+
+    // 2. Validate the flat belongs to this society and exists
+    const flat = await this.prisma.flat.findFirst({
+      where: { id: dto.flatId, societyId: society.id, deletedAt: null, isActive: true },
+      include: { building: { select: { name: true } } },
+    });
+    if (!flat) {
+      throw new BadRequestException(
+        'The selected flat does not exist in this society.',
+      );
+    }
+
+    const email = dto.email.trim().toLowerCase();
+
+    // 3. Guard against duplicate memberships
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
+      include: {
+        memberships: { where: { societyId: society.id } },
+      },
+    });
+
+    if (existingUser?.memberships?.length) {
+      throw new ConflictException(
+        'An account with this email is already a member of this society. Please log in.',
+      );
+    }
+
+    const passwordHash = await argon2.hash(dto.password);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Create user if first-time registrant
+      let user = existingUser;
+      if (!user) {
+        user = await tx.user.create({
+          data: {
+            email,
+            phone: dto.phone,
+            firstName: dto.firstName,
+            lastName: dto.lastName,
+            passwordHash,
+            isActive: true,
+            emailVerified: false,
+          },
+          include: { memberships: true },
+        });
+      }
+
+      // Create RESIDENT membership (ACTIVE — admin can remove if not legitimate)
+      const membership = await tx.societyMembership.create({
+        data: {
+          societyId: society.id,
+          userId: user.id,
+          flatId: flat.id,
+          role: SystemRole.RESIDENT,
+          status: 'ACTIVE',
+          isPrimary: true,
+        },
+      });
+
+      // Audit trail so admin can review new joins
+      await tx.auditLog.create({
+        data: {
+          actorId: user.id,
+          societyId: society.id,
+          action: AuditAction.USER_CREATED,
+          entityType: 'SocietyMembership',
+          entityId: membership.id,
+          newValues: {
+            email,
+            flatCode: flat.flatCode,
+            method: 'join_code',
+          } as Record<string, string>,
+          ipAddress,
+          userAgent,
+        },
+      });
+
+      return { user, membership };
+    });
+
+    const userDto = buildUserDto(result.user);
+    const membershipDto: MembershipDto = {
+      id: result.membership.id,
+      societyId: society.id,
+      societyName: society.displayName ?? society.name,
+      societyLogo: society.logoUrl,
+      role: SystemRole.RESIDENT,
+      flatId: flat.id,
+      flatNumber: flat.unitNumber,
+      buildingName: flat.building?.name ?? null,
+      status: 'ACTIVE',
+    };
+
+    const payload: JwtPayload = {
+      sub: result.user.id,
+      email: result.user.email,
+      isPlatformAdmin: false,
+      societyId: society.id,
+      role: SystemRole.RESIDENT,
+      membershipId: result.membership.id,
+      flatId: flat.id,
+    };
+
+    const tokens = await this.generateTokens(payload, result.user.id, ipAddress, userAgent);
+    return { ...tokens, user: userDto, memberships: [membershipDto] };
+  }
+
+  // ─── Join code helpers ──────────────────────────────────────────────────────
+
+  /** Public wrapper so SocietiesService can call this without importing AuthService. */
+  generateJoinCode(): string {
+    return generateJoinCode();
+  }
+
+  async generateUniqueJoinCode(tx?: Pick<typeof this.prisma, 'society'>): Promise<string> {
+    return generateUniqueJoinCode(tx ?? this.prisma);
   }
 
   private async createAuditLog(

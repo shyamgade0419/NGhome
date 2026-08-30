@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query, UseGuards,
+  Controller, Get, Post, Patch, Body, Param, Query, UseGuards, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
@@ -13,6 +13,7 @@ import { PlatformAdminGuard } from '../common/guards/platform-admin.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { SocietyId } from '../common/decorators/society-id.decorator';
+import { Public } from '../common/decorators/public.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 
 @ApiTags('Societies')
@@ -80,5 +81,49 @@ export class SocietiesController {
   @ApiOperation({ summary: '[Platform Admin] Get society by ID' })
   async findOne(@Param('id') id: string) {
     return this.societiesService.findOne(id);
+  }
+
+  // ─── Join-code endpoints ────────────────────────────────────────────────────
+
+  /**
+   * Public — resolve a join code to the society's name + flat list.
+   * No authentication required; the join code is the gate.
+   * Used by the mobile app before the resident creates their account.
+   */
+  @Public()
+  @Get('by-code/:code')
+  @ApiOperation({
+    summary: 'Look up a society by its invite/join code (public)',
+    description:
+      'Returns society name and the list of flats so the resident can pick theirs. ' +
+      'No authentication required. The join code is the only gate for this endpoint.',
+  })
+  async findByJoinCode(@Param('code') code: string) {
+    return this.societiesService.findByJoinCode(code);
+  }
+
+  /**
+   * Admin — view the current join code for their society.
+   * Generates one on the fly for societies created before this feature.
+   */
+  @Get('my/join-code')
+  @UseGuards(TenantGuard, RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @ApiOperation({ summary: 'Get the current society join/invite code (admin only)' })
+  async getJoinCode(@SocietyId() societyId: string) {
+    return this.societiesService.getJoinCode(societyId);
+  }
+
+  /**
+   * Admin — rotate the join code. Old code is immediately invalidated.
+   * Existing members are unaffected.
+   */
+  @Patch('my/regenerate-join-code')
+  @UseGuards(TenantGuard, RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Regenerate the society join code (admin only)' })
+  async regenerateJoinCode(@SocietyId() societyId: string) {
+    return this.societiesService.regenerateJoinCode(societyId);
   }
 }

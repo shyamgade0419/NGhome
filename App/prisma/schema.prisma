@@ -270,6 +270,9 @@ model Society {
   website            String?
   logoUrl            String?
   isActive           Boolean   @default(true)
+  // Resident self-registration via join code
+  joinCode              String?   @unique
+  joinCodeGeneratedAt   DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   deletedAt          DateTime?

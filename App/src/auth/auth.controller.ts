@@ -21,6 +21,7 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { SelectSocietyDto } from './dto/select-society.dto';
 import { RegisterSocietyDto } from './dto/register-society.dto';
+import { JoinSocietyDto } from './dto/join-society.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { Public } from '../common/decorators/public.decorator';
@@ -66,6 +67,29 @@ export class AuthController {
   @ApiResponse({ status: 409, description: 'Email already in use' })
   async registerSociety(@Body() dto: RegisterSocietyDto, @Req() req: Request) {
     return this.authService.registerSociety(
+      dto,
+      req.ip ?? undefined,
+      req.headers['user-agent'] ?? undefined,
+    );
+  }
+
+  @Public()
+  @Post('join-society')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Register a resident and join a society via invite code',
+    description:
+      'Public endpoint. Validates the society join code, creates a User account ' +
+      '(or re-uses an existing one with no membership in this society), creates a ' +
+      'RESIDENT SocietyMembership linked to the chosen flat, and returns a fully ' +
+      'scoped auth session. Membership is ACTIVE immediately; admin can remove ' +
+      'non-legitimate joins from Settings → Roles.',
+  })
+  @ApiResponse({ status: 201, description: 'Resident registered and session created' })
+  @ApiResponse({ status: 400, description: 'Invalid join code or flat' })
+  @ApiResponse({ status: 409, description: 'Email already a member of this society' })
+  async joinSociety(@Body() dto: JoinSocietyDto, @Req() req: Request) {
+    return this.authService.joinSociety(
       dto,
       req.ip ?? undefined,
       req.headers['user-agent'] ?? undefined,
