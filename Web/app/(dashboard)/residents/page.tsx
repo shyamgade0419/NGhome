@@ -70,7 +70,22 @@ export default function ResidentsPage() {
     window.open(`https://wa.me/${e164}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener');
   };
 
-  const residents: Resident[] = data?.data ?? [];
+  // API returns { data: User[], meta } where User has firstName/lastName and nested memberships.
+  // Map to the Resident shape the table expects.
+  const residents: Resident[] = (data?.data ?? []).map((u: any) => {
+    const membership = u.memberships?.[0];
+    return {
+      id: membership?.id ?? u.id,
+      userId: u.id,
+      displayName: [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email,
+      email: u.email,
+      phone: u.phone ?? null,
+      flatNumber: membership?.flat?.flatCode ?? '',
+      buildingName: membership?.flat?.building?.name ?? '',
+      role: membership?.role ?? '',
+      status: membership?.status ?? (u.isActive ? 'ACTIVE' : 'INACTIVE'),
+    };
+  });
 
   return (
     <>
