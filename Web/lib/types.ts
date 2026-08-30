@@ -97,8 +97,11 @@ export interface MaintenanceBill {
   invoiceNumber: string;
   flatCode: string;
   totalAmount: string;
+  baseAmount: string;
   paidAmount: string;
   pendingAmount: string;
+  /** Water charges allocated to this flat for the period. */
+  waterCharges?: string | null;
   isPaid: boolean;
   isPublished: boolean;
   dueDate: string;
