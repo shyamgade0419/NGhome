@@ -58,13 +58,18 @@ export default function ResidentDashboard() {
             {user?.currentRole?.replace(/_/g, ' ') ?? 'Resident'}
           </Text>
         </View>
-        <TouchableOpacity onPress={() => router.push('/(app)/resident/profile')} hitSlop={8}>
-          <View style={styles.avatarCircle}>
-            <Text style={styles.avatarText}>
-              {user?.firstName?.[0]}{user?.lastName?.[0]}
-            </Text>
-          </View>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => router.push('/(app)/resident/notifications' as any)} hitSlop={8}>
+            <Ionicons name="notifications-outline" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/(app)/resident/profile')} hitSlop={8}>
+            <View style={styles.avatarCircle}>
+              <Text style={styles.avatarText}>
+                {user?.firstName?.[0]}{user?.lastName?.[0]}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -194,6 +199,7 @@ const styles = StyleSheet.create({
   },
   greeting: { ...typography.headingSmall, color: colors.text },
   flatInfo: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   avatarCircle: {
     width: 36,
     height: 36,

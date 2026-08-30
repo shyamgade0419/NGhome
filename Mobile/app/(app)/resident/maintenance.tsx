@@ -1,6 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, FlatList, RefreshControl, TouchableOpacity } from 'react-native';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { billingApi } from '@/api/endpoints/billing.api';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
@@ -11,13 +13,19 @@ import { colors, spacing, typography, radius } from '@/theme';
 import { MaintenanceBill } from '@/types/billing.types';
 
 export default function ResidentMaintenanceScreen() {
+  const router = useRouter();
+
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['my-bills'],
     queryFn: () => billingApi.getMyBills({ limit: 24 }),
   });
 
   const renderItem = ({ item }: { item: MaintenanceBill }) => (
-    <View style={styles.card}>
+    <TouchableOpacity
+      style={styles.card}
+      activeOpacity={0.85}
+      onPress={() => router.push(`/(app)/resident/bills/${item.id}` as any)}
+    >
       <View style={styles.cardTop}>
         <View>
           <Text style={styles.invoiceNum}>{item.invoiceNumber ?? '—'}</Text>
@@ -52,7 +60,13 @@ export default function ResidentMaintenanceScreen() {
           <Text style={styles.pendingAmount}>₹{parseFloat(item.pendingAmount).toLocaleString('en-IN')}</Text>
         </View>
       )}
-    </View>
+
+      {/* Drill-in hint */}
+      <View style={styles.drillRow}>
+        <Text style={styles.drillHint}>Tap for full details &amp; share</Text>
+        <Ionicons name="chevron-forward" size={13} color={colors.textTertiary} />
+      </View>
+    </TouchableOpacity>
   );
 
   return (
@@ -107,4 +121,6 @@ const styles = StyleSheet.create({
   pendingRow: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: colors.warningLight, padding: spacing.md, borderRadius: radius.md },
   pendingLabel: { ...typography.labelLarge, color: '#92400E' },
   pendingAmount: { ...typography.headingSmall, color: '#92400E' },
+  drillRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 2 },
+  drillHint: { ...typography.bodySmall, color: colors.textTertiary },
 });
