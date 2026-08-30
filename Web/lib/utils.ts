@@ -6,8 +6,11 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(value: string | number): string {
-  const num = typeof value === 'string' ? parseFloat(value) : value;
+export function formatCurrency(value: string | number | null | undefined | { toString(): string }): string {
+  if (value === null || value === undefined) return '₹0';
+  // Guard against Prisma Decimal objects ({s,e,d}) that lack toJSON() on some backends.
+  const raw = typeof value === 'number' ? value : parseFloat(String(value));
+  const num = Number.isNaN(raw) ? 0 : raw;
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
@@ -28,7 +31,8 @@ export function formatDateTime(iso: string): string {
   return formatDate(iso, 'dd MMM yyyy, h:mm a');
 }
 
-export function initials(name: string): string {
+export function initials(name: string | null | undefined): string {
+  if (!name) return '?';
   return name
     .split(' ')
     .slice(0, 2)

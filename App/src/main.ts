@@ -3,7 +3,14 @@ import { ValidationPipe, ClassSerializerInterceptor } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
+import { Decimal } from '@prisma/client/runtime/library';
 import { AppModule } from './app.module';
+
+// Prisma uses decimal.js-light which lacks toJSON(). Without this patch, Decimal fields
+// serialize as raw {s, e, d} objects instead of numeric strings, causing NaN on the frontend.
+(Decimal.prototype as any).toJSON = function () {
+  return this.toString();
+};
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {

@@ -41,11 +41,18 @@ export class ReportsController {
     });
     if (!period) return { error: 'Period not found' };
 
+    // Explicitly serialize Prisma Decimal fields — they don't have toJSON() and would
+    // otherwise be emitted as raw decimal.js objects ({s,e,d}) which parseFloat() reads as NaN.
     return {
-      period,
-      totalBilled: period.totalBilled,
-      totalCollected: period.totalCollected,
-      totalPending: period.totalPending,
+      period: {
+        ...period,
+        totalBilled: period.totalBilled.toString(),
+        totalCollected: period.totalCollected.toString(),
+        totalPending: period.totalPending.toString(),
+      },
+      totalBilled: period.totalBilled.toString(),
+      totalCollected: period.totalCollected.toString(),
+      totalPending: period.totalPending.toString(),
       collectionRate:
         period.totalBilled.toNumber() > 0
           ? ((period.totalCollected.toNumber() / period.totalBilled.toNumber()) * 100).toFixed(2) + '%'

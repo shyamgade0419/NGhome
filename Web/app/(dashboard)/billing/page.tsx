@@ -61,7 +61,7 @@ export default function BillingPage() {
   const generateMutation = useMutation({
     mutationFn: (periodId: string) => billingApi.generateBills(periodId),
     onSuccess: (res: any) => {
-      toast.success(`Generated ${res.data?.generated ?? '?'} bills`);
+      toast.success(`Generated ${res.data?.billsGenerated ?? res.data?.generated ?? '?'} bills`);
       qc.invalidateQueries({ queryKey: ['billing-periods'] });
     },
     onError: () => toast.error('Failed to generate bills'),
