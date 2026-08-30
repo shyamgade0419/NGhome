@@ -14,7 +14,7 @@ const COOKIE_OPTS = {
 async function callBackendRefresh(
   refreshToken: string,
 ): Promise<{ accessToken: string; refreshToken: string } | null> {
-  const res = await fetch(`${API_URL}/auth/refresh`, {
+  const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refreshToken }),
@@ -33,7 +33,7 @@ async function proxy(req: NextRequest): Promise<NextResponse> {
 
   const pathSegments = req.nextUrl.pathname.replace('/api/backend', '');
   const search = req.nextUrl.search;
-  const url = `${API_URL}${pathSegments}${search}`;
+  const url = `${API_URL}/api/v1${pathSegments}${search}`;
 
   // Read body once; reused for both the initial attempt and any retry.
   const body =

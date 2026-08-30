@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
   }
 
-  const res = await fetch(`${API_URL}/auth/select-society`, {
+  const res = await fetch(`${API_URL}/api/v1/auth/select-society`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

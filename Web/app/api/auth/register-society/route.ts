@@ -12,7 +12,7 @@ const COOKIE_OPTS = {
 export async function POST(req: NextRequest) {
   const body = await req.json();
 
-  const res = await fetch(`${API_URL}/auth/register-society`, {
+  const res = await fetch(`${API_URL}/api/v1/auth/register-society`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

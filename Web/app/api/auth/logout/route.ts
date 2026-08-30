@@ -9,7 +9,7 @@ export async function POST() {
   const refreshToken = cookieStore.get('ng_refresh')?.value;
 
   if (accessToken && refreshToken) {
-    await fetch(`${API_URL}/auth/logout`, {
+    await fetch(`${API_URL}/api/v1/auth/logout`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
