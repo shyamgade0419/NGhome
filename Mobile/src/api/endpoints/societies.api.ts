@@ -66,6 +66,24 @@ export const societiesApi = {
     return data;
   },
 
+  // ─── Join code ─────────────────────────────────────────────────────────────
+
+  /** Return the current join/invite code for this society (admin only). */
+  getJoinCode: async (): Promise<{ joinCode: string; generatedAt: string | null }> => {
+    const { data } = await apiClient.get<ApiResponse<{ joinCode: string; generatedAt: string | null }>>(
+      '/societies/my/join-code',
+    );
+    return data.data;
+  },
+
+  /** Rotate the join code — old code is immediately invalidated (admin only). */
+  regenerateJoinCode: async (): Promise<{ joinCode: string; generatedAt: string }> => {
+    const { data } = await apiClient.patch<ApiResponse<{ joinCode: string; generatedAt: string }>>(
+      '/societies/my/regenerate-join-code',
+    );
+    return data.data;
+  },
+
   // Admin: list all residents in the society
   getResidents: async (query?: PaginationQuery & { buildingId?: string; flatId?: string }) => {
     const { data } = await apiClient.get<PaginatedResponse<{

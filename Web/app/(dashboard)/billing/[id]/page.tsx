@@ -444,10 +444,10 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
                             <button
                               onClick={() => openWhatsApp(
                                 buildBillMessage(bill, period),
-                                (bill as any).residentPhone ?? (bill as any).flat?.primaryResident?.phone,
+                                bill.residentPhone,
                               )}
                               title={
-                                (bill as any).residentPhone
+                                bill.residentPhone
                                   ? `WhatsApp Flat ${bill.flatCode} directly`
                                   : `WhatsApp reminder for Flat ${bill.flatCode}`
                               }
@@ -703,7 +703,7 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {unpaidBills.length} unpaid {unpaidBills.length === 1 ? 'flat' : 'flats'} ·{' '}
-                  {unpaidBills.filter((b) => !!(b as any).residentPhone).length} with saved numbers
+                  {unpaidBills.filter((b) => !!b.residentPhone).length} with saved numbers
                 </p>
               </div>
               <button
@@ -717,8 +717,8 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
             {/* List */}
             <div className="overflow-y-auto flex-1 divide-y divide-slate-50">
               {unpaidBills.map((bill) => {
-                const phone = (bill as any).residentPhone ?? (bill as any).flat?.primaryResident?.phone;
-                const residentName = (bill as any).residentName ?? (bill as any).flat?.primaryResident?.displayName;
+                const phone = bill.residentPhone;
+                const residentName = bill.residentName;
                 const pending = parseFloat(bill.pendingAmount ?? '0');
                 return (
                   <div key={bill.id} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
@@ -763,11 +763,11 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
             {/* Footer */}
             <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between gap-3 bg-slate-50 rounded-b-2xl">
               {/* Copy all phone numbers that we have */}
-              {unpaidBills.some((b) => !!(b as any).residentPhone) ? (
+              {unpaidBills.some((b) => !!b.residentPhone) ? (
                 <button
                   onClick={() => {
                     const nums = unpaidBills
-                      .map((b) => (b as any).residentPhone)
+                      .map((b) => b.residentPhone)
                       .filter(Boolean)
                       .join(', ');
                     navigator.clipboard.writeText(nums);

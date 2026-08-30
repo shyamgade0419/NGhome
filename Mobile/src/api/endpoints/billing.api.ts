@@ -54,6 +54,13 @@ export const billingApi = {
     return data.data;
   },
 
+  closePeriod: async (periodId: string) => {
+    const { data } = await apiClient.post<ApiResponse<BillingPeriod>>(
+      `/billing/periods/${periodId}/close`,
+    );
+    return data.data;
+  },
+
   getBillsForPeriod: async (periodId: string, query?: PaginationQuery) => {
     const { data } = await apiClient.get<PaginatedResponse<MaintenanceBill>>(
       `/billing/periods/${periodId}/bills`,

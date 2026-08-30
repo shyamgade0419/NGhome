@@ -37,6 +37,7 @@ export default function ResidentBillingScreen() {
         style={styles.card}
         activeOpacity={0.8}
         onPress={() => router.push(`/(app)/resident/bills/${item.id}` as any)}
+
       >
         <View style={styles.cardTop}>
           <View>

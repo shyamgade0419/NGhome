@@ -200,6 +200,15 @@ export const societyApi = {
   deleteFlat: (id: string) => api.delete(`/flats/${id}`),
 
   stats: () => api.get('/societies/my/stats'),
+
+  // Member management
+  removeMember: (userId: string) => api.delete(`/users/society/${userId}/remove`),
+
+  // Resident invite / join code (admin only)
+  getJoinCode: (): Promise<{ data: { joinCode: string; generatedAt: string | null } }> =>
+    api.get('/societies/my/join-code'),
+  regenerateJoinCode: (): Promise<{ data: { joinCode: string; generatedAt: string } }> =>
+    api.patch('/societies/my/regenerate-join-code'),
 };
 
 // Water billing

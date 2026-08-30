@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 import { authApi } from '@/api/endpoints/auth.api';
 import { useAuth } from '@/hooks/useAuth';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
@@ -21,6 +22,7 @@ import { colors, spacing, typography, radius } from '@/theme';
 
 export default function ResidentProfileScreen() {
   const { user, logout } = useAuth();
+  const router = useRouter();
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [currentPwd, setCurrentPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
@@ -102,9 +104,8 @@ export default function ResidentProfileScreen() {
             },
             {
               icon: 'notifications-outline' as const,
-              label: 'Notification Preferences',
-              onPress: () =>
-                Alert.alert('Coming Soon', 'Notification preference settings coming soon.'),
+              label: 'Notifications',
+              onPress: () => router.push('/(app)/resident/notifications' as any),
             },
             {
               icon: 'shield-outline' as const,

@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/hooks/useAuth';
@@ -17,52 +18,49 @@ interface SettingItem {
 
 export default function SettingsScreen() {
   const { user, logout } = useAuth();
+  const router = useRouter();
 
   const items: SettingItem[] = [
     {
       icon: 'business-outline',
       label: 'Society Settings',
-      sublabel: 'Billing cycle, currency, notifications',
-      onPress: () => Alert.alert('Coming Soon', 'Society configuration editor coming in next release.'),
+      sublabel: 'Name, address, contact details',
+      onPress: () => router.push('/(app)/admin/settings/society' as any),
     },
     {
       icon: 'people-outline',
       label: 'Manage Residents',
-      sublabel: 'Add, edit, deactivate residents',
-      onPress: () => Alert.alert('Coming Soon', 'Resident management screen coming soon.'),
+      sublabel: 'View residents & their flats',
+      onPress: () => router.push('/(app)/admin/settings/residents' as any),
     },
     {
       icon: 'home-outline',
       label: 'Buildings & Flats',
-      sublabel: 'Manage society structure',
-      onPress: () => Alert.alert('Coming Soon', 'Building and flat management coming soon.'),
+      sublabel: 'View society structure',
+      onPress: () => router.push('/(app)/admin/settings/buildings' as any),
     },
     {
       icon: 'shield-checkmark-outline',
       label: 'Roles & Permissions',
-      sublabel: 'Manage committee access',
-      onPress: () => Alert.alert('Coming Soon', 'Role management coming in next release.'),
+      sublabel: 'Manage committee member access',
+      onPress: () => router.push('/(app)/admin/settings/roles' as any),
     },
     {
       icon: 'notifications-outline',
       label: 'Notification Settings',
-      sublabel: 'Configure alerts',
-      onPress: () => Alert.alert('Coming Soon', 'Notification settings coming soon.'),
+      sublabel: 'Configure resident visibility',
+      onPress: () => router.push('/(app)/admin/settings/notifications' as any),
     },
     {
       icon: 'person-outline',
       label: 'My Profile',
       sublabel: 'Update personal information',
-      onPress: () =>
-        Alert.alert(
-          'Profile',
-          `Name: ${user?.displayName}\nEmail: ${user?.email}\nRole: ${user?.currentRole?.replace(/_/g, ' ')}`,
-        ),
+      onPress: () => router.push('/(app)/admin/profile' as any),
     },
     {
       icon: 'key-outline',
       label: 'Change Password',
-      onPress: () => Alert.alert('Coming Soon', 'Change password screen coming soon.'),
+      onPress: () => router.push('/(app)/admin/profile' as any),
     },
     {
       icon: 'log-out-outline',

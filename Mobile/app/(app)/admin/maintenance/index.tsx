@@ -6,8 +6,11 @@ import {
   FlatList,
   Alert,
   RefreshControl,
+  TouchableOpacity,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { billingApi } from '@/api/endpoints/billing.api';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
@@ -15,10 +18,11 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusBadge, billingStatusVariant } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
-import { colors, spacing, typography } from '@/theme';
+import { colors, spacing, typography, radius } from '@/theme';
 import { BillingPeriod, billingPeriodName } from '@/types/billing.types';
 
 export default function MaintenanceScreen() {
+  const router = useRouter();
   const queryClient = useQueryClient();
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
@@ -48,7 +52,16 @@ export default function MaintenanceScreen() {
   });
 
   const renderItem = ({ item }: { item: BillingPeriod }) => (
-    <View style={styles.card}>
+    <TouchableOpacity
+      style={styles.card}
+      activeOpacity={0.85}
+      onPress={() => router.push(`/(app)/admin/billing/${item.id}` as any)}
+    >
+      {/* Drill-in indicator */}
+      <View style={styles.drillRow}>
+        <Text style={styles.drillHint}>Tap for bill details</Text>
+        <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} />
+      </View>
       <View style={styles.cardHeader}>
         <View style={styles.cardTitle}>
           <Text style={styles.periodName}>{billingPeriodName(item)}</Text>
@@ -111,7 +124,7 @@ export default function MaintenanceScreen() {
           )}
         </View>
       )}
-    </View>
+    </TouchableOpacity>
   );
 
   return (
@@ -153,6 +166,14 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     gap: spacing.md,
   },
+  drillRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 2,
+    marginBottom: -4,
+  },
+  drillHint: { ...typography.bodySmall, color: colors.textTertiary, fontSize: 10 },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',

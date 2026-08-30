@@ -104,6 +104,10 @@ export interface MaintenanceBill {
   dueDate: string;
   createdAt: string;
   flat?: { id: string; flatCode: string };
+  /** Populated by billing service when a primary resident has a phone number. */
+  residentPhone?: string | null;
+  /** Primary resident's display name — populated alongside residentPhone. */
+  residentName?: string | null;
 }
 
 // Matches backend PaymentSubmission Prisma model (with joins from service)

@@ -41,6 +41,15 @@ export default function AdminLayout() {
         }}
       />
       <Tabs.Screen
+        name="water/index"
+        options={{
+          title: 'Water',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'water' : 'water-outline'} size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="payments/index"
         options={{
           title: 'Payments',
@@ -69,7 +78,13 @@ export default function AdminLayout() {
       />
       {/* Navigable but hidden from tab bar */}
       <Tabs.Screen name="payments/[id]" options={{ href: null }} />
+      <Tabs.Screen name="billing/[id]" options={{ href: null }} />
       <Tabs.Screen name="settings/index" options={{ href: null }} />
+      <Tabs.Screen name="settings/society" options={{ href: null }} />
+      <Tabs.Screen name="settings/roles" options={{ href: null }} />
+      <Tabs.Screen name="settings/residents" options={{ href: null }} />
+      <Tabs.Screen name="settings/buildings" options={{ href: null }} />
+      <Tabs.Screen name="settings/notifications" options={{ href: null }} />
     </Tabs>
   );
 }

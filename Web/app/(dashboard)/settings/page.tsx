@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building2, Shield, Bell, IndianRupee, ChevronRight,
   Save, Plus, X, ExternalLink, UserCog, Trash2,
-  Sparkles, Lock, CheckCircle2,
+  Sparkles, Lock, CheckCircle2, Key, Copy, RefreshCw, Share2,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -437,6 +437,119 @@ function BillingRulesSection({ admin }: { admin: boolean }) {
   );
 }
 
+/* ─── Resident Invite Code section ─────────────────────────────── */
+function InviteCodeSection() {
+  const qc = useQueryClient();
+  const [copied, setCopied] = useState(false);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['web-join-code'],
+    queryFn: () => societyApi.getJoinCode().then((r) => r.data),
+  });
+
+  const regenMutation = useMutation({
+    mutationFn: () => societyApi.regenerateJoinCode(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['web-join-code'] });
+      toast.success('New invite code generated');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to regenerate'),
+  });
+
+  const code = data?.joinCode ?? '';
+  const generatedAt = data?.generatedAt
+    ? new Date(data.generatedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    : null;
+
+  const handleCopy = () => {
+    if (!code) return;
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleShare = () => {
+    const msg =
+      `🏢 Join our society on NG Home!\n\n` +
+      `Tap "Have an invite code? Join your society" on the NG Home login screen and enter:\n\n` +
+      `${code}\n\n` +
+      `Download NG Home and create your account in minutes.`;
+    const url = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank', 'noopener');
+  };
+
+  const handleRegenerate = () => {
+    if (!confirm('The current code will stop working immediately. Residents who haven\'t joined yet will need the new code. Continue?')) return;
+    regenMutation.mutate();
+  };
+
+  if (isLoading) return <div className="py-2 text-sm text-slate-500">Loading invite code…</div>;
+
+  return (
+    <div className="rounded-xl border border-primary-100 bg-primary-50/60 p-5 space-y-4">
+      {/* Header */}
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary-200 bg-white">
+          <Key size={16} className="text-primary-600" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-slate-900">Resident Invite Code</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Share with residents — they enter this code on the NG Home mobile app to join your society
+          </p>
+        </div>
+      </div>
+
+      {/* Code display */}
+      <div className="flex items-center justify-center rounded-xl border border-slate-200 bg-white py-4">
+        <span className="font-mono text-3xl font-bold tracking-[0.2em] text-slate-900 select-all">
+          {code || '—'}
+        </span>
+      </div>
+      {generatedAt && (
+        <p className="text-center text-xs text-slate-400">Generated {generatedAt}</p>
+      )}
+
+      {/* Actions */}
+      <div className="flex gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          className="flex-1"
+          onClick={handleCopy}
+          disabled={!code}
+        >
+          {copied ? <CheckCircle2 size={14} className="mr-1.5 text-green-600" /> : <Copy size={14} className="mr-1.5" />}
+          {copied ? 'Copied!' : 'Copy Code'}
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="flex-1 !text-green-700 !border-green-200 !bg-green-50 hover:!bg-green-100"
+          onClick={handleShare}
+          disabled={!code}
+        >
+          <Share2 size={14} className="mr-1.5" />
+          Share via WhatsApp
+        </Button>
+      </div>
+
+      {/* Regenerate */}
+      <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+        <p className="text-xs text-slate-400">Regenerating invalidates the current code immediately</p>
+        <button
+          onClick={handleRegenerate}
+          disabled={regenMutation.isPending || !code}
+          className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 underline underline-offset-2 disabled:opacity-40"
+        >
+          <RefreshCw size={12} className={regenMutation.isPending ? 'animate-spin' : ''} />
+          {regenMutation.isPending ? 'Regenerating…' : 'Regenerate code'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Roles & Permissions section ──────────────────────────────── */
 const ROLE_OPTIONS = [
   { value: 'SOCIETY_ADMIN', label: 'Society Admin' },
@@ -705,6 +818,22 @@ export default function SettingsPage() {
           <SocietyDetailsSection admin={admin} />
           <BillingConfigSection admin={admin} />
         </Card>
+
+        {/* Resident Invite Code */}
+        {admin && (
+          <Card padding="lg">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Key size={18} className="text-primary-600" />
+                <CardTitle>Resident Invite Code</CardTitle>
+              </div>
+            </CardHeader>
+            <p className="mb-4 text-sm text-slate-500">
+              Residents use this code on the NG Home mobile app to self-register and join your society.
+            </p>
+            <InviteCodeSection />
+          </Card>
+        )}
 
         {/* Residents & Flats — link out to dedicated page */}
         <Card padding="lg" className="cursor-pointer hover:border-primary-200 transition-colors" onClick={() => router.push('/flats')}>
