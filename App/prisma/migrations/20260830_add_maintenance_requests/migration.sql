@@ -1,14 +1,21 @@
--- CreateEnum
-CREATE TYPE "MaintenanceCategory" AS ENUM ('PLUMBING', 'ELECTRICAL', 'CIVIL', 'CLEANING', 'SECURITY', 'ELEVATOR', 'CARPENTRY', 'PEST_CONTROL', 'OTHER');
+-- CreateEnum (safe — skips if already exists)
+DO $$ BEGIN
+  CREATE TYPE "MaintenanceCategory" AS ENUM ('PLUMBING', 'ELECTRICAL', 'CIVIL', 'CLEANING', 'SECURITY', 'ELEVATOR', 'CARPENTRY', 'PEST_CONTROL', 'OTHER');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- CreateEnum
-CREATE TYPE "MaintenancePriority" AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'URGENT');
+DO $$ BEGIN
+  CREATE TYPE "MaintenancePriority" AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'URGENT');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- CreateEnum
-CREATE TYPE "MaintenanceRequestStatus" AS ENUM ('OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED');
+DO $$ BEGIN
+  CREATE TYPE "MaintenanceRequestStatus" AS ENUM ('OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- CreateTable
-CREATE TABLE "maintenance_requests" (
+-- CreateTable (safe — skips if already exists)
+CREATE TABLE IF NOT EXISTS "maintenance_requests" (
     "id"            TEXT NOT NULL,
     "societyId"     TEXT NOT NULL,
     "flatId"        TEXT,
@@ -27,27 +34,32 @@ CREATE TABLE "maintenance_requests" (
     CONSTRAINT "maintenance_requests_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
-CREATE INDEX "maintenance_requests_societyId_idx" ON "maintenance_requests"("societyId");
+-- CreateIndex (safe)
+CREATE INDEX IF NOT EXISTS "maintenance_requests_societyId_idx" ON "maintenance_requests"("societyId");
+CREATE INDEX IF NOT EXISTS "maintenance_requests_residentId_idx" ON "maintenance_requests"("residentId");
+CREATE INDEX IF NOT EXISTS "maintenance_requests_status_idx" ON "maintenance_requests"("status");
 
--- CreateIndex
-CREATE INDEX "maintenance_requests_residentId_idx" ON "maintenance_requests"("residentId");
-
--- CreateIndex
-CREATE INDEX "maintenance_requests_status_idx" ON "maintenance_requests"("status");
-
--- AddForeignKey
-ALTER TABLE "maintenance_requests" ADD CONSTRAINT "maintenance_requests_societyId_fkey"
+-- AddForeignKey (safe — skips if constraint already exists)
+DO $$ BEGIN
+  ALTER TABLE "maintenance_requests" ADD CONSTRAINT "maintenance_requests_societyId_fkey"
     FOREIGN KEY ("societyId") REFERENCES "societies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- AddForeignKey
-ALTER TABLE "maintenance_requests" ADD CONSTRAINT "maintenance_requests_flatId_fkey"
+DO $$ BEGIN
+  ALTER TABLE "maintenance_requests" ADD CONSTRAINT "maintenance_requests_flatId_fkey"
     FOREIGN KEY ("flatId") REFERENCES "flats"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- AddForeignKey
-ALTER TABLE "maintenance_requests" ADD CONSTRAINT "maintenance_requests_residentId_fkey"
+DO $$ BEGIN
+  ALTER TABLE "maintenance_requests" ADD CONSTRAINT "maintenance_requests_residentId_fkey"
     FOREIGN KEY ("residentId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- AddForeignKey
-ALTER TABLE "maintenance_requests" ADD CONSTRAINT "maintenance_requests_assignedToId_fkey"
+DO $$ BEGIN
+  ALTER TABLE "maintenance_requests" ADD CONSTRAINT "maintenance_requests_assignedToId_fkey"
     FOREIGN KEY ("assignedToId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
