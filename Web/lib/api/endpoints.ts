@@ -294,6 +294,20 @@ export const documentsApi = {
   remove: (id: string) => api.delete(`/documents/${id}`),
 };
 
+// Helpdesk / Maintenance Requests
+export const helpdeskApi = {
+  list: (params?: { status?: string; category?: string; page?: number; limit?: number }) =>
+    api.get('/helpdesk', { params }),
+  get: (id: string) => api.get(`/helpdesk/${id}`),
+  create: (data: {
+    title: string; description?: string;
+    category?: string; priority?: string; flatId?: string;
+  }) => api.post('/helpdesk', data),
+  updateStatus: (id: string, data: {
+    status: string; adminNotes?: string; assignedToId?: string;
+  }) => api.patch(`/helpdesk/${id}/status`, data),
+};
+
 // Audit Logs
 export const auditLogsApi = {
   list: (params?: {

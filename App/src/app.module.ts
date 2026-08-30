@@ -30,6 +30,7 @@ import { AnnouncementsModule } from './announcements/announcements.module';
 import { MeetingsModule } from './meetings/meetings.module';
 import { DocumentsModule } from './documents/documents.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
+import { HelpdeskModule } from './helpdesk/helpdesk.module';
 import { HealthModule } from './health/health.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
@@ -69,6 +70,7 @@ import { ReportsModule } from './reports/reports.module';
     MeetingsModule,
     DocumentsModule,
     AuditLogsModule,
+    HelpdeskModule,
     NotificationsModule,
     ReportsModule,
     HealthModule,

@@ -23,6 +23,7 @@ import {
   CalendarDays,
   FolderOpen,
   ShieldCheck,
+  Wrench,
 } from 'lucide-react';
 import { cn, initials } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -41,6 +42,7 @@ const ADMIN_NAV = [
   { href: '/water', icon: Droplets, label: 'Water Billing' },
   { href: '/reports', icon: BarChart3, label: 'Reports' },
   { href: '/community', icon: Megaphone, label: 'Community' },
+  { href: '/helpdesk', icon: Wrench, label: 'Helpdesk' },
   { href: '/meetings', icon: CalendarDays, label: 'Meetings' },
   { href: '/documents', icon: FolderOpen, label: 'Documents' },
   { href: '/salaries', icon: UserCircle, label: 'Salaries' },
@@ -54,6 +56,8 @@ const RESIDENT_NAV = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/billing/my', icon: FileText, label: 'My Bills' },
   { href: '/community', icon: Megaphone, label: 'Community' },
+  { href: '/helpdesk', icon: Wrench, label: 'Helpdesk' },
+  { href: '/documents', icon: FolderOpen, label: 'Documents' },
   { href: '/notifications', icon: Bell, label: 'Notifications' },
 ];
 

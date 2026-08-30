@@ -9,6 +9,7 @@ import {
   Alert,
   TouchableOpacity,
   Linking,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -197,31 +198,56 @@ export default function SubmitPaymentScreen() {
               </View>
             </View>
 
-            {/* UPI deep-link card — shown only when UPI is selected and society has a UPI ID */}
-            {selectedMethod === 'UPI' && upiId && myBill && (
-              <TouchableOpacity
-                style={styles.upiCard}
-                onPress={() => {
-                  const amount = parseFloat(myBill.pendingAmount).toFixed(2);
-                  const note = activePeriod ? billingPeriodName(activePeriod) : 'Maintenance';
-                  const upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent('Society')}&am=${amount}&tn=${encodeURIComponent(note)}&cu=INR`;
-                  Linking.openURL(upiLink).catch(() =>
-                    Alert.alert('No UPI App', 'Could not open a UPI app. Please install PhonePe, GPay, or Paytm.'),
-                  );
-                }}
-                activeOpacity={0.85}
-              >
-                <View style={styles.upiCardLeft}>
-                  <Ionicons name="qr-code-outline" size={28} color={colors.primary} />
-                  <View style={styles.upiCardText}>
-                    <Text style={styles.upiCardTitle}>Pay ₹{parseFloat(myBill.pendingAmount).toLocaleString('en-IN')} via UPI</Text>
-                    <Text style={styles.upiCardSub}>Opens PhonePe · GPay · Paytm · BHIM</Text>
-                    <Text style={styles.upiCardId}>{upiId}</Text>
+            {/* UPI payment section — deep link + QR fallback for iOS */}
+            {selectedMethod === 'UPI' && upiId && myBill && (() => {
+              const amount = parseFloat(myBill.pendingAmount).toFixed(2);
+              const note = activePeriod ? billingPeriodName(activePeriod) : 'Maintenance';
+              const upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent('Society')}&am=${amount}&tn=${encodeURIComponent(note)}&cu=INR`;
+              const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiLink)}`;
+
+              return (
+                <>
+                  {/* Tap-to-open card (works on Android; iOS shows QR below) */}
+                  <TouchableOpacity
+                    style={styles.upiCard}
+                    onPress={() =>
+                      Linking.openURL(upiLink).catch(() =>
+                        Alert.alert('No UPI App', 'Could not open a UPI app. Scan the QR code below with PhonePe, GPay, or any UPI app.'),
+                      )
+                    }
+                    activeOpacity={0.85}
+                  >
+                    <View style={styles.upiCardLeft}>
+                      <Ionicons name="qr-code-outline" size={28} color={colors.primary} />
+                      <View style={styles.upiCardText}>
+                        <Text style={styles.upiCardTitle}>Pay ₹{parseFloat(myBill.pendingAmount).toLocaleString('en-IN')} via UPI</Text>
+                        <Text style={styles.upiCardSub}>Opens PhonePe · GPay · Paytm · BHIM</Text>
+                        <Text style={styles.upiCardId}>{upiId}</Text>
+                      </View>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+                  </TouchableOpacity>
+
+                  {/* QR code fallback — scan with any UPI app (especially useful on iOS) */}
+                  <View style={styles.qrSection}>
+                    <View style={styles.qrDivider}>
+                      <View style={styles.qrDividerLine} />
+                      <Text style={styles.qrDividerText}>or scan QR</Text>
+                      <View style={styles.qrDividerLine} />
+                    </View>
+                    <View style={styles.qrBox}>
+                      <Image
+                        source={{ uri: qrUrl }}
+                        style={styles.qrImage}
+                        resizeMode="contain"
+                      />
+                      <Text style={styles.qrHint}>Open PhonePe / GPay → Scan QR</Text>
+                      <Text style={styles.qrId}>{upiId}</Text>
+                    </View>
                   </View>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.primary} />
-              </TouchableOpacity>
-            )}
+                </>
+              );
+            })()}
 
             <Controller
               control={control}
@@ -338,4 +364,21 @@ const styles = StyleSheet.create({
   upiCardTitle: { ...typography.labelLarge, color: colors.primary },
   upiCardSub: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },
   upiCardId: { ...typography.bodySmall, color: colors.primary, fontFamily: 'monospace', marginTop: 2 },
+
+  qrSection: { gap: spacing.sm },
+  qrDivider: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  qrDividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  qrDividerText: { ...typography.bodySmall, color: colors.textTertiary },
+  qrBox: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.base,
+  },
+  qrImage: { width: 180, height: 180, borderRadius: radius.sm },
+  qrHint: { ...typography.bodySmall, color: colors.textSecondary },
+  qrId: { ...typography.labelSmall, color: colors.textTertiary, fontFamily: 'monospace' },
 });

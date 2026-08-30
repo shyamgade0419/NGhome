@@ -182,6 +182,32 @@ enum AuditAction {
   OTHER
 }
 
+enum MaintenanceCategory {
+  PLUMBING
+  ELECTRICAL
+  CIVIL
+  CLEANING
+  SECURITY
+  ELEVATOR
+  CARPENTRY
+  PEST_CONTROL
+  OTHER
+}
+
+enum MaintenancePriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum MaintenanceRequestStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
 // ─── USER & AUTH ──────────────────────────────────────────────────────────────
 
 model User {
@@ -211,6 +237,8 @@ model User {
   createdAnnouncements Announcement[]
   createdMeetings    Meeting[]
   uploadedDocuments  Document[]
+  submittedRequests  MaintenanceRequest[]  @relation("RequestSubmitter")
+  assignedRequests   MaintenanceRequest[]  @relation("RequestAssignee")
 
   @@map("users")
 }
@@ -295,6 +323,7 @@ model Society {
   statements         MonthlyStatement[]
   waterConfigs       WaterBillingConfig[]
   transactions       Transaction[]
+  maintenanceRequests MaintenanceRequest[]
 
   @@map("societies")
 }
@@ -394,6 +423,7 @@ model Flat {
   maintenanceBills MaintenanceBill[]
   waterReadings    WaterMeterReading[]
   paymentSubmissions PaymentSubmission[]
+  maintenanceRequests MaintenanceRequest[]
 
   @@unique([societyId, flatCode])
   @@index([societyId])
@@ -1036,4 +1066,33 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ─── HELPDESK ─────────────────────────────────────────────────────────────────
+
+model MaintenanceRequest {
+  id           String                   @id @default(uuid())
+  societyId    String
+  flatId       String?
+  residentId   String
+  assignedToId String?
+  title        String
+  description  String?
+  category     MaintenanceCategory      @default(OTHER)
+  priority     MaintenancePriority      @default(MEDIUM)
+  status       MaintenanceRequestStatus @default(OPEN)
+  adminNotes   String?
+  resolvedAt   DateTime?
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+
+  society    Society  @relation(fields: [societyId], references: [id])
+  flat       Flat?    @relation(fields: [flatId], references: [id])
+  resident   User     @relation("RequestSubmitter", fields: [residentId], references: [id])
+  assignedTo User?    @relation("RequestAssignee", fields: [assignedToId], references: [id])
+
+  @@index([societyId])
+  @@index([residentId])
+  @@index([status])
+  @@map("maintenance_requests")
 }
