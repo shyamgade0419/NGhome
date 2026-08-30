@@ -47,7 +47,7 @@ function buildBillMessage(bill: MaintenanceBill, period: any, societyName = 'Soc
   ];
 
   if (water > 0) {
-    lines.push(`   • Maintenance: ₹${parseFloat(bill.baseAmount).toLocaleString('en-IN')}`);
+    lines.push(`   • Maintenance: ₹${parseFloat(bill.baseAmount ?? '0').toLocaleString('en-IN')}`);
     lines.push(`   • Water Charges: ₹${water.toLocaleString('en-IN')}`);
   }
 
@@ -424,9 +424,9 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
                     <Tr key={bill.id}>
                       <Td className="font-mono text-xs">{bill.invoiceNumber}</Td>
                       <Td className="font-semibold">{bill.flatCode}</Td>
-                      <Td className="tabular-nums">{formatCurrency(bill.baseAmount)}</Td>
+                      <Td className="tabular-nums">{formatCurrency(bill.baseAmount ?? '0')}</Td>
                       <Td className="tabular-nums text-blue-600">
-                        {parseFloat(bill.waterCharges) > 0 ? formatCurrency(bill.waterCharges) : '—'}
+                        {parseFloat(bill.waterCharges ?? '0') > 0 ? formatCurrency(bill.waterCharges ?? '0') : '—'}
                       </Td>
                       <Td className="font-semibold tabular-nums">{formatCurrency(bill.totalAmount)}</Td>
                       <Td className="text-green-600 tabular-nums">{formatCurrency(bill.paidAmount)}</Td>
@@ -526,9 +526,9 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
                           <tr key={bill.id} className="hover:bg-slate-50 print:hover:bg-transparent">
                             <td className="px-4 py-2.5 font-mono text-xs text-slate-600">{bill.invoiceNumber}</td>
                             <td className="px-4 py-2.5 font-semibold text-slate-900">{bill.flatCode}</td>
-                            <td className="px-4 py-2.5 text-right tabular-nums">{formatCurrency(bill.baseAmount)}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums">{formatCurrency(bill.baseAmount ?? '0')}</td>
                             <td className="px-4 py-2.5 text-right tabular-nums text-blue-600">
-                              {parseFloat(bill.waterCharges) > 0 ? formatCurrency(bill.waterCharges) : '—'}
+                              {parseFloat(bill.waterCharges ?? '0') > 0 ? formatCurrency(bill.waterCharges ?? '0') : '—'}
                             </td>
                             <td className="px-4 py-2.5 text-right tabular-nums">
                               {parseFloat(bill.adjustments) !== 0 ? formatCurrency(bill.adjustments) : '—'}
