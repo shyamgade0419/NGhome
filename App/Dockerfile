@@ -41,15 +41,18 @@ RUN addgroup -g 1001 -S nodejs && \
 COPY package*.json ./
 COPY prisma ./prisma/
 
-RUN apk add --no-cache python3 make g++ openssl && \
+RUN apk add --no-cache python3 make g++ openssl curl && \
     npm ci --only=production && \
     npx prisma generate && \
     npm cache clean --force && \
     apk del python3 make g++
-# ↑ openssl is intentionally kept after the del — the Prisma query engine
-#   (linux-musl-openssl-3.0.x) links against libssl.so.3 / libcrypto.so.3
-#   at runtime.  Removing it causes Prisma to fall back to the WASM engine
-#   which only accepts prisma:// URLs, crashing the app immediately.
+# ↑ openssl and curl are intentionally kept after the del:
+#   • openssl — Prisma query engine (linux-musl-openssl-3.0.x) links against
+#               libssl.so.3 / libcrypto.so.3 at runtime; removing it forces
+#               the WASM engine which only accepts prisma:// URLs (crash).
+#   • curl    — Coolify's container healthcheck runs `curl http://localhost:3000/health`
+#               inside the container; without it the check always fails and
+#               Coolify rolls back the deployment.
 
 # Copy build output
 COPY --from=builder /app/dist ./dist
