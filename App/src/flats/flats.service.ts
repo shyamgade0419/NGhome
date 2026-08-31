@@ -59,7 +59,15 @@ export class FlatsService {
       this.prisma.flat.count({ where }),
     ]);
 
-    return { data, meta: buildPaginationMeta(total, page, limit) };
+    return {
+      // Convert Prisma Decimal 'area' to a plain number so class-transformer
+      // doesn't serialise it as a raw {s,e,d} object.
+      data: data.map((flat) => ({
+        ...flat,
+        area: flat.area != null ? Number(flat.area) : null,
+      })),
+      meta: buildPaginationMeta(total, page, limit),
+    };
   }
 
   async findOne(societyId: string, id: string) {
@@ -77,7 +85,7 @@ export class FlatsService {
       },
     });
     if (!flat) throw new NotFoundException('Flat not found');
-    return flat;
+    return { ...flat, area: flat.area != null ? Number(flat.area) : null };
   }
 
   // Called by resident — only their own flat
@@ -104,9 +112,10 @@ export class FlatsService {
   }
 
   async findByBuilding(societyId: string, buildingId: string) {
-    return this.prisma.flat.findMany({
+    const flats = await this.prisma.flat.findMany({
       where: { societyId, buildingId, deletedAt: null },
       orderBy: { flatCode: 'asc' },
     });
+    return flats.map((f) => ({ ...f, area: f.area != null ? Number(f.area) : null }));
   }
 }
