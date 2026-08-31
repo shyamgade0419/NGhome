@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { User, KeyRound, Save } from 'lucide-react';
@@ -37,10 +37,19 @@ async function postChangePassword(body: { currentPassword: string; newPassword: 
 export default function ProfilePage() {
   const { user, activeMembership, refreshUser } = useAuth();
 
-  // Profile form state
-  const [firstName, setFirstName] = useState(user?.firstName ?? '');
-  const [lastName, setLastName] = useState(user?.lastName ?? '');
-  const [phone, setPhone] = useState(user?.phone ?? '');
+  // Profile form state — initialised empty; synced once user data loads
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phone, setPhone] = useState('');
+
+  // Populate form fields once the auth context resolves the user
+  useEffect(() => {
+    if (user) {
+      setFirstName(user.firstName ?? '');
+      setLastName(user.lastName ?? '');
+      setPhone(user.phone ?? '');
+    }
+  }, [user?.id]); // run once when the user identity is first available
 
   // Password form state
   const [currentPassword, setCurrentPassword] = useState('');
