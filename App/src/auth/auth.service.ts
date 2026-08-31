@@ -437,6 +437,23 @@ export class AuthService {
     await this.createAuditLog(userId, undefined, AuditAction.LOGOUT);
   }
 
+  async updateProfile(
+    userId: string,
+    dto: { firstName?: string; lastName?: string; phone?: string },
+  ) {
+    const data: Record<string, string> = {};
+    if (dto.firstName !== undefined) data.firstName = dto.firstName.trim();
+    if (dto.lastName !== undefined) data.lastName = dto.lastName.trim();
+    if (dto.phone !== undefined) data.phone = dto.phone.trim();
+
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data,
+      select: { id: true, email: true, phone: true, firstName: true, lastName: true, isActive: true, isPlatformAdmin: true, createdAt: true },
+    });
+    return { ...user, displayName: [user.firstName, user.lastName].filter(Boolean).join(' ') };
+  }
+
   async changePassword(user: AuthenticatedUser, dto: ChangePasswordDto): Promise<void> {
     const dbUser = await this.prisma.user.findUnique({ where: { id: user.id } });
     if (!dbUser) throw new BadRequestException('User not found');

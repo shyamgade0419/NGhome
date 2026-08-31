@@ -141,15 +141,21 @@ export function Sidebar() {
         {/* User footer */}
         <div className="flex-shrink-0 border-t border-slate-100 p-3">
           <div className="flex items-center gap-2.5 rounded-lg px-2 py-2">
-            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary-100 text-xs font-bold text-primary-700">
-              {user ? initials(user.displayName) : '…'}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold text-slate-900">{user?.displayName}</p>
-              <p className="truncate text-[10px] text-slate-400">
-                {(role || 'User').replace(/_/g, ' ')}
-              </p>
-            </div>
+            <Link
+              href="/profile"
+              className="flex min-w-0 flex-1 items-center gap-2.5 hover:opacity-80 transition-opacity"
+              title="My Profile"
+            >
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary-100 text-xs font-bold text-primary-700">
+                {user ? initials(user.displayName) : '…'}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-semibold text-slate-900">{user?.displayName}</p>
+                <p className="truncate text-[10px] text-slate-400">
+                  {(role || 'User').replace(/_/g, ' ')}
+                </p>
+              </div>
+            </Link>
             <button
               onClick={logout}
               className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"

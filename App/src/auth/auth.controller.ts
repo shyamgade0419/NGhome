@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Patch,
   Body,
   HttpCode,
   HttpStatus,
@@ -149,6 +150,17 @@ export class AuthController {
   @ApiOperation({ summary: 'Get current user profile and active membership context' })
   async getProfile(@CurrentUser() user: AuthenticatedUser) {
     return this.authService.getProfile(user.id, user.membershipId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('update-profile')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update own profile (name, phone)' })
+  async updateProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { firstName?: string; lastName?: string; phone?: string },
+  ) {
+    return this.authService.updateProfile(user.id, body);
   }
 
   @UseGuards(JwtAuthGuard)

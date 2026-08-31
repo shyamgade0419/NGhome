@@ -17,10 +17,15 @@ import { Spinner } from '@/components/ui/Spinner';
 import { formatDate, formatFileSize } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
 
-const ACCESS_LEVEL_OPTIONS = [
+const ALL_ACCESS_LEVEL_OPTIONS = [
   { value: 'PUBLIC', label: 'Public (everyone)' },
   { value: 'RESIDENTS_ONLY', label: 'Residents only' },
   { value: 'ADMIN_ONLY', label: 'Admin only' },
+];
+
+const RESIDENT_ACCESS_LEVEL_OPTIONS = [
+  { value: 'PUBLIC', label: 'Public (everyone)' },
+  { value: 'RESIDENTS_ONLY', label: 'Residents only' },
 ];
 
 const CATEGORY_OPTIONS = [
@@ -39,8 +44,9 @@ function accessBadge(level: string) {
   return <Badge variant="warning">Admin</Badge>;
 }
 
-function AddDocumentModal({ onClose }: { onClose: () => void }) {
+function AddDocumentModal({ onClose, isAdmin }: { onClose: () => void; isAdmin: boolean }) {
   const qc = useQueryClient();
+  const accessOptions = isAdmin ? ALL_ACCESS_LEVEL_OPTIONS : RESIDENT_ACCESS_LEVEL_OPTIONS;
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -87,7 +93,7 @@ function AddDocumentModal({ onClose }: { onClose: () => void }) {
           <Input label="Title *" placeholder="AGM Notice 2025" value={form.title} onChange={set('title')} />
           <Input label="Description" placeholder="Brief description" value={form.description} onChange={set('description')} />
           <div className="grid grid-cols-2 gap-4">
-            <Select label="Access Level" value={form.accessLevel} onChange={set('accessLevel')} options={ACCESS_LEVEL_OPTIONS} />
+            <Select label="Access Level" value={form.accessLevel} onChange={set('accessLevel')} options={accessOptions} />
             <Select label="Category" value={form.category} onChange={set('category')}
               options={CATEGORY_OPTIONS.filter((o) => o.value).map((o) => ({ value: o.value, label: o.label }))} />
           </div>
@@ -135,7 +141,7 @@ export default function DocumentsPage() {
 
   return (
     <>
-      {showAdd && <AddDocumentModal onClose={() => setShowAdd(false)} />}
+      {showAdd && <AddDocumentModal isAdmin={isAdmin} onClose={() => setShowAdd(false)} />}
       <Header
         title="Documents"
         actions={
@@ -147,11 +153,9 @@ export default function DocumentsPage() {
               options={CATEGORY_OPTIONS}
               className="w-44"
             />
-            {isAdmin && (
-              <Button size="sm" onClick={() => setShowAdd(true)}>
-                <Plus size={15} className="mr-1.5" /> Add Document
-              </Button>
-            )}
+            <Button size="sm" onClick={() => setShowAdd(true)}>
+              <Plus size={15} className="mr-1.5" /> Add Document
+            </Button>
           </div>
         }
       />
@@ -162,8 +166,8 @@ export default function DocumentsPage() {
           <EmptyState
             icon={FolderOpen}
             title="No documents"
-            description={isAdmin ? 'Upload notices, minutes, and important files.' : 'No documents have been published yet.'}
-            action={isAdmin ? <Button size="sm" onClick={() => setShowAdd(true)}><Plus size={14} className="mr-1" /> Add</Button> : undefined}
+            description="Upload notices, minutes, and important files."
+            action={<Button size="sm" onClick={() => setShowAdd(true)}><Plus size={14} className="mr-1" /> Add</Button>}
           />
         ) : (
           <Table>

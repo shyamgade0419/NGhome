@@ -21,7 +21,7 @@ export class DocumentsController {
 
   @Post()
   @UseGuards(RolesGuard)
-  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_STAFF)
+  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_STAFF, SystemRole.RESIDENT)
   @ApiOperation({ summary: 'Upload document metadata' })
   create(
     @SocietyId() societyId: string,
