@@ -12,6 +12,7 @@ import { PageSpinner } from '@/components/ui/Spinner';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import toast from 'react-hot-toast';
+import { parseDecimalLike } from '@/lib/utils';
 
 const statusVariant: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {
   ACTIVE: 'success',
@@ -343,7 +344,7 @@ export default function FlatsPage() {
                                 <Td className="font-medium text-slate-900">{f.flatCode}</Td>
                                 <Td>{f.unitNumber}</Td>
                                 <Td className="text-slate-600">{f.category ?? '—'}</Td>
-                                <Td className="text-slate-600">{f.area ? Number(f.area).toLocaleString('en-IN') : '—'}</Td>
+                                <Td className="text-slate-600">{f.area != null ? parseDecimalLike(f.area).toLocaleString('en-IN') : '—'}</Td>
                                 <Td className="text-slate-600">
                                   {f.bedrooms != null ? `${f.bedrooms}B` : '—'}{f.bathrooms != null ? ` / ${f.bathrooms}Ba` : ''}
                                 </Td>
