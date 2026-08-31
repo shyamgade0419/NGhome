@@ -21,6 +21,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { formatDateTime } from '@/lib/utils';
 import { Announcement } from '@/lib/types';
+import { useAuth } from '@/lib/auth/AuthContext';
 
 const schema = z.object({
   title: z.string().min(1, 'Title required'),
@@ -38,9 +39,13 @@ const priorityVariant = (p: string) => {
   return m[p] ?? 'default';
 };
 
+const ADMIN_ROLES = ['SOCIETY_ADMIN', 'SOCIETY_ACCOUNTANT', 'SOCIETY_STAFF', 'PLATFORM_ADMIN'];
+
 export default function CommunityPage() {
   const qc = useQueryClient();
+  const { user, activeMembership } = useAuth();
   const [showModal, setShowModal] = useState(false);
+  const isAdmin = ADMIN_ROLES.includes(activeMembership?.role ?? '') || !!user?.isPlatformAdmin;
 
   const { data, isLoading } = useQuery({
     queryKey: ['announcements'],
@@ -80,9 +85,11 @@ export default function CommunityPage() {
         title="Community"
         subtitle="Announcements & notices"
         actions={
-          <Button onClick={() => setShowModal(true)} size="sm">
-            <Plus size={14} /> New Announcement
-          </Button>
+          isAdmin ? (
+            <Button onClick={() => setShowModal(true)} size="sm">
+              <Plus size={14} /> New Announcement
+            </Button>
+          ) : undefined
         }
       />
       <PageContainer className="space-y-6">
@@ -93,14 +100,23 @@ export default function CommunityPage() {
             icon={Megaphone}
             title="No announcements yet"
             description="Post your first announcement to notify all residents"
-            action={<Button onClick={() => setShowModal(true)} size="sm"><Plus size={14} /> Create Announcement</Button>}
+            action={
+              isAdmin ? (
+                <Button onClick={() => setShowModal(true)} size="sm"><Plus size={14} /> Create Announcement</Button>
+              ) : undefined
+            }
           />
         )}
 
         {announcements.length > 0 && (
           <div className="space-y-3">
             {announcements.map((a) => (
-              <AnnouncementCard key={a.id} announcement={a} onDelete={() => deleteMutation.mutate(a.id)} />
+              <AnnouncementCard
+                key={a.id}
+                announcement={a}
+                canDelete={isAdmin}
+                onDelete={() => deleteMutation.mutate(a.id)}
+              />
             ))}
           </div>
         )}
@@ -134,7 +150,15 @@ export default function CommunityPage() {
   );
 }
 
-function AnnouncementCard({ announcement: a, onDelete }: { announcement: Announcement; onDelete: () => void }) {
+function AnnouncementCard({
+  announcement: a,
+  canDelete,
+  onDelete,
+}: {
+  announcement: Announcement;
+  canDelete: boolean;
+  onDelete: () => void;
+}) {
   return (
     <Card padding="lg" className="flex gap-4">
       <div className="flex-1 min-w-0">
@@ -148,13 +172,15 @@ function AnnouncementCard({ announcement: a, onDelete }: { announcement: Announc
           {a.expiresAt && ` · Expires ${formatDateTime(a.expiresAt)}`}
         </p>
       </div>
-      <button
-        onClick={onDelete}
-        className="flex-shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
-        title="Delete"
-      >
-        <Trash2 size={15} />
-      </button>
+      {canDelete && (
+        <button
+          onClick={onDelete}
+          className="flex-shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+          title="Delete"
+        >
+          <Trash2 size={15} />
+        </button>
+      )}
     </Card>
   );
 }
