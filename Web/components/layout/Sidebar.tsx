@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   Wrench,
   LayoutList,
+  HelpCircle,
 } from 'lucide-react';
 import { cn, initials } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -140,6 +141,22 @@ export function Sidebar() {
             );
           })}
         </nav>
+
+        {/* Help shortcut */}
+        <div className="flex-shrink-0 px-3 pb-1">
+          <Link
+            href="/help"
+            className={cn(
+              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+              pathname === '/help'
+                ? 'bg-primary-50 text-primary-700'
+                : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700',
+            )}
+          >
+            <HelpCircle size={16} />
+            Help Center
+          </Link>
+        </div>
 
         {/* User footer */}
         <div className="flex-shrink-0 border-t border-slate-100 p-3">
