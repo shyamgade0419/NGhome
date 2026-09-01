@@ -21,12 +21,45 @@ export class ReportsController {
   async outstandingDues(@SocietyId() societyId: string) {
     const bills = await this.prisma.maintenanceBill.findMany({
       where: { societyId, isPublished: true, isPaid: false },
-      include: { flat: { select: { flatCode: true } } },
+      include: {
+        flat: {
+          select: {
+            flatCode: true,
+            memberships: {
+              where: { status: 'ACTIVE', role: 'RESIDENT' },
+              take: 1,
+              select: { user: { select: { firstName: true, lastName: true } } },
+            },
+          },
+        },
+      },
       orderBy: { dueDate: 'asc' },
     });
 
     const total = bills.reduce((sum, b) => sum + b.pendingAmount.toNumber(), 0);
-    return { bills, totalOutstanding: total };
+
+    // Explicitly serialize Decimal fields so they arrive as numbers, not {s,e,d} objects
+    const serialized = bills.map((b) => ({
+      id: b.id,
+      invoiceNumber: b.invoiceNumber,
+      flatCode: b.flatCode,
+      dueDate: b.dueDate,
+      isPaid: b.isPaid,
+      isPublished: b.isPublished,
+      baseAmount: b.baseAmount.toNumber(),
+      waterCharges: b.waterCharges.toNumber(),
+      totalAmount: b.totalAmount.toNumber(),
+      paidAmount: b.paidAmount.toNumber(),
+      pendingAmount: b.pendingAmount.toNumber(),
+      flat: {
+        flatCode: b.flat.flatCode,
+      },
+      residentName: b.flat.memberships[0]?.user
+        ? `${b.flat.memberships[0].user.firstName} ${b.flat.memberships[0].user.lastName}`
+        : null,
+    }));
+
+    return { bills: serialized, totalOutstanding: total };
   }
 
   @Get('collection-summary')
@@ -79,14 +112,19 @@ export class ReportsController {
       include: { category: { select: { name: true } } },
     });
 
-    const byCategory: Record<string, number> = {};
+    const byCategoryMap: Record<string, number> = {};
     let total = 0;
 
     for (const expense of expenses) {
       const cat = expense.category?.name ?? 'Uncategorized';
-      byCategory[cat] = (byCategory[cat] ?? 0) + expense.amount.toNumber();
+      byCategoryMap[cat] = (byCategoryMap[cat] ?? 0) + expense.amount.toNumber();
       total += expense.amount.toNumber();
     }
+
+    // Return as sorted array so the frontend can map() directly
+    const byCategory = Object.entries(byCategoryMap)
+      .map(([category, amount]) => ({ category, total: amount }))
+      .sort((a, b) => b.total - a.total);
 
     return { byCategory, total, count: expenses.length };
   }
@@ -94,16 +132,23 @@ export class ReportsController {
   @Get('account-balances')
   @ApiOperation({ summary: 'Current balances of all accounts' })
   async accountBalances(@SocietyId() societyId: string) {
-    return this.prisma.account.findMany({
+    const accounts = await this.prisma.account.findMany({
       where: { societyId, isActive: true },
       select: {
         id: true,
         name: true,
         accountType: true,
         currentBalance: true,
+        openingBalance: true,
         bankName: true,
       },
       orderBy: { name: 'asc' },
     });
+    // Serialize Decimal fields
+    return accounts.map((a) => ({
+      ...a,
+      currentBalance: a.currentBalance.toNumber(),
+      openingBalance: a.openingBalance.toNumber(),
+    }));
   }
 }

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Download, FileText, Printer, RefreshCw,
-  Send, CheckCircle2, Lock, Droplets, MessageSquare,
+  Send, CheckCircle2, Lock, Droplets, MessageSquare, LayoutList,
 } from 'lucide-react';
 import Link from 'next/link';
 import { use } from 'react';
@@ -126,7 +126,7 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
   const { user, activeMembership } = useAuth();
   const isAdmin = can.manageBilling(activeMembership?.role, user?.isPlatformAdmin);
 
-  const [activeTab, setActiveTab] = useState<'bills' | 'report' | 'water'>('bills');
+  const [activeTab, setActiveTab] = useState<'bills' | 'report' | 'water' | 'statement'>('bills');
   const [remindAllOpen, setRemindAllOpen] = useState(false);
 
   /* Period + bills */
@@ -153,6 +153,13 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
     queryKey: ['water-period-summary', id],
     queryFn: () => waterApi.getPeriodSummary(id).then((r: any) => r.data ?? r),
     enabled: activeTab === 'water' && !!period,
+  });
+
+  /* Comprehensive monthly statement */
+  const { data: statementData, isLoading: statementLoading } = useQuery({
+    queryKey: ['billing-period-statement', id],
+    queryFn: () => billingApi.getPeriodStatement(id).then((r: any) => r.data ?? r),
+    enabled: activeTab === 'statement' && !!period,
   });
 
   /* Generate bills */
@@ -376,9 +383,10 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
         </div>
 
         {/* Tabs */}
-        <div className="print:hidden flex gap-1 rounded-xl border border-slate-200 bg-white p-1 w-fit">
+        <div className="print:hidden flex gap-1 rounded-xl border border-slate-200 bg-white p-1 w-fit overflow-x-auto">
           {([
             { id: 'bills', label: 'All Bills', icon: FileText },
+            { id: 'statement', label: 'Monthly Statement', icon: LayoutList },
             { id: 'report', label: 'Holistic Report', icon: Printer },
             { id: 'water', label: 'Water Summary', icon: Droplets },
           ] as const).map(({ id: t, label, icon: Icon }) => (
@@ -601,6 +609,161 @@ export default function BillingPeriodDetailPage({ params }: { params: Promise<{ 
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Monthly Statement tab */}
+        {activeTab === 'statement' && (
+          <div className="space-y-4 print:hidden">
+            {statementLoading && <PageSpinner />}
+            {!statementLoading && (!statementData || statementData.statements?.length === 0) && (
+              <div className="rounded-xl border border-slate-200 bg-white py-12 text-center text-sm text-slate-400">
+                <LayoutList size={32} className="mx-auto mb-3 text-slate-300" />
+                No bills generated yet. Generate bills first to view the monthly statement.
+              </div>
+            )}
+            {statementData?.statements?.length > 0 && (
+              <div className="space-y-4">
+                {/* Print notice */}
+                <div className="print:hidden rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800 flex items-center gap-2">
+                  <Printer size={14} />
+                  This is the comprehensive per-flat maintenance statement.
+                  Use <strong>Download PDF</strong> to save it.
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-100">
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      Monthly Maintenance Statement — {MONTH_NAMES[period.periodMonth]} {period.periodYear}
+                    </h3>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Due: {formatDate(period.dueDate)}
+                    </p>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-100 bg-slate-50">
+                          <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Flat</th>
+                          <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Resident</th>
+                          <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">General Maint.</th>
+                          <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Prev. Reading</th>
+                          <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Curr. Reading</th>
+                          <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Units (KL)</th>
+                          <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Rate/KL</th>
+                          <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Water Charges</th>
+                          <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Discount</th>
+                          <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Late Fee</th>
+                          <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Other</th>
+                          <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Arrears</th>
+                          <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Total Payable</th>
+                          <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {statementData.statements.map((s: any) => {
+                          const discount = s.adjustments < 0 ? Math.abs(s.adjustments) : 0;
+                          return (
+                            <tr
+                              key={s.billId}
+                              className={cn(
+                                'hover:bg-slate-50',
+                                s.isPaid ? 'opacity-60' : '',
+                              )}
+                            >
+                              <td className="px-3 py-2.5 font-semibold text-slate-900 whitespace-nowrap">{s.flatCode}</td>
+                              <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap max-w-[120px] truncate">{s.residentName}</td>
+                              <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">{formatCurrency(s.generalMaintenance)}</td>
+                              <td className="px-3 py-2.5 text-right tabular-nums text-slate-500 whitespace-nowrap">
+                                {s.waterReading ? s.waterReading.openingReading.toFixed(2) : '—'}
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums text-slate-500 whitespace-nowrap">
+                                {s.waterReading ? s.waterReading.closingReading.toFixed(2) : '—'}
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                                {s.waterReading ? s.waterReading.consumption.toFixed(3) : '—'}
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums text-slate-500 whitespace-nowrap">
+                                {s.waterReading?.effectiveRate ? formatCurrency(s.waterReading.effectiveRate) : '—'}
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums text-blue-600 whitespace-nowrap">
+                                {s.waterCharges > 0 ? formatCurrency(s.waterCharges) : '—'}
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums text-green-600 whitespace-nowrap">
+                                {discount > 0 ? `−${formatCurrency(discount)}` : '—'}
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums text-amber-700 whitespace-nowrap">
+                                {s.lateFee > 0 ? formatCurrency(s.lateFee) : '—'}
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                                {s.otherCharges > 0 ? formatCurrency(s.otherCharges) : '—'}
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums text-red-600 whitespace-nowrap">
+                                {s.arrears > 0 ? formatCurrency(s.arrears) : '—'}
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums font-bold text-slate-900 whitespace-nowrap">
+                                {formatCurrency(s.totalPayable)}
+                              </td>
+                              <td className="px-3 py-2.5 whitespace-nowrap">
+                                <span className={cn(
+                                  'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
+                                  s.isPaid
+                                    ? 'bg-green-100 text-green-700'
+                                    : s.isPublished
+                                    ? 'bg-amber-100 text-amber-700'
+                                    : 'bg-slate-100 text-slate-600',
+                                )}>
+                                  {s.isPaid ? '✓ Paid' : s.isPublished ? 'Unpaid' : 'Draft'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-slate-300 bg-slate-50 font-bold text-sm">
+                          <td className="px-3 py-3 text-slate-700" colSpan={2}>Totals</td>
+                          <td className="px-3 py-3 text-right tabular-nums">
+                            {formatCurrency(statementData.statements.reduce((s: number, r: any) => s + r.generalMaintenance, 0))}
+                          </td>
+                          {/* Skip reading columns */}
+                          <td colSpan={4} />
+                          <td className="px-3 py-3 text-right tabular-nums text-blue-600">
+                            {formatCurrency(statementData.statements.reduce((s: number, r: any) => s + r.waterCharges, 0))}
+                          </td>
+                          <td className="px-3 py-3 text-right tabular-nums text-green-600">
+                            {formatCurrency(statementData.statements.reduce((s: number, r: any) => s + Math.abs(Math.min(0, r.adjustments)), 0))}
+                          </td>
+                          <td className="px-3 py-3 text-right tabular-nums text-amber-700">
+                            {formatCurrency(statementData.statements.reduce((s: number, r: any) => s + r.lateFee, 0))}
+                          </td>
+                          <td className="px-3 py-3 text-right tabular-nums">
+                            {formatCurrency(statementData.statements.reduce((s: number, r: any) => s + r.otherCharges, 0))}
+                          </td>
+                          <td className="px-3 py-3 text-right tabular-nums text-red-600">
+                            {formatCurrency(statementData.statements.reduce((s: number, r: any) => s + r.arrears, 0))}
+                          </td>
+                          <td className="px-3 py-3 text-right tabular-nums text-slate-900">
+                            {formatCurrency(statementData.statements.reduce((s: number, r: any) => s + r.totalPayable, 0))}
+                          </td>
+                          <td />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Legend */}
+                <div className="text-xs text-slate-400 space-y-0.5 px-1">
+                  <p>• <strong>General Maint.</strong> = base maintenance charge from billing rules</p>
+                  <p>• <strong>Water Charges</strong> = consumption × rate per KL</p>
+                  <p>• <strong>Discount</strong> = any credit adjustment applied to the bill</p>
+                  <p>• <strong>Arrears</strong> = unpaid balance from previous billing periods</p>
+                  <p>• <strong>Total Payable</strong> = General + Water − Discount + Late Fee + Other + Arrears</p>
+                </div>
               </div>
             )}
           </div>

@@ -73,6 +73,9 @@ export const billingApi = {
   // Full period report for PDF / holistic view (admin)
   getPeriodReport: (periodId: string) => api.get(`/billing/periods/${periodId}/report`),
 
+  // Comprehensive monthly statement: general maintenance + water readings + arrears + total payable
+  getPeriodStatement: (periodId: string) => api.get(`/billing/periods/${periodId}/statement`),
+
   // Resident: view own bills
   getMyBills: (params?: Record<string, unknown>) => api.get('/billing/my-bills', { params }),
   getMyBill: (billId: string) => api.get(`/billing/my-bills/${billId}`),

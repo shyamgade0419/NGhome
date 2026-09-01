@@ -365,6 +365,118 @@ export class BillingService {
     return { society, period, bills };
   }
 
+  /**
+   * Comprehensive monthly maintenance statement per flat.
+   * Returns general maintenance, water readings, adjustments/discount,
+   * late fees, other charges, and arrears from prior unpaid bills —
+   * giving admins and residents a single-view total payable breakdown.
+   */
+  async getPeriodStatement(societyId: string, periodId: string) {
+    const period = await this.findPeriod(societyId, periodId);
+
+    const bills = await this.prisma.maintenanceBill.findMany({
+      where: { societyId, billingPeriodId: periodId },
+      include: {
+        flat: {
+          include: {
+            memberships: {
+              where: { status: 'ACTIVE', role: 'RESIDENT' },
+              take: 1,
+              include: {
+                user: { select: { firstName: true, lastName: true, phone: true } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { flatCode: 'asc' },
+    });
+
+    // Water readings keyed by flatId
+    const waterReadings = await this.prisma.waterMeterReading.findMany({
+      where: { societyId, billingPeriodId: periodId },
+    });
+    const waterByFlat = new Map<string, typeof waterReadings[0]>();
+    for (const r of waterReadings) {
+      waterByFlat.set(r.flatId, r);
+    }
+
+    // Arrears: sum of pendingAmount from other published-but-unpaid bills per flat
+    const flatIds = bills.map((b) => b.flatId);
+    const arrearsRows = await this.prisma.maintenanceBill.groupBy({
+      by: ['flatId'],
+      where: {
+        societyId,
+        flatId: { in: flatIds },
+        isPublished: true,
+        isPaid: false,
+        billingPeriodId: { not: periodId },
+      },
+      _sum: { pendingAmount: true },
+    });
+    const arrearsMap = new Map<string, number>();
+    for (const r of arrearsRows) {
+      arrearsMap.set(r.flatId, r._sum.pendingAmount?.toNumber() ?? 0);
+    }
+
+    const statements = bills.map((bill) => {
+      const resident = bill.flat.memberships[0]?.user ?? null;
+      const water = waterByFlat.get(bill.flatId) ?? null;
+      const arrears = arrearsMap.get(bill.flatId) ?? 0;
+
+      const generalMaintenance = bill.baseAmount.toNumber();
+      const waterCharges = bill.waterCharges.toNumber();
+      const adjustments = bill.adjustments.toNumber();
+      const lateFee = bill.lateFee.toNumber();
+      const otherCharges = bill.otherCharges.toNumber();
+      const totalPayable = generalMaintenance + waterCharges + adjustments + lateFee + otherCharges + arrears;
+
+      return {
+        flatCode: bill.flatCode,
+        flatId: bill.flatId,
+        billId: bill.id,
+        invoiceNumber: bill.invoiceNumber,
+        isPaid: bill.isPaid,
+        isPublished: bill.isPublished,
+        residentName: resident ? `${resident.firstName} ${resident.lastName}` : '—',
+        residentPhone: resident?.phone ?? null,
+        generalMaintenance,
+        waterReading: water
+          ? {
+              openingReading: water.openingReading.toNumber(),
+              closingReading: water.closingReading.toNumber(),
+              consumption: water.consumption.toNumber(),
+              unit: water.unit,
+              effectiveRate: water.effectiveRate?.toNumber() ?? null,
+              waterCharges: water.calculatedAmount?.toNumber() ?? null,
+            }
+          : null,
+        waterCharges,
+        adjustments,
+        lateFee,
+        otherCharges,
+        arrears,
+        totalPayable,
+      };
+    });
+
+    return {
+      period: {
+        id: period.id,
+        periodYear: period.periodYear,
+        periodMonth: period.periodMonth,
+        startDate: period.startDate,
+        endDate: period.endDate,
+        dueDate: period.dueDate,
+        status: period.status,
+        totalBilled: period.totalBilled.toNumber(),
+        totalCollected: period.totalCollected.toNumber(),
+        totalPending: period.totalPending.toNumber(),
+      },
+      statements,
+    };
+  }
+
   async adjustBill(
     societyId: string,
     billId: string,

@@ -96,6 +96,14 @@ export class BillingController {
     return this.billingService.getPeriodReport(societyId, periodId);
   }
 
+  @Get('periods/:periodId/statement')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
+  @ApiOperation({ summary: 'Comprehensive monthly maintenance statement per flat — includes water readings, arrears, late fees, and total payable' })
+  getPeriodStatement(@SocietyId() societyId: string, @Param('periodId') periodId: string) {
+    return this.billingService.getPeriodStatement(societyId, periodId);
+  }
+
   @Get('periods/:periodId/bills')
   @UseGuards(RolesGuard)
   @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
