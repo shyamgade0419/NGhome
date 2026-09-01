@@ -105,7 +105,7 @@ export default function ResidentProfileScreen() {
             {
               icon: 'notifications-outline' as const,
               label: 'Notifications',
-              onPress: () => router.push('/(app)/resident/notifications' as any),
+              onPress: () => router.push('/(app)/notifications' as any),
             },
             {
               icon: 'grid-outline' as const,

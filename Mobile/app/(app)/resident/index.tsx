@@ -61,7 +61,7 @@ export default function ResidentDashboard() {
           </Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => router.push('/(app)/resident/notifications' as any)} hitSlop={8}>
+          <TouchableOpacity onPress={() => router.push('/(app)/notifications' as any)} hitSlop={8}>
             <Ionicons name="notifications-outline" size={24} color={colors.text} />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push('/(app)/resident/profile')} hitSlop={8}>

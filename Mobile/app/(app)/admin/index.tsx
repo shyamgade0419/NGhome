@@ -68,6 +68,9 @@ export default function AdminDashboard() {
           </Text>
         </View>
         <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => router.push('/(app)/notifications' as any)} hitSlop={8}>
+            <Ionicons name="notifications-outline" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push('/(app)/admin/settings/index' as any)} hitSlop={8}>
             <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
           </TouchableOpacity>

@@ -58,6 +58,12 @@ export default function SettingsScreen() {
       onPress: () => router.push('/(app)/admin/settings/notifications' as any),
     },
     {
+      icon: 'notifications-circle-outline',
+      label: 'Notifications',
+      sublabel: 'Your notification inbox',
+      onPress: () => router.push('/(app)/notifications' as any),
+    },
+    {
       icon: 'construct-outline',
       label: 'Helpdesk',
       sublabel: 'Manage maintenance requests',
