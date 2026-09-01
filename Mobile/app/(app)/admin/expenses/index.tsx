@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import {
   View,
   Text,
@@ -55,6 +56,7 @@ function expenseStatusVariant(status: string) {
 // ── Add Expense Sheet ─────────────────────────────────────────────────────────
 function AddExpenseModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const qc = useQueryClient();
+  const [showExpenseDatePicker, setShowExpenseDatePicker] = useState(false);
   const [form, setForm] = useState({
     description: '',
     amount: '',
@@ -143,14 +145,28 @@ function AddExpenseModal({ visible, onClose }: { visible: boolean; onClose: () =
             />
 
             <Text style={modal.label}>Date *</Text>
-            <TextInput
-              style={modal.input}
-              value={form.expenseDate}
-              onChangeText={set('expenseDate')}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.textTertiary}
-              keyboardType="numbers-and-punctuation"
-            />
+            <TouchableOpacity
+              style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}
+              onPress={() => setShowExpenseDatePicker(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
+              <Text style={{ ...typography.bodyMedium, color: colors.text, flex: 1 }}>
+                {new Date(form.expenseDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+              </Text>
+            </TouchableOpacity>
+            {showExpenseDatePicker && (
+              <DateTimePicker
+                value={new Date(form.expenseDate)}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                maximumDate={new Date()}
+                onChange={(_: DateTimePickerEvent, date?: Date) => {
+                  setShowExpenseDatePicker(Platform.OS === 'ios');
+                  if (date) set('expenseDate')(date.toISOString().slice(0, 10));
+                }}
+              />
+            )}
 
             <Text style={modal.label}>Vendor / Payee</Text>
             <TextInput
@@ -197,6 +213,9 @@ export default function ExpensesScreen() {
   const qc = useQueryClient();
   const [filter, setFilter] = useState<Filter>('ALL');
   const [showAdd, setShowAdd] = useState(false);
+  // Android-compatible reject modal (replaces Alert.prompt which is iOS-only)
+  const [rejectingExpense, setRejectingExpense] = useState<Expense | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['expenses', filter],
@@ -241,24 +260,20 @@ export default function ExpensesScreen() {
   };
 
   const handleReject = (item: Expense) => {
-    Alert.prompt(
-      'Reject Expense',
-      'Enter reason for rejection:',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reject',
-          style: 'destructive',
-          onPress: (reason) => {
-            if (!reason?.trim()) {
-              Alert.alert('Required', 'Please provide a reason.');
-              return;
-            }
-            rejectMutation.mutate({ id: item.id, reason: reason.trim() });
-          },
-        },
-      ],
-      'plain-text',
+    // Alert.prompt is iOS-only — use a cross-platform modal instead
+    setRejectReason('');
+    setRejectingExpense(item);
+  };
+
+  const confirmReject = () => {
+    if (!rejectingExpense) return;
+    if (!rejectReason.trim()) {
+      Alert.alert('Required', 'Please provide a reason for rejection.');
+      return;
+    }
+    rejectMutation.mutate(
+      { id: rejectingExpense.id, reason: rejectReason.trim() },
+      { onSettled: () => setRejectingExpense(null) },
     );
   };
 
@@ -362,6 +377,57 @@ export default function ExpensesScreen() {
       )}
 
       <AddExpenseModal visible={showAdd} onClose={() => setShowAdd(false)} />
+
+      {/* Cross-platform rejection reason modal (replaces Alert.prompt) */}
+      <Modal
+        visible={!!rejectingExpense}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setRejectingExpense(null)}
+      >
+        <View style={rejectModal.overlay}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <View style={rejectModal.card}>
+              <View style={rejectModal.header}>
+                <Text style={rejectModal.title}>Reject Expense</Text>
+                <TouchableOpacity onPress={() => setRejectingExpense(null)} hitSlop={8}>
+                  <Ionicons name="close" size={20} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+              {rejectingExpense && (
+                <Text style={rejectModal.desc}>
+                  {rejectingExpense.description} · ₹{parseFloat(rejectingExpense.amount).toLocaleString('en-IN')}
+                </Text>
+              )}
+              <TextInput
+                style={rejectModal.input}
+                value={rejectReason}
+                onChangeText={setRejectReason}
+                placeholder="Reason for rejection…"
+                placeholderTextColor={colors.textTertiary}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+                autoFocus
+              />
+              <View style={rejectModal.actions}>
+                <TouchableOpacity style={rejectModal.cancelBtn} onPress={() => setRejectingExpense(null)}>
+                  <Text style={rejectModal.cancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[rejectModal.rejectBtn, rejectMutation.isPending && { opacity: 0.6 }]}
+                  onPress={confirmReject}
+                  disabled={rejectMutation.isPending}
+                >
+                  <Text style={rejectModal.rejectText}>
+                    {rejectMutation.isPending ? 'Rejecting…' : 'Reject'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -408,6 +474,59 @@ const styles = StyleSheet.create({
   approveBtn: { borderColor: colors.success, backgroundColor: colors.successLight ?? colors.background },
   rejectBtn:  { borderColor: colors.error,   backgroundColor: colors.errorLight },
   actionText: { ...typography.labelMedium, fontWeight: '600' },
+});
+
+const rejectModal = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  card: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: spacing.xl,
+    gap: spacing.md,
+    paddingBottom: 40,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  title: { ...typography.headingSmall, color: colors.text },
+  desc: { ...typography.bodySmall, color: colors.textSecondary },
+  input: {
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    ...typography.bodyMedium,
+    color: colors.text,
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  actions: { flexDirection: 'row', gap: spacing.md },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  cancelText: { ...typography.labelLarge, color: colors.textSecondary },
+  rejectBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.error,
+    alignItems: 'center',
+  },
+  rejectText: { ...typography.labelLarge, color: '#fff', fontWeight: '600' },
 });
 
 const modal = StyleSheet.create({

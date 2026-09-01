@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -74,6 +74,13 @@ export default function SubmitPaymentScreen() {
   });
 
   const upiId = (societyConfig as any)?.additionalConfig?.upiId as string | undefined;
+
+  // Pre-fill amount when bill loads (useForm defaultValues run before the query resolves)
+  useEffect(() => {
+    if (myBill?.pendingAmount) {
+      setValue('amount', myBill.pendingAmount);
+    }
+  }, [myBill, setValue]);
 
   const submitMutation = useMutation({
     mutationFn: paymentsApi.submitPayment,

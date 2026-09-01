@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Platform,
   RefreshControl,
 } from 'react-native';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -195,6 +196,7 @@ export default function WaterReadingsScreen() {
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
 
   // Society-wide costs
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [costs, setCosts] = useState({
     readingDate: new Date().toISOString().split('T')[0],
     municipalWaterBill: '',
@@ -423,13 +425,29 @@ export default function WaterReadingsScreen() {
           {/* Reading Date */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Reading Date</Text>
-            <TextInput
-              style={styles.dateInput}
-              value={costs.readingDate}
-              onChangeText={(v) => setCosts((c) => ({ ...c, readingDate: v }))}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.textTertiary}
-            />
+            <TouchableOpacity
+              style={styles.dateTouchable}
+              onPress={() => setShowDatePicker(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="calendar-outline" size={18} color={colors.textSecondary} />
+              <Text style={styles.dateText}>
+                {new Date(costs.readingDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+              </Text>
+              <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
+            </TouchableOpacity>
+            {showDatePicker && (
+              <DateTimePicker
+                value={new Date(costs.readingDate)}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                maximumDate={new Date()}
+                onChange={(_: DateTimePickerEvent, date?: Date) => {
+                  setShowDatePicker(Platform.OS === 'ios');
+                  if (date) setCosts((c) => ({ ...c, readingDate: date.toISOString().split('T')[0] }));
+                }}
+              />
+            )}
           </View>
 
           {/* Per-flat Readings */}
@@ -534,13 +552,20 @@ const styles = StyleSheet.create({
   },
   totalCostText: { ...typography.labelLarge, color: colors.primary },
 
-  dateInput: {
+  dateTouchable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
     borderWidth: 1.5,
     borderColor: colors.border,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    paddingVertical: 13,
+  },
+  dateText: {
     ...typography.bodyMedium,
     color: colors.text,
+    flex: 1,
   },
 });

@@ -50,6 +50,15 @@ export default function ResidentLayout() {
         }}
       />
       <Tabs.Screen
+        name="helpdesk"
+        options={{
+          title: 'Helpdesk',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'construct' : 'construct-outline'} size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="announcements"
         options={{
           title: 'Community',

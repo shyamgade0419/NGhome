@@ -46,6 +46,7 @@ function UpiPayCard({
 
   async function submitPayment() {
     if (!utr.trim()) { toast.error('Please enter your UTR / transaction ID'); return; }
+    if (!bill?.id || !bill?.billingPeriodId) { toast.error('Bill information missing. Please refresh and try again.'); return; }
     setSubmitting(true);
     try {
       const res = await fetch('/api/backend/payments/submit', {

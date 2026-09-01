@@ -157,7 +157,8 @@ export default function ResidentDashboard() {
           </View>
         ) : (
           (announcements?.data ?? []).map((item: Announcement) => (
-            <TouchableOpacity key={item.id} style={styles.announcementCard} activeOpacity={0.8}>
+            <TouchableOpacity key={item.id} style={styles.announcementCard} activeOpacity={0.8}
+              onPress={() => router.push('/(app)/resident/announcements')}>
               <View style={styles.announcementLeft}>
                 <View style={[styles.priorityDot, getPriorityStyle(item.priority)]} />
               </View>

@@ -58,6 +58,12 @@ export default function SettingsScreen() {
       onPress: () => router.push('/(app)/admin/settings/notifications' as any),
     },
     {
+      icon: 'construct-outline',
+      label: 'Helpdesk',
+      sublabel: 'Manage maintenance requests',
+      onPress: () => router.push('/(app)/admin/helpdesk/index' as any),
+    },
+    {
       icon: 'help-circle-outline',
       label: 'Help Center',
       sublabel: 'Guides and FAQs for admins',

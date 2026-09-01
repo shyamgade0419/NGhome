@@ -31,6 +31,7 @@ const QUICK_ACTIONS = [
   { label: 'Manage Billing', icon: 'receipt-outline', route: '/(app)/admin/maintenance/index' },
   { label: 'Verify Payment', icon: 'checkmark-circle-outline', route: '/(app)/admin/payments/index' },
   { label: 'Add Expense', icon: 'add-circle-outline', route: '/(app)/admin/expenses/index' },
+  { label: 'Helpdesk', icon: 'construct-outline', route: '/(app)/admin/helpdesk/index' },
   { label: 'Announce', icon: 'megaphone-outline', route: '/(app)/admin/announcements/index' },
 ] as const;
 

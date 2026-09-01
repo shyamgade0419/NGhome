@@ -77,6 +77,7 @@ export default function AdminLayout() {
         }}
       />
       {/* Navigable but hidden from tab bar */}
+      <Tabs.Screen name="helpdesk/index" options={{ href: null }} />
       <Tabs.Screen name="payments/[id]" options={{ href: null }} />
       <Tabs.Screen name="billing/[id]" options={{ href: null }} />
       <Tabs.Screen name="settings/index" options={{ href: null }} />
