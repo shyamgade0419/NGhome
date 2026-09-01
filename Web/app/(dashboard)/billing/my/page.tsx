@@ -364,7 +364,7 @@ export default function MyBillsPage() {
               <div className="flex items-start gap-3 rounded-xl border border-primary-200 bg-primary-50 px-4 py-3">
                 <Smartphone size={16} className="text-primary-600 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-primary-700">
-                  <strong>Pay via UPI</strong> — Open any bill below, tap "Pay via UPI", scan or open your UPI app, and enter the transaction ID to confirm.
+                  <strong>Pay via UPI</strong> — Open any bill below, tap &quot;Pay via UPI&quot;, scan or open your UPI app, and enter the transaction ID to confirm.
                   {!verificationRequired && ' Payments are auto-confirmed instantly.'}
                 </p>
               </div>
