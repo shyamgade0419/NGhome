@@ -77,6 +77,16 @@ export default function MaintenanceStatementPage() {
 
   return (
     <>
+      {/* Print styles — landscape, hide chrome */}
+      <style>{`
+        @media print {
+          @page { size: A4 landscape; margin: 12mm 10mm; }
+          nav, aside, header, [data-sidebar], .no-print { display: none !important; }
+          body { background: white !important; }
+          table { font-size: 10px !important; }
+          button { display: none !important; }
+        }
+      `}</style>
       <Header
         title="Maintenance Sheet"
         subtitle="Society-wide monthly maintenance statement"
@@ -95,7 +105,7 @@ export default function MaintenanceStatementPage() {
         ) : (
           <>
             {/* Period selector */}
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="no-print flex flex-wrap items-center gap-2">
               {periods.map((p: any) => (
                 <button
                   key={p.id}
@@ -114,7 +124,7 @@ export default function MaintenanceStatementPage() {
 
             {/* Period summary */}
             {period && (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="no-print grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {[
                   { label: 'Total Billed', value: formatCurrency(period.totalBilled), color: 'text-slate-900' },
                   { label: 'Collected', value: formatCurrency(period.totalCollected), color: 'text-green-700' },
