@@ -94,6 +94,18 @@ export class ExpensesController {
     return this.expensesService.approve(societyId, id, user.id);
   }
 
+  @Post(':id/reject')
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @ApiOperation({ summary: 'Reject a pending expense' })
+  reject(
+    @SocietyId() societyId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { reason: string },
+  ) {
+    return this.expensesService.reject(societyId, id, body.reason, user.id);
+  }
+
   @Post(':id/mark-paid')
   @Roles(SystemRole.SOCIETY_ADMIN)
   @ApiOperation({ summary: 'Mark expense as paid from an account' })

@@ -1,5 +1,6 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query, UseGuards,
+  Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards,
+  HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
@@ -60,6 +61,15 @@ export class BillingRulesController {
     @Body() dto: Partial<CreateBillingRuleDto>,
   ) {
     return this.billingRulesService.update(societyId, id, dto);
+  }
+
+  @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete a billing rule' })
+  async remove(@SocietyId() societyId: string, @Param('id') id: string) {
+    await this.billingRulesService.remove(societyId, id);
   }
 
   @Patch(':id/toggle')

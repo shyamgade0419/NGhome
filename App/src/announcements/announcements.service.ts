@@ -90,6 +90,12 @@ export class AnnouncementsService {
     return announcement;
   }
 
+  async remove(societyId: string, id: string) {
+    // findOne enforces society scope before deleting
+    await this.findOne(societyId, id);
+    await this.prisma.announcement.delete({ where: { id } });
+  }
+
   async update(societyId: string, id: string, dto: Partial<CreateAnnouncementDto>) {
     await this.findOne(societyId, id);
     return this.prisma.announcement.update({

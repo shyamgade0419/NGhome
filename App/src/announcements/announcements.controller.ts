@@ -1,5 +1,6 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query, UseGuards,
+  Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards,
+  HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
@@ -64,6 +65,15 @@ export class AnnouncementsController {
     @Body() dto: Partial<CreateAnnouncementDto>,
   ) {
     return this.announcementsService.update(societyId, id, dto);
+  }
+
+  @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete an announcement' })
+  async remove(@SocietyId() societyId: string, @Param('id') id: string) {
+    await this.announcementsService.remove(societyId, id);
   }
 
   @Post(':id/publish')

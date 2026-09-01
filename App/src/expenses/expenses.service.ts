@@ -110,6 +110,39 @@ export class ExpensesService {
     });
   }
 
+  async reject(societyId: string, expenseId: string, reason: string, actorId: string) {
+    // Fetch for scope verification and to preserve any existing note
+    const expense = await this.findOne(societyId, expenseId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.expense.updateMany({
+        where: { id: expenseId, status: ExpenseStatus.PENDING },
+        data: {
+          status: ExpenseStatus.REJECTED,
+          approvedById: actorId,
+          approvedAt: new Date(),
+          // There is no dedicated rejectionReason column — append rather than clobber.
+          notes: [expense.notes, `Rejected: ${reason}`].filter(Boolean).join(' — '),
+        },
+      });
+      if (count === 0) {
+        throw new ForbiddenException('Only pending expenses can be rejected');
+      }
+
+      await tx.auditLog.create({
+        data: {
+          societyId,
+          actorId,
+          action: 'EXPENSE_REJECTED',
+          entityType: 'Expense',
+          entityId: expenseId,
+        },
+      });
+
+      return tx.expense.findUnique({ where: { id: expenseId } });
+    });
+  }
+
   async markPaid(societyId: string, expenseId: string, accountId: string, actorId: string) {
     // Fetch expense data for amount; status gate is inside the transaction
     const expense = await this.findOne(societyId, expenseId);

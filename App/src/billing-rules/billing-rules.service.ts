@@ -86,6 +86,12 @@ export class BillingRulesService {
     });
   }
 
+  async remove(societyId: string, id: string) {
+    // findOne enforces society scope before deleting
+    await this.findOne(societyId, id);
+    await this.prisma.billingRule.delete({ where: { id } });
+  }
+
   async setActive(societyId: string, id: string, isActive: boolean) {
     await this.findOne(societyId, id);
     return this.prisma.billingRule.update({ where: { id }, data: { isActive } });

@@ -33,20 +33,28 @@ import { BillingPeriod, billingPeriodName } from '@/types/billing.types';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/**
+ * Mirrors one row of GET /billing/periods/:periodId/statement.
+ * All monetary fields arrive as numbers (the service calls .toNumber()),
+ * not decimal strings — do not parseFloat them.
+ */
 interface FlatRow {
   flatId: string;
   flatCode: string;
-  buildingName?: string;
-  ownerName?: string;
-  phone?: string | null;
-  totalAmount: string;
-  paidAmount: string;
-  pendingAmount: string;
+  billId: string;
+  invoiceNumber?: string;
   isPaid: boolean;
   isPublished: boolean;
-  invoiceNumber?: string;
-  maintenanceNotes?: string | null;
-  billId?: string;
+  notes: string | null;
+  residentName: string;
+  residentPhone: string | null;
+  generalMaintenance: number;
+  waterCharges: number;
+  adjustments: number;
+  lateFee: number;
+  otherCharges: number;
+  arrears: number;
+  totalPayable: number;
 }
 
 // ── Period selector ───────────────────────────────────────────────────────────
@@ -92,13 +100,13 @@ function NotesModal({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const [note, setNote] = useState(flat.maintenanceNotes ?? '');
+  const [note, setNote] = useState(flat.notes ?? '');
 
   const mutation = useMutation({
+    // Notes are keyed by bill, not by flat — there is no /maintenance-sheet controller.
     mutationFn: () =>
-      apiClient.patch(`/maintenance-sheet/notes`, {
-        flatId: flat.flatId,
-        note: note.trim() || null,
+      apiClient.patch(`/billing/bills/${flat.billId}/notes`, {
+        notes: note.trim(),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['maintenance-sheet'] });
@@ -115,8 +123,8 @@ function NotesModal({
         <View style={styles.modalHeader}>
           <View>
             <Text style={styles.modalTitle}>Notes — Flat {flat.flatCode}</Text>
-            {flat.ownerName && (
-              <Text style={styles.modalSub}>{flat.ownerName}</Text>
+            {flat.residentName && (
+              <Text style={styles.modalSub}>{flat.residentName}</Text>
             )}
           </View>
           <TouchableOpacity onPress={onClose} hitSlop={8}>
@@ -166,10 +174,6 @@ function FlatCard({
   flat: FlatRow;
   onNotePress: (f: FlatRow) => void;
 }) {
-  const total = parseFloat(flat.totalAmount || '0');
-  const paid = parseFloat(flat.paidAmount || '0');
-  const pending = parseFloat(flat.pendingAmount || '0');
-
   return (
     <View style={[styles.flatCard, flat.isPaid && styles.flatCardPaid]}>
       {/* Status stripe */}
@@ -180,11 +184,11 @@ function FlatCard({
         <View style={styles.flatCardTop}>
           <View style={{ flex: 1 }}>
             <Text style={styles.flatCode}>Flat {flat.flatCode}</Text>
-            {flat.buildingName && (
-              <Text style={styles.buildingName}>{flat.buildingName}</Text>
+            {flat.invoiceNumber && (
+              <Text style={styles.buildingName}>{flat.invoiceNumber}</Text>
             )}
-            {flat.ownerName && (
-              <Text style={styles.ownerName}>{flat.ownerName}</Text>
+            {flat.residentName && (
+              <Text style={styles.ownerName}>{flat.residentName}</Text>
             )}
           </View>
           <View style={styles.flatCardRight}>
@@ -198,40 +202,51 @@ function FlatCard({
         {/* Amount row */}
         <View style={styles.amountRow}>
           <View style={styles.amountItem}>
-            <Text style={styles.amountLabel}>Total</Text>
-            <Text style={styles.amountValue}>₹{total.toLocaleString('en-IN')}</Text>
-          </View>
-          <View style={styles.amountItem}>
-            <Text style={styles.amountLabel}>Paid</Text>
-            <Text style={[styles.amountValue, { color: colors.success }]}>
-              ₹{paid.toLocaleString('en-IN')}
+            <Text style={styles.amountLabel}>Maintenance</Text>
+            <Text style={styles.amountValue}>
+              ₹{flat.generalMaintenance.toLocaleString('en-IN')}
             </Text>
           </View>
           <View style={styles.amountItem}>
-            <Text style={styles.amountLabel}>Pending</Text>
-            <Text style={[styles.amountValue, { color: pending > 0 ? colors.warning : colors.success }]}>
-              ₹{pending.toLocaleString('en-IN')}
+            <Text style={styles.amountLabel}>Water</Text>
+            <Text style={[styles.amountValue, { color: colors.info }]}>
+              ₹{flat.waterCharges.toLocaleString('en-IN')}
+            </Text>
+          </View>
+          <View style={styles.amountItem}>
+            <Text style={styles.amountLabel}>Total</Text>
+            <Text style={[styles.amountValue, { color: flat.isPaid ? colors.success : colors.warning }]}>
+              ₹{flat.totalPayable.toLocaleString('en-IN')}
             </Text>
           </View>
         </View>
 
+        {flat.arrears > 0 && (
+          <View style={styles.noteRow}>
+            <Ionicons name="alert-circle-outline" size={13} color={colors.error} />
+            <Text style={[styles.noteText, { color: colors.error }]}>
+              Includes ₹{flat.arrears.toLocaleString('en-IN')} arrears from earlier periods
+            </Text>
+          </View>
+        )}
+
         {/* Note (if any) */}
-        {flat.maintenanceNotes && (
+        {flat.notes && (
           <View style={styles.noteRow}>
             <Ionicons name="document-text-outline" size={13} color={colors.textSecondary} />
-            <Text style={styles.noteText} numberOfLines={2}>{flat.maintenanceNotes}</Text>
+            <Text style={styles.noteText} numberOfLines={2}>{flat.notes}</Text>
           </View>
         )}
 
         {/* Note button */}
         <TouchableOpacity style={styles.noteBtn} onPress={() => onNotePress(flat)} activeOpacity={0.7}>
           <Ionicons
-            name={flat.maintenanceNotes ? 'create-outline' : 'add-circle-outline'}
+            name={flat.notes ? 'create-outline' : 'add-circle-outline'}
             size={14}
             color={colors.primary}
           />
           <Text style={styles.noteBtnText}>
-            {flat.maintenanceNotes ? 'Edit note' : 'Add note'}
+            {flat.notes ? 'Edit note' : 'Add note'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -269,11 +284,14 @@ export default function MaintenanceSheetScreen() {
   // Load maintenance sheet for selected period
   const { data: sheetData, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['maintenance-sheet', selectedPeriodId],
+    // There is no /sheet route — the statement endpoint is the flat-wise view,
+    // and it is readable by every society member (residents included).
     queryFn: async () => {
-      const res = await apiClient.get<{ data: FlatRow[] }>(
-        `/billing/periods/${selectedPeriodId}/sheet`,
+      const res = await apiClient.get<{ data?: { statements?: FlatRow[] }; statements?: FlatRow[] }>(
+        `/billing/periods/${selectedPeriodId}/statement`,
       );
-      return res.data.data ?? [];
+      const body = (res.data as any)?.data ?? res.data;
+      return (body?.statements ?? []) as FlatRow[];
     },
     enabled: !!selectedPeriodId,
   });
@@ -283,12 +301,12 @@ export default function MaintenanceSheetScreen() {
   // Stats
   const totalFlats = rows.length;
   const paidFlats = rows.filter((r) => r.isPaid).length;
-  const totalCollected = rows.reduce((s, r) => s + parseFloat(r.paidAmount || '0'), 0);
-  const totalPending = rows.reduce((s, r) => s + parseFloat(r.pendingAmount || '0'), 0);
+  const totalCollected = rows.reduce((s, r) => s + (r.isPaid ? r.totalPayable : 0), 0);
+  const totalPending = rows.reduce((s, r) => s + (r.isPaid ? 0 : r.totalPayable), 0);
 
   // Filter + search
   const filtered = rows.filter((r) => {
-    const matchSearch = !search.trim() || [r.flatCode, r.ownerName ?? ''].join(' ').toLowerCase().includes(search.toLowerCase());
+    const matchSearch = !search.trim() || [r.flatCode, r.residentName ?? ''].join(' ').toLowerCase().includes(search.toLowerCase());
     const matchFilter =
       filterPaid === 'ALL' ||
       (filterPaid === 'PAID' && r.isPaid) ||
