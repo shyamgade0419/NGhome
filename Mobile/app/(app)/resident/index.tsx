@@ -55,7 +55,9 @@ export default function ResidentDashboard() {
         <View>
           <Text style={styles.greeting}>Hello, {user?.firstName} 👋</Text>
           <Text style={styles.flatInfo}>
-            {user?.currentRole?.replace(/_/g, ' ') ?? 'Resident'}
+            {user?.flatNumber
+              ? `Flat ${user.flatNumber}${user.buildingName ? ` · ${user.buildingName}` : ''}`
+              : user?.currentRole?.replace(/_/g, ' ') ?? 'Resident'}
           </Text>
         </View>
         <View style={styles.headerActions}>

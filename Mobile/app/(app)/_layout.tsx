@@ -18,6 +18,7 @@ export default function AppLayout() {
       <Stack.Screen name="index" />
       <Stack.Screen name="admin" />
       <Stack.Screen name="resident" />
+      <Stack.Screen name="help" />
     </Stack>
   );
 }

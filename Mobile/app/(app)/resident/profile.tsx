@@ -108,6 +108,11 @@ export default function ResidentProfileScreen() {
               onPress: () => router.push('/(app)/resident/notifications' as any),
             },
             {
+              icon: 'help-circle-outline' as const,
+              label: 'Help Center',
+              onPress: () => router.push('/(app)/help' as any),
+            },
+            {
               icon: 'shield-outline' as const,
               label: 'Privacy & Security',
               onPress: () =>

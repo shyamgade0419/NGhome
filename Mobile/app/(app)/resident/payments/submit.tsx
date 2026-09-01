@@ -9,8 +9,9 @@ import {
   Alert,
   TouchableOpacity,
   Linking,
-  Image,
 } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useForm, Controller } from 'react-hook-form';
@@ -54,6 +55,7 @@ export default function SubmitPaymentScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [selectedMethod, setSelectedMethod] = useState<string>('UPI');
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const { data: activePeriod } = useQuery({
     queryKey: ['active-period'],
@@ -163,17 +165,38 @@ export default function SubmitPaymentScreen() {
             <Controller
               control={control}
               name="paymentDate"
-              render={({ field: { onChange, onBlur, value } }) => (
-                <Input
-                  label="Payment Date"
-                  placeholder="YYYY-MM-DD"
-                  value={value}
-                  onChangeText={onChange}
-                  onBlur={onBlur}
-                  error={errors.paymentDate?.message}
-                  leftIcon="calendar-outline"
-                  required
-                />
+              render={({ field: { onChange, value } }) => (
+                <View>
+                  <Text style={styles.fieldLabel}>Payment Date *</Text>
+                  <TouchableOpacity
+                    style={styles.dateTouchable}
+                    onPress={() => setShowDatePicker(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="calendar-outline" size={18} color={colors.textSecondary} />
+                    <Text style={styles.dateText}>
+                      {value
+                        ? new Date(value).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+                        : 'Select date'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                  {errors.paymentDate && (
+                    <Text style={styles.errorText}>{errors.paymentDate.message}</Text>
+                  )}
+                  {showDatePicker && (
+                    <DateTimePicker
+                      value={value ? new Date(value) : new Date()}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      maximumDate={new Date()}
+                      onChange={(_: DateTimePickerEvent, date?: Date) => {
+                        setShowDatePicker(Platform.OS === 'ios');
+                        if (date) onChange(date.toISOString().split('T')[0]);
+                      }}
+                    />
+                  )}
+                </View>
               )}
             />
 
@@ -203,11 +226,10 @@ export default function SubmitPaymentScreen() {
               const amount = parseFloat(myBill.pendingAmount).toFixed(2);
               const note = activePeriod ? billingPeriodName(activePeriod) : 'Maintenance';
               const upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent('Society')}&am=${amount}&tn=${encodeURIComponent(note)}&cu=INR`;
-              const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiLink)}`;
 
               return (
                 <>
-                  {/* Tap-to-open card (works on Android; iOS shows QR below) */}
+                  {/* Tap-to-open UPI deep link */}
                   <TouchableOpacity
                     style={styles.upiCard}
                     onPress={() =>
@@ -228,7 +250,7 @@ export default function SubmitPaymentScreen() {
                     <Ionicons name="chevron-forward" size={18} color={colors.primary} />
                   </TouchableOpacity>
 
-                  {/* QR code fallback — scan with any UPI app (especially useful on iOS) */}
+                  {/* QR code — generated locally, no network required */}
                   <View style={styles.qrSection}>
                     <View style={styles.qrDivider}>
                       <View style={styles.qrDividerLine} />
@@ -236,10 +258,11 @@ export default function SubmitPaymentScreen() {
                       <View style={styles.qrDividerLine} />
                     </View>
                     <View style={styles.qrBox}>
-                      <Image
-                        source={{ uri: qrUrl }}
-                        style={styles.qrImage}
-                        resizeMode="contain"
+                      <QRCode
+                        value={upiLink}
+                        size={180}
+                        color="#000000"
+                        backgroundColor="#FFFFFF"
                       />
                       <Text style={styles.qrHint}>Open PhonePe / GPay → Scan QR</Text>
                       <Text style={styles.qrId}>{upiId}</Text>
@@ -339,6 +362,32 @@ const styles = StyleSheet.create({
   methodText: { ...typography.labelMedium, color: colors.textSecondary },
   methodTextActive: { color: colors.primary },
 
+  fieldLabel: {
+    ...typography.labelLarge,
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  dateTouchable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 13,
+  },
+  dateText: {
+    ...typography.bodyMedium,
+    color: colors.text,
+    flex: 1,
+  },
+  errorText: {
+    ...typography.bodySmall,
+    color: colors.error,
+    marginTop: 4,
+  },
   disclaimer: {
     flexDirection: 'row',
     alignItems: 'flex-start',

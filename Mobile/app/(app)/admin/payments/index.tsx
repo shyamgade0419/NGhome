@@ -6,10 +6,12 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
+  Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
+import { Ionicons } from '@expo/vector-icons';
 import { paymentsApi } from '@/api/endpoints/payments.api';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -34,6 +36,13 @@ export default function AdminPaymentsScreen() {
       }),
   });
 
+  const openWhatsApp = (phone: string | null | undefined) => {
+    if (!phone) return;
+    const digits = phone.replace(/\D/g, '');
+    const wa = digits.startsWith('91') ? digits : `91${digits}`;
+    Linking.openURL(`https://wa.me/${wa}`).catch(() => {});
+  };
+
   const renderItem = ({ item }: { item: PaymentSubmission }) => (
     <TouchableOpacity
       style={styles.card}
@@ -50,7 +59,18 @@ export default function AdminPaymentsScreen() {
             {new Date(item.createdAt).toLocaleDateString('en-IN')}
           </Text>
         </View>
-        <StatusBadge label={item.status} variant={paymentStatusVariant(item.status)} />
+        <View style={styles.cardTopRight}>
+          <StatusBadge label={item.status} variant={paymentStatusVariant(item.status)} />
+          {(item.user as any)?.phone && (
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation(); openWhatsApp((item.user as any).phone); }}
+              hitSlop={8}
+              style={styles.waBtn}
+            >
+              <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <View style={styles.cardBottom}>
@@ -140,6 +160,8 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  cardTopRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  waBtn: { padding: 2 },
   flatInfo: {},
   flatNumber: { ...typography.headingSmall, color: colors.text },
   submittedAt: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },

@@ -50,6 +50,8 @@ export interface AuthenticatedUser extends User {
   currentRole?: SystemRole;
   societyId?: string;
   flatId?: string;
+  flatNumber?: string | null;
+  buildingName?: string | null;
   membershipId?: string;
   memberships: SocietyMembership[];
 }

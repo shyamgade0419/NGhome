@@ -9,6 +9,7 @@ import {
   Alert,
   TouchableOpacity,
   Share,
+  Switch,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -329,10 +330,20 @@ export default function SocietySettingsScreen() {
     email: '',
     phone: '',
   });
+  const [upiDirty, setUpiDirty] = useState(false);
+  const [upiForm, setUpiForm] = useState({
+    upiId: '',
+    paymentVerificationRequired: true,
+  });
 
   const { data, isLoading } = useQuery<Society>({
     queryKey: ['society-my-mobile'],
     queryFn: societiesApi.getMySociety,
+  });
+
+  const { data: configData } = useQuery({
+    queryKey: ['society-config-mobile'],
+    queryFn: societiesApi.getSocietyConfig,
   });
 
   useEffect(() => {
@@ -350,6 +361,15 @@ export default function SocietySettingsScreen() {
     }
   }, [data]);
 
+  useEffect(() => {
+    if (configData) {
+      setUpiForm({
+        upiId: (configData as any)?.additionalConfig?.upiId ?? '',
+        paymentVerificationRequired: (configData as any)?.paymentVerificationRequired !== false,
+      });
+    }
+  }, [configData]);
+
   const mutation = useMutation({
     mutationFn: () => apiClient.patch('/societies/my', form),
     onSuccess: () => {
@@ -359,6 +379,20 @@ export default function SocietySettingsScreen() {
     },
     onError: (e: any) =>
       Alert.alert('Error', e?.response?.data?.message ?? 'Failed to save. Try again.'),
+  });
+
+  const upiMutation = useMutation({
+    mutationFn: () => apiClient.patch('/societies/my/config', {
+      paymentVerificationRequired: upiForm.paymentVerificationRequired,
+      additionalConfig: { upiId: upiForm.upiId.trim() || undefined },
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['society-config-mobile'] });
+      setUpiDirty(false);
+      Alert.alert('Saved', 'Payment settings updated.');
+    },
+    onError: (e: any) =>
+      Alert.alert('Error', e?.response?.data?.message ?? 'Failed to save payment settings.'),
   });
 
   const set = (key: string) => (val: string) => {
@@ -448,6 +482,42 @@ export default function SocietySettingsScreen() {
             style={{ marginTop: spacing.xl }}
           />
 
+          {/* ── UPI / Payment Settings ── */}
+          <Section title="UPI & Payments" />
+          <Input
+            label="Society UPI ID"
+            value={upiForm.upiId}
+            onChangeText={(v) => { setUpiForm((f) => ({ ...f, upiId: v })); setUpiDirty(true); }}
+            placeholder="society@upi or 9876543210@okaxis"
+            leftIcon="qr-code-outline"
+            autoCapitalize="none"
+            hint="Residents will see this to pay via PhonePe, GPay, BHIM"
+          />
+
+          {/* Payment verification toggle */}
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleText}>
+              <Text style={styles.toggleLabel}>Auto-approve UPI payments</Text>
+              <Text style={styles.toggleSub}>
+                When ON, payments submitted with a UTR are approved instantly without admin review.
+              </Text>
+            </View>
+            <Switch
+              value={!upiForm.paymentVerificationRequired}
+              onValueChange={(v) => { setUpiForm((f) => ({ ...f, paymentVerificationRequired: !v })); setUpiDirty(true); }}
+              trackColor={{ false: colors.border, true: colors.primary }}
+            />
+          </View>
+
+          <Button
+            label={upiMutation.isPending ? 'Saving…' : 'Save Payment Settings'}
+            onPress={() => upiMutation.mutate()}
+            loading={upiMutation.isPending}
+            disabled={!upiDirty}
+            fullWidth
+            size="lg"
+          />
+
           <View style={{ height: spacing['3xl'] }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -461,4 +531,18 @@ const styles = StyleSheet.create({
   row3: { flexDirection: 'row', gap: spacing.md },
   flex1: { flex: 1 },
   flex2: { flex: 2 },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.base,
+  },
+  toggleText: { flex: 1 },
+  toggleLabel: { ...typography.bodyMedium, color: colors.text, fontWeight: '600' },
+  toggleSub: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 3, lineHeight: 17 },
 });

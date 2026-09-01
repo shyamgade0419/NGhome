@@ -28,7 +28,7 @@ function formatCurrency(amount: string | undefined): string {
 }
 
 const QUICK_ACTIONS = [
-  { label: 'Generate Bills', icon: 'document-text-outline', route: '/(app)/admin/maintenance/index' },
+  { label: 'Manage Billing', icon: 'receipt-outline', route: '/(app)/admin/maintenance/index' },
   { label: 'Verify Payment', icon: 'checkmark-circle-outline', route: '/(app)/admin/payments/index' },
   { label: 'Add Expense', icon: 'add-circle-outline', route: '/(app)/admin/expenses/index' },
   { label: 'Announce', icon: 'megaphone-outline', route: '/(app)/admin/announcements/index' },
@@ -58,7 +58,7 @@ export default function AdminDashboard() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Top bar */}
       <View style={styles.topBar}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.greeting}>
             Good {getTimeOfDay()}, {user?.firstName}
           </Text>
@@ -66,14 +66,19 @@ export default function AdminDashboard() {
             {currentPeriod ? billingPeriodName(currentPeriod) : 'Admin Panel'}
           </Text>
         </View>
-        <TouchableOpacity onPress={() => router.push('/(app)/admin/settings/index')} hitSlop={8}>
-          <View style={styles.avatarCircle}>
-            <Text style={styles.avatarText}>
-              {user?.firstName?.[0]}
-              {user?.lastName?.[0]}
-            </Text>
-          </View>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => router.push('/(app)/admin/settings/index' as any)} hitSlop={8}>
+            <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/(app)/admin/profile/index' as any)} hitSlop={8}>
+            <View style={styles.avatarCircle}>
+              <Text style={styles.avatarText}>
+                {user?.firstName?.[0]}
+                {user?.lastName?.[0]}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -194,12 +199,17 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.md,
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    gap: spacing.md,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
   },
   greeting: { ...typography.bodySmall, color: colors.textSecondary },
   societyName: { ...typography.headingSmall, color: colors.text, maxWidth: 240 },

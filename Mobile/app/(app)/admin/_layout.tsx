@@ -85,6 +85,8 @@ export default function AdminLayout() {
       <Tabs.Screen name="settings/residents" options={{ href: null }} />
       <Tabs.Screen name="settings/buildings" options={{ href: null }} />
       <Tabs.Screen name="settings/notifications" options={{ href: null }} />
+      <Tabs.Screen name="maintenance-sheet/index" options={{ href: null }} />
+      <Tabs.Screen name="profile/index" options={{ href: null }} />
     </Tabs>
   );
 }

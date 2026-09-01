@@ -6,7 +6,10 @@ import {
   ScrollView,
   Alert,
   TextInput,
+  TouchableOpacity,
+  Linking,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -107,7 +110,24 @@ export default function PaymentDetailScreen() {
 
         {/* Flat info */}
         <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>Resident Details</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Resident Details</Text>
+            {(payment.user as any)?.phone && (
+              <TouchableOpacity
+                style={styles.waContactBtn}
+                onPress={() => {
+                  const phone = (payment.user as any).phone as string;
+                  const digits = phone.replace(/\D/g, '');
+                  const wa = digits.startsWith('91') ? digits : `91${digits}`;
+                  Linking.openURL(`https://wa.me/${wa}`).catch(() => {});
+                }}
+                hitSlop={8}
+              >
+                <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
+                <Text style={styles.waContactText}>WhatsApp</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           <InfoRow
             label="Resident"
             value={payment.user ? `${payment.user.firstName} ${payment.user.lastName}` : '—'}
@@ -232,7 +252,10 @@ const styles = StyleSheet.create({
   submittedLabel: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 4 },
 
   section: { gap: spacing.md },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { ...typography.headingSmall, color: colors.text },
+  waContactBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F0FDF4', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: '#BBF7D0' },
+  waContactText: { ...typography.labelSmall, color: '#16A34A', fontWeight: '600' },
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   infoLabel: { ...typography.bodyMedium, color: colors.textSecondary, flex: 1 },
   infoValue: { ...typography.bodyMedium, color: colors.text, flex: 1.5, textAlign: 'right' },

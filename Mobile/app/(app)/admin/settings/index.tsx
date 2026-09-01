@@ -46,10 +46,22 @@ export default function SettingsScreen() {
       onPress: () => router.push('/(app)/admin/settings/roles' as any),
     },
     {
+      icon: 'grid-outline',
+      label: 'Maintenance Sheet',
+      sublabel: 'Monthly flat-wise collection view',
+      onPress: () => router.push('/(app)/admin/maintenance-sheet/index' as any),
+    },
+    {
       icon: 'notifications-outline',
       label: 'Notification Settings',
       sublabel: 'Configure resident visibility',
       onPress: () => router.push('/(app)/admin/settings/notifications' as any),
+    },
+    {
+      icon: 'help-circle-outline',
+      label: 'Help Center',
+      sublabel: 'Guides and FAQs for admins',
+      onPress: () => router.push('/(app)/help' as any),
     },
     {
       icon: 'person-outline',

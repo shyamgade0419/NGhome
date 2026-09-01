@@ -72,8 +72,9 @@ export default function MaintenanceStatementPage() {
       msg += ` Please pay via UPI: ${upiId} and share the UTR for confirmation.`;
     }
     msg += ` Thank you! 🙏`;
-    const phone = s.residentPhone?.replace(/\D/g, '');
-    const fullPhone = phone?.startsWith('91') ? phone : `91${phone}`;
+    const digits = s.residentPhone?.replace(/\D/g, '') ?? '';
+    if (!digits) return `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    const fullPhone = digits.startsWith('91') ? digits : `91${digits}`;
     return `https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`;
   }
 
