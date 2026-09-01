@@ -94,7 +94,7 @@ export default function LoginPage() {
           </div>
 
           <h2 className="text-2xl font-bold text-slate-900">Welcome back</h2>
-          <p className="mt-1 text-sm text-slate-500">Sign in to your admin account</p>
+          <p className="mt-1 text-sm text-slate-500">Sign in to your NG Home account</p>
 
           <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-5">
             <Input
@@ -135,15 +135,18 @@ export default function LoginPage() {
             </div>
           </form>
 
-          <p className="mt-8 text-center text-sm text-slate-500">
-            New society?{' '}
-            <Link href="/register" className="text-primary-600 font-medium hover:underline">
-              Register your society
+          <p className="mt-6 text-center text-sm text-slate-500">
+            New resident?{' '}
+            <Link href="/join" className="text-primary-600 font-medium hover:underline">
+              Join with invite code
             </Link>
           </p>
 
-          <p className="mt-4 text-center text-xs text-slate-400">
-            NG Home Admin Portal · Access is restricted to authorized society administrators
+          <p className="mt-2 text-center text-sm text-slate-500">
+            Setting up a new society?{' '}
+            <Link href="/register" className="text-primary-600 font-medium hover:underline">
+              Register your society
+            </Link>
           </p>
         </div>
       </div>
