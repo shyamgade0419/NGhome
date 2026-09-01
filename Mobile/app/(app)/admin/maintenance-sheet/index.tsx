@@ -251,14 +251,9 @@ export default function MaintenanceSheetScreen() {
   // Load billing periods
   const { data: periodsData } = useQuery({
     queryKey: ['billing-periods-sheet'],
+    // React Query v5 removed the onSuccess callback — the default period is
+    // selected by the effect below instead.
     queryFn: () => billingApi.getBillingPeriods({ limit: 24 }),
-    onSuccess: (d: any) => {
-      if (!selectedPeriodId && d?.data?.length) {
-        // Default to most recent published period
-        const published = d.data.find((p: BillingPeriod) => p.status === 'PUBLISHED');
-        setSelectedPeriodId(published?.id ?? d.data[0]?.id ?? null);
-      }
-    },
   });
 
   const periods: BillingPeriod[] = periodsData?.data ?? [];
@@ -308,7 +303,7 @@ export default function MaintenanceSheetScreen() {
       <ScreenHeader
         title="Maintenance Sheet"
         showBack
-        right={
+        rightAction={
           <TouchableOpacity onPress={() => refetch()} hitSlop={8}>
             <Ionicons name="refresh-outline" size={20} color={colors.primary} />
           </TouchableOpacity>

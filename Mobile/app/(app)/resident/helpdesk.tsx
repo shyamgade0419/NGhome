@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
   fieldLabel: { ...typography.labelLarge, color: colors.text, marginBottom: -spacing.xs },
   input: {
     borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
-    padding: spacing.md, ...typography.body, color: colors.text, backgroundColor: colors.surface,
+    padding: spacing.md, ...typography.bodyMedium, color: colors.text, backgroundColor: colors.surface,
   },
   textArea: { minHeight: 100, textAlignVertical: 'top' },
 

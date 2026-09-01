@@ -83,7 +83,6 @@ type Config = {
   showExpensesToResidents: boolean;
   publishStatementToResidents: boolean;
   publishMeetingMinutes: boolean;
-  paymentVerificationRequired: boolean;
   allowPaymentProofUpload: boolean;
 };
 
@@ -93,7 +92,6 @@ const DEFAULTS: Config = {
   showExpensesToResidents: false,
   publishStatementToResidents: false,
   publishMeetingMinutes: false,
-  paymentVerificationRequired: false,
   allowPaymentProofUpload: true,
 };
 
@@ -115,7 +113,6 @@ export default function NotificationSettingsScreen() {
         showExpensesToResidents: data.showExpensesToResidents ?? false,
         publishStatementToResidents: data.publishStatementToResidents ?? false,
         publishMeetingMinutes: data.publishMeetingMinutes ?? false,
-        paymentVerificationRequired: data.paymentVerificationRequired ?? false,
         allowPaymentProofUpload: data.allowPaymentProofUpload ?? true,
       });
     }
@@ -189,12 +186,6 @@ export default function NotificationSettingsScreen() {
             title="Payment Settings"
             sub="How residents submit and verify payments"
           />
-          <ToggleRow
-            label="Require payment verification"
-            sublabel="Admin must approve before payment is marked paid"
-            value={form.paymentVerificationRequired}
-            onChange={set('paymentVerificationRequired')}
-          />
           <View style={{ borderBottomWidth: 0 }}>
             <ToggleRow
               label="Allow proof upload"
@@ -203,6 +194,12 @@ export default function NotificationSettingsScreen() {
               onChange={set('allowPaymentProofUpload')}
             />
           </View>
+          {/* Payment verification lives in Society Settings → UPI & Payments,
+              next to the UPI ID it applies to. Editing it in two places let
+              whichever screen saved last silently revert the other. */}
+          <Text style={styles.crossRef}>
+            Auto-approval of UPI payments is configured in Society Settings → UPI &amp; Payments.
+          </Text>
         </Card>
 
         <Button
@@ -225,4 +222,10 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.base, gap: spacing.md },
   section: { gap: 0 },
+  crossRef: {
+    ...typography.bodySmall,
+    color: colors.textTertiary,
+    paddingTop: spacing.md,
+    lineHeight: 17,
+  },
 });

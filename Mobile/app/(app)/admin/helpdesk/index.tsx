@@ -247,7 +247,7 @@ const styles = StyleSheet.create({
 
   descBox: { backgroundColor: colors.surfaceSecondary ?? colors.background, borderRadius: radius.md, padding: spacing.md, gap: spacing.xs },
   descLabel: { ...typography.labelSmall, color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5 },
-  descText: { ...typography.body, color: colors.text },
+  descText: { ...typography.bodyMedium, color: colors.text },
 
   fieldLabel: { ...typography.labelLarge, color: colors.text },
   statusRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
@@ -258,6 +258,6 @@ const styles = StyleSheet.create({
   textArea: {
     borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
     padding: spacing.md, minHeight: 80,
-    ...typography.body, color: colors.text, backgroundColor: colors.surface,
+    ...typography.bodyMedium, color: colors.text, backgroundColor: colors.surface,
   },
 });

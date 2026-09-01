@@ -318,7 +318,7 @@ export default function WaterReadingsScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScreenHeader
         title="Water Readings"
-        right={
+        rightAction={
           <Button
             label="Save"
             onPress={handleSave}

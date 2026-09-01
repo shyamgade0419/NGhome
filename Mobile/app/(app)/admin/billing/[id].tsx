@@ -44,7 +44,7 @@ function buildBillMessage(bill: MaintenanceBill, period: BillingPeriod): string 
     `💰 Total: *₹${total.toLocaleString('en-IN')}*`,
   ];
   if (water > 0) {
-    lines.push(`   • Maintenance: ₹${parseFloat(bill.baseAmount).toLocaleString('en-IN')}`);
+    lines.push(`   • Maintenance: ₹${parseFloat(bill.baseAmount ?? '0').toLocaleString('en-IN')}`);
     lines.push(`   • Water: ₹${water.toLocaleString('en-IN')}`);
   }
   if (bill.isPaid) {

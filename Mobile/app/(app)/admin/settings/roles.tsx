@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Alert,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -46,6 +47,9 @@ interface Member {
 export default function RolesScreen() {
   const qc = useQueryClient();
   const [changingId, setChangingId] = useState<string | null>(null);
+  // Role picker as a modal — Alert.alert only renders 3 buttons on Android,
+  // which silently dropped two of the five role options.
+  const [roleTarget, setRoleTarget] = useState<Member | null>(null);
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['society-members-mobile'],
@@ -54,7 +58,7 @@ export default function RolesScreen() {
 
   const changeRoleMutation = useMutation({
     mutationFn: ({ userId, role }: { userId: string; role: string }) =>
-      apiClient.post('/users/society/members', { userId, role }),
+      apiClient.post('/users/society/add-member', { userId, role }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['society-members-mobile'] });
       setChangingId(null);
@@ -64,30 +68,22 @@ export default function RolesScreen() {
 
   const removeMutation = useMutation({
     mutationFn: (userId: string) =>
-      apiClient.delete(`/users/society/members/${userId}`),
+      apiClient.delete(`/users/society/${userId}/remove`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['society-members-mobile'] }),
     onError: (e: any) => Alert.alert('Error', e?.response?.data?.message ?? 'Failed to remove member.'),
   });
 
   const members: Member[] = data ?? [];
 
-  const handleChangeRole = (member: Member) => {
-    const current = member.memberships?.[0]?.role ?? 'RESIDENT';
-    Alert.alert(
-      `Change role for ${member.firstName}`,
-      'Select new role:',
-      [
-        ...ROLES.map((r) => ({
-          text: r.label + (r.value === current ? ' ✓' : ''),
-          onPress: () => {
-            if (r.value !== current) {
-              changeRoleMutation.mutate({ userId: member.id, role: r.value });
-            }
-          },
-        })),
-        { text: 'Cancel', style: 'cancel' },
-      ],
-    );
+  const handleChangeRole = (member: Member) => setRoleTarget(member);
+
+  const applyRole = (role: RoleValue) => {
+    if (!roleTarget) return;
+    const current = roleTarget.memberships?.[0]?.role ?? 'RESIDENT';
+    if (role !== current) {
+      changeRoleMutation.mutate({ userId: roleTarget.id, role });
+    }
+    setRoleTarget(null);
   };
 
   const handleRemove = (member: Member) => {
@@ -167,9 +163,83 @@ export default function RolesScreen() {
           contentContainerStyle={styles.list}
         />
       )}
+
+      {/* Role picker — cross-platform (Alert.alert caps at 3 buttons on Android) */}
+      <Modal
+        visible={!!roleTarget}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setRoleTarget(null)}
+      >
+        <View style={picker.overlay}>
+          <View style={picker.sheet}>
+            <View style={picker.header}>
+              <View style={{ flex: 1 }}>
+                <Text style={picker.title}>Change Role</Text>
+                {roleTarget && (
+                  <Text style={picker.subtitle}>
+                    {roleTarget.firstName} {roleTarget.lastName}
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity onPress={() => setRoleTarget(null)} hitSlop={8}>
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {ROLES.map((r) => {
+              const current = (roleTarget?.memberships?.[0]?.role ?? 'RESIDENT') === r.value;
+              return (
+                <TouchableOpacity
+                  key={r.value}
+                  style={[picker.option, current && { backgroundColor: r.bg }]}
+                  onPress={() => applyRole(r.value)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[picker.dot, { backgroundColor: r.color }]} />
+                  <Text style={[picker.optionText, current && { color: r.color, fontWeight: '700' }]}>
+                    {r.label}
+                  </Text>
+                  {current && <Ionicons name="checkmark" size={18} color={r.color} />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
+
+const picker = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 40,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.xl,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  title: { ...typography.headingSmall, color: colors.text },
+  subtitle: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.base,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+  },
+  dot: { width: 10, height: 10, borderRadius: 5 },
+  optionText: { ...typography.bodyMedium, color: colors.text, flex: 1 },
+});
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },

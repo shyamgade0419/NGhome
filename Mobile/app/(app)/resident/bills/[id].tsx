@@ -60,7 +60,7 @@ export default function ResidentBillDetailScreen() {
       `🏢 Maintenance Bill — ${bill.invoiceNumber}`,
       `Flat: ${bill.flatCode ?? ''}`,
       `Total: ₹${parseFloat(bill.totalAmount).toLocaleString('en-IN')}`,
-      ...(water > 0 ? [`   • Maintenance: ₹${parseFloat(bill.baseAmount).toLocaleString('en-IN')}`, `   • Water: ₹${water.toLocaleString('en-IN')}`] : []),
+      ...(water > 0 ? [`   • Maintenance: ₹${parseFloat(bill.baseAmount ?? '0').toLocaleString('en-IN')}`, `   • Water: ₹${water.toLocaleString('en-IN')}`] : []),
       `Status: ${bill.isPaid ? '✅ PAID' : `⚠️ Due ₹${pending.toLocaleString('en-IN')}`}`,
     ];
     try {
@@ -95,7 +95,7 @@ export default function ResidentBillDetailScreen() {
       <ScreenHeader
         title="Bill Detail"
         showBack
-        right={
+        rightAction={
           <TouchableOpacity onPress={handleShare} hitSlop={8} style={styles.shareBtn}>
             <Ionicons name="share-outline" size={20} color={colors.primary} />
           </TouchableOpacity>

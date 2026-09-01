@@ -75,13 +75,6 @@ export default function SubmitPaymentScreen() {
 
   const upiId = (societyConfig as any)?.additionalConfig?.upiId as string | undefined;
 
-  // Pre-fill amount when bill loads (useForm defaultValues run before the query resolves)
-  useEffect(() => {
-    if (myBill?.pendingAmount) {
-      setValue('amount', myBill.pendingAmount);
-    }
-  }, [myBill, setValue]);
-
   const submitMutation = useMutation({
     mutationFn: paymentsApi.submitPayment,
     onSuccess: () => {
@@ -109,6 +102,14 @@ export default function SubmitPaymentScreen() {
       paymentMethod: 'UPI',
     },
   });
+
+  // Pre-fill the amount once the bill query resolves. useForm captures
+  // defaultValues on first render, before myBill has loaded.
+  useEffect(() => {
+    if (myBill?.pendingAmount) {
+      setValue('amount', myBill.pendingAmount);
+    }
+  }, [myBill, setValue]);
 
   const onSubmit = (data: FormData) => {
     submitMutation.mutate({

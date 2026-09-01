@@ -382,9 +382,12 @@ export default function SocietySettingsScreen() {
   });
 
   const upiMutation = useMutation({
+    // NOTE: the API DTO exposes `upiId` as a TOP-LEVEL field and stores it inside
+    // additionalConfig server-side. Sending `additionalConfig` directly is rejected
+    // with 400 because the global ValidationPipe runs forbidNonWhitelisted: true.
     mutationFn: () => apiClient.patch('/societies/my/config', {
       paymentVerificationRequired: upiForm.paymentVerificationRequired,
-      additionalConfig: { upiId: upiForm.upiId.trim() || undefined },
+      upiId: upiForm.upiId.trim(),
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['society-config-mobile'] });

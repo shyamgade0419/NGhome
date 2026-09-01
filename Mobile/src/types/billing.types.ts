@@ -51,6 +51,12 @@ export interface MaintenanceBill {
   totalAmount: string;
   paidAmount: string;
   pendingAmount: string;
+  /** Maintenance charge before water and adjustments. */
+  baseAmount?: string;
+  /** Water charge allocated to this flat for the period. */
+  waterCharges?: string;
+  /** Manual credits (negative) or surcharges (positive). */
+  adjustments?: string;
   isPaid: boolean;
   isPublished: boolean;
   dueDate: string;
