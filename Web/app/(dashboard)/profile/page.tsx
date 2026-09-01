@@ -127,13 +127,20 @@ export default function ProfilePage() {
             />
           </div>
 
-          <Input
-            label="Phone"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="+91 9876543210"
-            type="tel"
-          />
+          <div>
+            <Input
+              label="Phone (WhatsApp)"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+91 9876543210"
+              type="tel"
+            />
+            {!phone && (
+              <p className="mt-1.5 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                📱 <strong>Add your WhatsApp number</strong> so your admin can send you billing reminders and important notices.
+              </p>
+            )}
+          </div>
 
           <Input
             label="Email"

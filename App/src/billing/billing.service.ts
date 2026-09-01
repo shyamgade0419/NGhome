@@ -252,6 +252,28 @@ export class BillingService {
     });
   }
 
+  /** Returns published periods only — used by the resident-accessible statement page. */
+  async listPublishedPeriods(societyId: string) {
+    return this.prisma.billingPeriod.findMany({
+      where: {
+        societyId,
+        status: { in: ['PUBLISHED', 'PARTIALLY_PAID', 'PAID', 'CLOSED'] },
+      },
+      select: {
+        id: true,
+        periodYear: true,
+        periodMonth: true,
+        status: true,
+        dueDate: true,
+        totalBilled: true,
+        totalCollected: true,
+        totalPending: true,
+      },
+      orderBy: [{ periodYear: 'desc' }, { periodMonth: 'desc' }],
+      take: 24,
+    });
+  }
+
   async findPeriods(societyId: string, page: number, limit: number) {
     const { skip, take } = getPaginationParams({ page, limit });
     const [data, total] = await Promise.all([

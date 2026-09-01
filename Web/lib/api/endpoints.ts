@@ -76,6 +76,9 @@ export const billingApi = {
   // Comprehensive monthly statement: general maintenance + water readings + arrears + total payable
   getPeriodStatement: (periodId: string) => api.get(`/billing/periods/${periodId}/statement`),
 
+  // Published periods list — accessible to all society members (no admin role required)
+  listPublishedPeriods: () => api.get('/billing/periods/published'),
+
   // Resident: view own bills
   getMyBills: (params?: Record<string, unknown>) => api.get('/billing/my-bills', { params }),
   getMyBill: (billId: string) => api.get(`/billing/my-bills/${billId}`),
@@ -207,6 +210,10 @@ export const societyApi = {
 
   // Member management
   removeMember: (userId: string) => api.delete(`/users/society/${userId}/remove`),
+
+  // Edit a resident's profile info (admin only — PATCH /users/:id)
+  updateUser: (userId: string, data: { firstName?: string; lastName?: string; phone?: string }) =>
+    api.patch(`/users/${userId}`, data),
 
   // Resident invite / join code (admin only)
   getJoinCode: (): Promise<{ data: { joinCode: string; generatedAt: string | null } }> =>

@@ -27,8 +27,9 @@ const ADMIN_ONLY_PREFIXES = [
 const ADMIN_ROLES = ['SOCIETY_ADMIN', 'SOCIETY_ACCOUNTANT', 'SOCIETY_STAFF', 'PLATFORM_ADMIN'];
 
 function isAdminOnlyPath(pathname: string): boolean {
-  // /billing/my is allowed for residents
+  // Resident-accessible billing paths
   if (pathname === '/billing/my' || pathname.startsWith('/billing/my/')) return false;
+  if (pathname === '/billing/statement' || pathname.startsWith('/billing/statement/')) return false;
   return ADMIN_ONLY_PREFIXES.some(
     (p) => pathname === p || pathname.startsWith(p + '/'),
   );

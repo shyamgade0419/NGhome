@@ -24,6 +24,7 @@ import {
   FolderOpen,
   ShieldCheck,
   Wrench,
+  LayoutList,
 } from 'lucide-react';
 import { cn, initials } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -33,6 +34,7 @@ import { useSidebar } from './SidebarContext';
 const ADMIN_NAV = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/billing', icon: Receipt, label: 'Billing' },
+  { href: '/billing/statement', icon: LayoutList, label: 'Maintenance Sheet' },
   { href: '/billing/my', icon: FileText, label: 'My Bills' },
   { href: '/payments', icon: CreditCard, label: 'Payments' },
   { href: '/expenses', icon: Wallet, label: 'Expenses' },
@@ -55,6 +57,7 @@ const ADMIN_NAV = [
 const RESIDENT_NAV = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/billing/my', icon: FileText, label: 'My Bills' },
+  { href: '/billing/statement', icon: LayoutList, label: 'Maintenance Sheet' },
   { href: '/community', icon: Megaphone, label: 'Community' },
   { href: '/helpdesk', icon: Wrench, label: 'Helpdesk' },
   { href: '/documents', icon: FolderOpen, label: 'Documents' },

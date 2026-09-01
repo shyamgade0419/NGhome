@@ -44,6 +44,18 @@ export class BillingController {
     return this.billingService.findPeriods(societyId, +page, +limit);
   }
 
+  /**
+   * Returns published billing periods — no admin role required so residents
+   * can fetch the period list for the Society Maintenance Statement page.
+   * MUST be declared before @Get('periods/:periodId') or NestJS will treat
+   * the literal string "published" as the :periodId parameter value.
+   */
+  @Get('periods/published')
+  @ApiOperation({ summary: 'List published billing periods (all society members)' })
+  listPublishedPeriods(@SocietyId() societyId: string) {
+    return this.billingService.listPublishedPeriods(societyId);
+  }
+
   @Get('periods/:periodId')
   @UseGuards(RolesGuard)
   @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
@@ -97,9 +109,7 @@ export class BillingController {
   }
 
   @Get('periods/:periodId/statement')
-  @UseGuards(RolesGuard)
-  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
-  @ApiOperation({ summary: 'Comprehensive monthly maintenance statement per flat — includes water readings, arrears, late fees, and total payable' })
+  @ApiOperation({ summary: 'Comprehensive monthly maintenance statement — accessible to all society members (residents see all flats for transparency)' })
   getPeriodStatement(@SocietyId() societyId: string, @Param('periodId') periodId: string) {
     return this.billingService.getPeriodStatement(societyId, periodId);
   }
