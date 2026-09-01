@@ -460,6 +460,7 @@ export class BillingService {
         invoiceNumber: bill.invoiceNumber,
         isPaid: bill.isPaid,
         isPublished: bill.isPublished,
+        notes: bill.notes ?? null,
         residentName: resident ? `${resident.firstName} ${resident.lastName}` : '—',
         residentPhone: resident?.phone ?? null,
         generalMaintenance,
@@ -497,6 +498,15 @@ export class BillingService {
       },
       statements,
     };
+  }
+
+  async updateBillNotes(societyId: string, billId: string, notes: string) {
+    await this.findBillById(societyId, billId);
+    return this.prisma.maintenanceBill.update({
+      where: { id: billId },
+      data: { notes: notes || null },
+      select: { id: true, notes: true },
+    });
   }
 
   async adjustBill(

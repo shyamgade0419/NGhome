@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { LayoutList, Printer } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { LayoutList, Printer, Pencil, Check, X } from 'lucide-react';
 import { billingApi } from '@/lib/api/endpoints';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Header } from '@/components/layout/Header';
@@ -20,6 +20,11 @@ const MONTH_NAMES = [
 export default function MaintenanceStatementPage() {
   const { activeMembership } = useAuth();
   const myFlatId = activeMembership?.flatId ?? null;
+  const isAdmin =
+    activeMembership?.role === 'SOCIETY_ADMIN' ||
+    activeMembership?.role === 'SOCIETY_ACCOUNTANT';
+
+  const queryClient = useQueryClient();
 
   /* Load list of published periods */
   const { data: periodsRaw, isLoading: periodsLoading } = useQuery({
@@ -42,6 +47,33 @@ export default function MaintenanceStatementPage() {
 
   const period = statementRaw?.period ?? null;
   const statements: any[] = statementRaw?.statements ?? [];
+
+  /* Note editing state */
+  const [editingBillId, setEditingBillId] = useState<string | null>(null);
+  const [noteText, setNoteText] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+
+  function startEdit(billId: string, currentNote: string | null) {
+    setEditingBillId(billId);
+    setNoteText(currentNote ?? '');
+  }
+
+  function cancelEdit() {
+    setEditingBillId(null);
+    setNoteText('');
+  }
+
+  async function saveNote(billId: string) {
+    setSavingNote(true);
+    try {
+      await billingApi.updateBillNotes(billId, noteText.trim());
+      await queryClient.invalidateQueries({ queryKey: ['period-statement', activePeriodId] });
+      setEditingBillId(null);
+      setNoteText('');
+    } finally {
+      setSavingNote(false);
+    }
+  }
 
   return (
     <>
@@ -144,12 +176,16 @@ export default function MaintenanceStatementPage() {
                         <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Arrears</th>
                         <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Total Payable</th>
                         <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Status</th>
+                        <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap min-w-[160px]">
+                          Note {isAdmin && <span className="ml-1 font-normal text-slate-400 normal-case">(admin only)</span>}
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {statements.map((s: any) => {
                         const isMyFlat = s.flatId === myFlatId;
                         const discount = s.adjustments < 0 ? Math.abs(s.adjustments) : 0;
+                        const isEditing = editingBillId === s.billId;
                         return (
                           <tr
                             key={s.billId}
@@ -204,6 +240,66 @@ export default function MaintenanceStatementPage() {
                                 {s.isPaid ? '✓ Paid' : s.isPublished ? 'Unpaid' : 'Draft'}
                               </span>
                             </td>
+
+                            {/* Note column */}
+                            <td className="px-3 py-2 min-w-[200px]">
+                              {isAdmin ? (
+                                isEditing ? (
+                                  <div className="flex items-start gap-1.5">
+                                    <textarea
+                                      autoFocus
+                                      value={noteText}
+                                      onChange={(e) => setNoteText(e.target.value)}
+                                      placeholder="Add a note…"
+                                      rows={2}
+                                      className="w-full rounded border border-primary-300 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-primary-400 resize-none"
+                                    />
+                                    <div className="flex flex-col gap-1 mt-0.5">
+                                      <button
+                                        onClick={() => saveNote(s.billId)}
+                                        disabled={savingNote}
+                                        className="flex h-6 w-6 items-center justify-center rounded bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
+                                        title="Save note"
+                                      >
+                                        <Check size={12} />
+                                      </button>
+                                      <button
+                                        onClick={cancelEdit}
+                                        disabled={savingNote}
+                                        className="flex h-6 w-6 items-center justify-center rounded border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                                        title="Cancel"
+                                      >
+                                        <X size={12} />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div
+                                    className="group flex items-start gap-1.5 cursor-pointer"
+                                    onClick={() => startEdit(s.billId, s.notes)}
+                                  >
+                                    <span className={cn(
+                                      'flex-1 text-xs leading-snug',
+                                      s.notes ? 'text-slate-600' : 'text-slate-300 italic',
+                                    )}>
+                                      {s.notes || 'Add note…'}
+                                    </span>
+                                    <Pencil
+                                      size={11}
+                                      className="mt-0.5 shrink-0 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    />
+                                  </div>
+                                )
+                              ) : (
+                                /* Resident: read-only */
+                                <span className={cn(
+                                  'text-xs leading-snug',
+                                  s.notes ? 'text-slate-600' : 'text-slate-300',
+                                )}>
+                                  {s.notes || '—'}
+                                </span>
+                              )}
+                            </td>
                           </tr>
                         );
                       })}
@@ -230,7 +326,7 @@ export default function MaintenanceStatementPage() {
                         <td className="px-3 py-3 text-right tabular-nums text-slate-900">
                           {formatCurrency(statements.reduce((s, r) => s + r.totalPayable, 0))}
                         </td>
-                        <td />
+                        <td colSpan={2} />
                       </tr>
                     </tfoot>
                   </table>
@@ -241,6 +337,7 @@ export default function MaintenanceStatementPage() {
                   <p className="text-[11px] text-slate-400 leading-relaxed">
                     <strong>Total Payable</strong> = Maintenance + Water − Discount + Late Fee + Arrears (unpaid from prior months).
                     Paid flats are greyed out.
+                    {isAdmin && <> · Click any <strong>Note</strong> cell to add or edit a per-flat comment.</>}
                   </p>
                 </div>
               </div>

@@ -137,6 +137,18 @@ export class BillingController {
     return this.billingService.findBillById(societyId, billId);
   }
 
+  @Patch('bills/:billId/notes')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
+  @ApiOperation({ summary: 'Set a per-flat note on a maintenance bill (visible to all society members on the statement)' })
+  updateBillNotes(
+    @SocietyId() societyId: string,
+    @Param('billId') billId: string,
+    @Body() body: { notes: string },
+  ) {
+    return this.billingService.updateBillNotes(societyId, billId, body.notes);
+  }
+
   @Patch('bills/:billId/adjust')
   @UseGuards(RolesGuard)
   @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)

@@ -82,6 +82,10 @@ export const billingApi = {
   // Resident: view own bills
   getMyBills: (params?: Record<string, unknown>) => api.get('/billing/my-bills', { params }),
   getMyBill: (billId: string) => api.get(`/billing/my-bills/${billId}`),
+
+  // Admin: update per-flat note on a bill (visible to all members on the statement)
+  updateBillNotes: (billId: string, notes: string) =>
+    api.patch(`/billing/bills/${billId}/notes`, { notes }),
 };
 
 // Billing rules
