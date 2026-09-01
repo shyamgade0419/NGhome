@@ -1,7 +1,10 @@
 /**
- * Admin — Maintenance Sheet
- * Shows the monthly per-flat maintenance summary with paid/pending status,
- * amounts, and per-flat notes. Mirrors the web maintenance sheet view.
+ * Maintenance Sheet — shared by admins and residents.
+ *
+ * The underlying endpoint (GET /billing/periods/:id/statement) is readable by
+ * every society member: residents see all flats for transparency, matching the
+ * web sidebar which lists this for both roles. Note editing is admin-only,
+ * because PATCH /billing/bills/:billId/notes is gated to ADMIN/ACCOUNTANT.
  */
 
 import React, { useState } from 'react';
@@ -24,6 +27,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/api/client';
 import { billingApi } from '@/api/endpoints/billing.api';
+import { useAuth } from '@/hooks/useAuth';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -170,9 +174,11 @@ function NotesModal({
 function FlatCard({
   flat,
   onNotePress,
+  canEditNotes,
 }: {
   flat: FlatRow;
   onNotePress: (f: FlatRow) => void;
+  canEditNotes: boolean;
 }) {
   return (
     <View style={[styles.flatCard, flat.isPaid && styles.flatCardPaid]}>
@@ -238,17 +244,19 @@ function FlatCard({
           </View>
         )}
 
-        {/* Note button */}
-        <TouchableOpacity style={styles.noteBtn} onPress={() => onNotePress(flat)} activeOpacity={0.7}>
-          <Ionicons
-            name={flat.notes ? 'create-outline' : 'add-circle-outline'}
-            size={14}
-            color={colors.primary}
-          />
-          <Text style={styles.noteBtnText}>
-            {flat.notes ? 'Edit note' : 'Add note'}
-          </Text>
-        </TouchableOpacity>
+        {/* Note button — admin only; residents get a read-only view */}
+        {canEditNotes && (
+          <TouchableOpacity style={styles.noteBtn} onPress={() => onNotePress(flat)} activeOpacity={0.7}>
+            <Ionicons
+              name={flat.notes ? 'create-outline' : 'add-circle-outline'}
+              size={14}
+              color={colors.primary}
+            />
+            <Text style={styles.noteBtnText}>
+              {flat.notes ? 'Edit note' : 'Add note'}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -262,6 +270,11 @@ export default function MaintenanceSheetScreen() {
   const [search, setSearch] = useState('');
   const [filterPaid, setFilterPaid] = useState<'ALL' | 'PAID' | 'PENDING'>('ALL');
   const [editingFlat, setEditingFlat] = useState<FlatRow | null>(null);
+
+  // PATCH /billing/bills/:billId/notes is ADMIN/ACCOUNTANT-only — residents read.
+  const { user } = useAuth();
+  const canEditNotes =
+    user?.currentRole === 'SOCIETY_ADMIN' || user?.currentRole === 'SOCIETY_ACCOUNTANT';
 
   // Load billing periods
   const { data: periodsData } = useQuery({
@@ -417,7 +430,7 @@ export default function MaintenanceSheetScreen() {
           data={filtered}
           keyExtractor={(r) => r.flatId}
           renderItem={({ item }) => (
-            <FlatCard flat={item} onNotePress={setEditingFlat} />
+            <FlatCard flat={item} onNotePress={setEditingFlat} canEditNotes={canEditNotes} />
           )}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}

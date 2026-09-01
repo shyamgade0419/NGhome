@@ -19,6 +19,7 @@ export default function AppLayout() {
       <Stack.Screen name="admin" />
       <Stack.Screen name="resident" />
       <Stack.Screen name="help" />
+      <Stack.Screen name="maintenance-sheet" />
     </Stack>
   );
 }

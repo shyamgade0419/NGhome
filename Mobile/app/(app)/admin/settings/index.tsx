@@ -49,7 +49,7 @@ export default function SettingsScreen() {
       icon: 'grid-outline',
       label: 'Maintenance Sheet',
       sublabel: 'Monthly flat-wise collection view',
-      onPress: () => router.push('/(app)/admin/maintenance-sheet/index' as any),
+      onPress: () => router.push('/(app)/maintenance-sheet' as any),
     },
     {
       icon: 'notifications-outline',
