@@ -111,7 +111,7 @@ function JoinCodeCard() {
         <View style={{ flex: 1 }}>
           <Text style={cardStyles.headerTitle}>Resident Invite Code</Text>
           <Text style={cardStyles.headerSub}>
-            Share with residents — they tap "Join Society" on login
+            Share with residents — they tap &ldquo;Join Society&rdquo; on login
           </Text>
         </View>
       </View>
@@ -184,7 +184,7 @@ function JoinCodeCard() {
       <View style={cardStyles.note}>
         <Ionicons name="information-circle-outline" size={14} color={colors.textTertiary} />
         <Text style={cardStyles.noteText}>
-          Residents download the NG Home app, tap <Text style={{ fontWeight: '600' }}>"Have an invite code?"</Text> on
+          Residents download the NG Home app, tap <Text style={{ fontWeight: '600' }}>&ldquo;Have an invite code?&rdquo;</Text> on
           the login screen, enter this code, choose their flat and create their account.
         </Text>
       </View>

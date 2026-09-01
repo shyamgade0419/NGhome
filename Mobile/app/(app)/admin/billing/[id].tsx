@@ -93,7 +93,9 @@ function BillRow({
   const handleWhatsApp = async () => {
     try {
       await Share.share({ message: buildBillMessage(bill, period) });
-    } catch {}
+    } catch {
+      // User dismissed the share sheet — nothing to do.
+    }
   };
 
   return (
@@ -213,7 +215,9 @@ export default function BillingDetailScreen() {
     if (!period) return;
     try {
       await Share.share({ message: buildGroupMessage(period, bills) });
-    } catch {}
+    } catch {
+      // User dismissed the share sheet — nothing to do.
+    }
   };
 
   if (periodLoading) return <LoadingState fullscreen message="Loading period…" />;
