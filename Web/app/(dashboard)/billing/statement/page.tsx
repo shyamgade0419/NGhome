@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { LayoutList, Printer, Pencil, Check, X } from 'lucide-react';
-import { billingApi } from '@/lib/api/endpoints';
+import { LayoutList, Printer, Pencil, Check, X, MessageCircle } from 'lucide-react';
+import { billingApi, societyApi } from '@/lib/api/endpoints';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
@@ -47,6 +47,35 @@ export default function MaintenanceStatementPage() {
 
   const period = statementRaw?.period ?? null;
   const statements: any[] = statementRaw?.statements ?? [];
+
+  /* Society config — for UPI ID in WhatsApp messages */
+  const { data: configRaw } = useQuery({
+    queryKey: ['society-config'],
+    queryFn: () => societyApi.getConfig().then((r: any) => r.data ?? r),
+    enabled: isAdmin,
+  });
+  const { data: societyRaw } = useQuery({
+    queryKey: ['my-society'],
+    queryFn: () => societyApi.getMySociety().then((r: any) => r.data ?? r),
+    enabled: isAdmin,
+  });
+  const upiId: string = (configRaw?.additionalConfig as any)?.upiId ?? '';
+  const societyName: string = societyRaw?.displayName ?? societyRaw?.name ?? 'Society';
+
+  function buildWhatsAppLink(s: any) {
+    const monthYear = period
+      ? `${MONTH_NAMES[period.periodMonth]} ${period.periodYear}`
+      : 'this month';
+    const amount = s.totalPayable?.toLocaleString('en-IN') ?? s.totalPayable;
+    let msg = `Hi ${s.residentName}, friendly reminder from ${societyName}: your maintenance for ${monthYear} (Flat ${s.flatCode}) of ₹${amount} is due.`;
+    if (upiId) {
+      msg += ` Please pay via UPI: ${upiId} and share the UTR for confirmation.`;
+    }
+    msg += ` Thank you! 🙏`;
+    const phone = s.residentPhone?.replace(/\D/g, '');
+    const fullPhone = phone?.startsWith('91') ? phone : `91${phone}`;
+    return `https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`;
+  }
 
   /* Note editing state */
   const [editingBillId, setEditingBillId] = useState<string | null>(null);
@@ -189,6 +218,11 @@ export default function MaintenanceStatementPage() {
                         <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap min-w-[160px]">
                           Note {isAdmin && <span className="ml-1 font-normal text-slate-400 normal-case">(admin only)</span>}
                         </th>
+                        {isAdmin && (
+                          <th className="no-print px-3 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">
+                            Remind
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
@@ -310,6 +344,25 @@ export default function MaintenanceStatementPage() {
                                 </span>
                               )}
                             </td>
+
+                            {/* WhatsApp reminder (admin only, no-print) */}
+                            {isAdmin && (
+                              <td className="no-print px-3 py-2 text-center whitespace-nowrap">
+                                {!s.isPaid && s.residentPhone ? (
+                                  <a
+                                    href={buildWhatsAppLink(s)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title={`Send WhatsApp reminder to ${s.residentName}`}
+                                    className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-green-100 text-green-700 hover:bg-green-200 transition-colors"
+                                  >
+                                    <MessageCircle size={13} />
+                                  </a>
+                                ) : (
+                                  <span className="text-slate-200">—</span>
+                                )}
+                              </td>
+                            )}
                           </tr>
                         );
                       })}
@@ -336,7 +389,7 @@ export default function MaintenanceStatementPage() {
                         <td className="px-3 py-3 text-right tabular-nums text-slate-900">
                           {formatCurrency(statements.reduce((s, r) => s + r.totalPayable, 0))}
                         </td>
-                        <td colSpan={2} />
+                        <td colSpan={isAdmin ? 3 : 2} />
                       </tr>
                     </tfoot>
                   </table>

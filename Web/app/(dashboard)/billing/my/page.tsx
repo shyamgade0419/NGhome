@@ -1,28 +1,163 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Receipt, Download, ChevronDown, ChevronUp, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
-import { billingApi } from '@/lib/api/endpoints';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Receipt, Download, ChevronDown, ChevronUp, CheckCircle2, Clock, AlertCircle, Copy, Check, Smartphone, ExternalLink } from 'lucide-react';
+import { billingApi, societyApi } from '@/lib/api/endpoints';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
-import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
+import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatCurrency, formatDate, parseDecimalLike, cn } from '@/lib/utils';
+import toast from 'react-hot-toast';
 
 const MONTH_NAMES = [
   '', 'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-function BillCard({ bill }: { bill: any }) {
+function UpiPayCard({
+  bill,
+  upiId,
+  societyName,
+  verificationRequired,
+  onPaid,
+}: {
+  bill: any;
+  upiId: string;
+  societyName: string;
+  verificationRequired: boolean;
+  onPaid: () => void;
+}) {
+  const [utr, setUtr] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const pending = parseDecimalLike(bill.pendingAmount);
+
+  const upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(societyName)}&am=${pending}&tn=${encodeURIComponent(`Invoice ${bill.invoiceNumber}`)}&cu=INR`;
+
+  function copyUpi() {
+    navigator.clipboard.writeText(upiId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function submitPayment() {
+    if (!utr.trim()) { toast.error('Please enter your UTR / transaction ID'); return; }
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/backend/payments/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          maintenanceBillId: bill.id,
+          billingPeriodId: bill.billingPeriodId,
+          amount: pending,
+          paymentDate: new Date().toISOString().split('T')[0],
+          paymentMethod: 'UPI',
+          utrNumber: utr.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message ?? 'Payment submission failed');
+
+      if (data.autoApproved) {
+        toast.success('✅ Payment confirmed! Bill marked as paid.');
+      } else {
+        toast.success('Payment submitted! Admin will verify shortly.');
+      }
+      onPaid();
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-primary-200 bg-primary-50/40 p-4 space-y-4">
+      <p className="text-xs font-semibold text-primary-700 uppercase tracking-wide">Pay via UPI</p>
+
+      {/* UPI ID row */}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 rounded-lg border border-primary-200 bg-white px-3 py-2 font-mono text-sm text-slate-800 select-all">
+          {upiId}
+        </div>
+        <button
+          onClick={copyUpi}
+          className="flex items-center gap-1.5 rounded-lg border border-primary-200 bg-white px-3 py-2 text-xs font-medium text-primary-700 hover:bg-primary-50 transition-colors"
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          {copied ? 'Copied!' : 'Copy'}
+        </button>
+      </div>
+
+      {/* Amount */}
+      <div className="text-center">
+        <p className="text-xs text-slate-500">Amount to pay</p>
+        <p className="text-2xl font-bold text-primary-700">{formatCurrency(pending)}</p>
+        <p className="text-xs text-slate-400 mt-1">Ref: Invoice {bill.invoiceNumber}</p>
+      </div>
+
+      {/* Open UPI App button */}
+      <a
+        href={upiLink}
+        className="flex items-center justify-center gap-2 w-full rounded-xl bg-primary-600 text-white py-3 text-sm font-semibold hover:bg-primary-700 active:scale-95 transition-all"
+      >
+        <Smartphone size={16} />
+        Open UPI App (GPay / PhonePe / Paytm)
+      </a>
+
+      {/* Divider */}
+      <div className="relative flex items-center gap-3">
+        <div className="flex-1 border-t border-slate-200" />
+        <span className="text-xs text-slate-400">After paying</span>
+        <div className="flex-1 border-t border-slate-200" />
+      </div>
+
+      {/* UTR entry */}
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-slate-600">
+          Enter UTR / Transaction ID from your UPI app
+        </label>
+        <input
+          type="text"
+          value={utr}
+          onChange={(e) => setUtr(e.target.value)}
+          placeholder="e.g. 426101234567"
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 placeholder:text-slate-300"
+        />
+        <button
+          onClick={submitPayment}
+          disabled={submitting || !utr.trim()}
+          className="w-full rounded-xl bg-green-600 text-white py-2.5 text-sm font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {submitting ? 'Confirming…' : 'Confirm Payment'}
+        </button>
+        <p className="text-[11px] text-center text-slate-400">
+          {verificationRequired
+            ? 'Admin will verify your UTR and confirm within 24 hrs.'
+            : '✅ Payment will be auto-confirmed once submitted.'}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function BillCard({ bill, upiId, societyName, verificationRequired, onPaid }: {
+  bill: any;
+  upiId: string;
+  societyName: string;
+  verificationRequired: boolean;
+  onPaid: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const [showUpi, setShowUpi] = useState(false);
   const period = bill.billingPeriod;
   const isPaid = bill.isPaid;
-  const pending = parseFloat(bill.pendingAmount);
+  const pending = parseDecimalLike(bill.pendingAmount);
   const hasPending = pending > 0;
 
   return (
@@ -73,7 +208,7 @@ function BillCard({ bill }: { bill: any }) {
 
       {/* Expanded: line items */}
       {expanded && (
-        <div className="border-t border-slate-100 px-5 py-4 space-y-3">
+        <div className="border-t border-slate-100 px-5 py-4 space-y-4">
           {/* Bill breakdown */}
           <div className="space-y-1.5">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Bill Breakdown</p>
@@ -86,27 +221,19 @@ function BillCard({ bill }: { bill: any }) {
               ))
             ) : (
               <>
-                {parseFloat(bill.baseAmount) > 0 && (
+                {parseDecimalLike(bill.baseAmount) > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-700">Maintenance</span>
                     <span className="font-medium">{formatCurrency(bill.baseAmount)}</span>
                   </div>
                 )}
-                {parseFloat(bill.waterCharges) > 0 && (
+                {parseDecimalLike(bill.waterCharges) > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-700">Water Charges</span>
                     <span className="font-medium text-blue-700">{formatCurrency(bill.waterCharges)}</span>
                   </div>
                 )}
-                {parseFloat(bill.adjustments) !== 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-700">Adjustments</span>
-                    <span className={cn('font-medium', parseFloat(bill.adjustments) < 0 ? 'text-green-600' : 'text-red-600')}>
-                      {formatCurrency(bill.adjustments)}
-                    </span>
-                  </div>
-                )}
-                {parseFloat(bill.lateFee) > 0 && (
+                {parseDecimalLike(bill.lateFee) > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-700">Late Fee</span>
                     <span className="font-medium text-red-600">{formatCurrency(bill.lateFee)}</span>
@@ -135,6 +262,29 @@ function BillCard({ bill }: { bill: any }) {
             </div>
           </div>
 
+          {/* UPI Pay section (only for unpaid bills with UPI configured) */}
+          {hasPending && upiId && (
+            <>
+              {!showUpi ? (
+                <button
+                  onClick={() => setShowUpi(true)}
+                  className="flex items-center justify-center gap-2 w-full rounded-xl border-2 border-primary-300 bg-primary-50 text-primary-700 py-3 text-sm font-semibold hover:bg-primary-100 transition-colors"
+                >
+                  <Smartphone size={16} />
+                  Pay ₹{pending.toLocaleString('en-IN')} via UPI
+                </button>
+              ) : (
+                <UpiPayCard
+                  bill={bill}
+                  upiId={upiId}
+                  societyName={societyName}
+                  verificationRequired={verificationRequired}
+                  onPaid={onPaid}
+                />
+              )}
+            </>
+          )}
+
           {/* Print button */}
           <div className="flex justify-end">
             <button
@@ -152,15 +302,31 @@ function BillCard({ bill }: { bill: any }) {
 
 export default function MyBillsPage() {
   const { user, activeMembership } = useAuth();
+  const queryClient = useQueryClient();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['my-bills'],
     queryFn: () => billingApi.getMyBills({ limit: 24 }).then((r: any) => r.data ?? r),
+  });
+
+  const { data: configRaw } = useQuery({
+    queryKey: ['society-config'],
+    queryFn: () => societyApi.getConfig().then((r: any) => r.data ?? r),
+  });
+
+  const { data: societyRaw } = useQuery({
+    queryKey: ['my-society'],
+    queryFn: () => societyApi.getMySociety().then((r: any) => r.data ?? r),
   });
 
   const bills: any[] = Array.isArray(data) ? data : (data?.data ?? []);
   const totalPending = bills.reduce((s, b) => s + parseDecimalLike(b.pendingAmount), 0);
   const totalPaid = bills.reduce((s, b) => s + parseDecimalLike(b.paidAmount), 0);
+
+  // Extract UPI config
+  const upiId: string = (configRaw?.additionalConfig as any)?.upiId ?? '';
+  const verificationRequired: boolean = configRaw?.paymentVerificationRequired !== false;
+  const societyName: string = societyRaw?.displayName ?? societyRaw?.name ?? 'Society';
 
   return (
     <>
@@ -193,9 +359,29 @@ export default function MyBillsPage() {
               </Card>
             </div>
 
+            {/* UPI hint if configured */}
+            {upiId && totalPending > 0 && (
+              <div className="flex items-start gap-3 rounded-xl border border-primary-200 bg-primary-50 px-4 py-3">
+                <Smartphone size={16} className="text-primary-600 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-primary-700">
+                  <strong>Pay via UPI</strong> — Open any bill below, tap "Pay via UPI", scan or open your UPI app, and enter the transaction ID to confirm.
+                  {!verificationRequired && ' Payments are auto-confirmed instantly.'}
+                </p>
+              </div>
+            )}
+
             {/* Bills */}
             <div className="space-y-3">
-              {bills.map((bill) => <BillCard key={bill.id} bill={bill} />)}
+              {bills.map((bill) => (
+                <BillCard
+                  key={bill.id}
+                  bill={bill}
+                  upiId={upiId}
+                  societyName={societyName}
+                  verificationRequired={verificationRequired}
+                  onPaid={() => refetch()}
+                />
+              ))}
             </div>
           </>
         )}

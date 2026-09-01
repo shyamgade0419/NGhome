@@ -21,15 +21,26 @@ export class PaymentsService {
     });
     if (!membership) throw new ForbiddenException('Flat not assigned to your account');
 
+    let bill: Awaited<ReturnType<typeof this.prisma.maintenanceBill.findFirst>> = null;
     if (dto.maintenanceBillId) {
-      const bill = await this.prisma.maintenanceBill.findFirst({
+      bill = await this.prisma.maintenanceBill.findFirst({
         where: { id: dto.maintenanceBillId, societyId, flatId },
       });
       if (!bill) throw new NotFoundException('Bill not found');
       if (bill.isPaid) throw new BadRequestException('Bill is already fully paid');
     }
 
-    return this.prisma.paymentSubmission.create({
+    // Check if society requires manual payment verification
+    const config = await this.prisma.societyConfiguration.findUnique({
+      where: { societyId },
+      select: { paymentVerificationRequired: true },
+    });
+    const autoApprove =
+      config?.paymentVerificationRequired === false &&
+      !!dto.utrNumber &&
+      !!bill;
+
+    const payment = await this.prisma.paymentSubmission.create({
       data: {
         societyId,
         flatId,
@@ -44,9 +55,27 @@ export class PaymentsService {
         bankName: dto.bankName,
         chequeNumber: dto.chequeNumber,
         notes: dto.notes,
-        status: PaymentStatus.PENDING,
+        status: autoApprove ? PaymentStatus.APPROVED : PaymentStatus.PENDING,
+        ...(autoApprove ? { reviewedAt: new Date(), approvedAt: new Date() } : {}),
       },
     });
+
+    // Auto-confirm: mark the bill as paid without requiring admin intervention
+    if (autoApprove && bill) {
+      const paidAmt = bill.paidAmount.toNumber() + dto.amount;
+      const pendingAmt = Math.max(0, bill.pendingAmount.toNumber() - dto.amount);
+      await this.prisma.maintenanceBill.update({
+        where: { id: bill.id },
+        data: {
+          paidAmount: new Prisma.Decimal(paidAmt),
+          pendingAmount: new Prisma.Decimal(pendingAmt),
+          isPaid: pendingAmt === 0,
+        },
+      });
+      return { ...payment, autoApproved: true };
+    }
+
+    return payment;
   }
 
   async approve(societyId: string, paymentId: string, reviewedById: string, accountId: string, notes?: string) {
