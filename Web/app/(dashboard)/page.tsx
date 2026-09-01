@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   IndianRupee,
@@ -9,8 +10,10 @@ import {
   Building2,
   Users,
   Clock,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
-import { dashboardApi, paymentsApi } from '@/lib/api/endpoints';
+import { dashboardApi, paymentsApi, billingApi, reportsApi } from '@/lib/api/endpoints';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { StatCard } from '@/components/ui/StatCard';
@@ -20,21 +23,99 @@ import { PageSpinner } from '@/components/ui/Spinner';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import Link from 'next/link';
 
+const MONTH_NAMES = [
+  '', 'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
 export default function DashboardPage() {
-  const { data: summary, isLoading } = useQuery({
-    queryKey: ['dashboard'],
+  /* Load published periods to populate the month picker */
+  const { data: periodsRaw } = useQuery({
+    queryKey: ['published-periods'],
+    queryFn: () => billingApi.listPublishedPeriods().then((r: any) => r.data ?? r),
+  });
+  const periods: any[] = Array.isArray(periodsRaw) ? periodsRaw : [];
+
+  /* Default to the most recent published period; fall back to current calendar month */
+  const now = new Date();
+  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth() + 1);
+  const [initialised, setInitialised] = useState(false);
+
+  useEffect(() => {
+    if (!initialised && periods.length > 0) {
+      /* periods is ordered most-recent-first by the backend */
+      const latest = periods[0];
+      setSelectedYear(latest.periodYear);
+      setSelectedMonth(latest.periodMonth);
+      setInitialised(true);
+    }
+  }, [periods, initialised]);
+
+  /* Step the month picker forward / backward — constrained to periods that exist */
+  const currentIndex = periods.findIndex(
+    (p) => p.periodYear === selectedYear && p.periodMonth === selectedMonth,
+  );
+  const canGoPrev = currentIndex < periods.length - 1;
+  const canGoNext = currentIndex > 0;
+
+  function goMonth(direction: 'prev' | 'next') {
+    if (direction === 'prev' && canGoPrev) {
+      const p = periods[currentIndex + 1];
+      setSelectedYear(p.periodYear);
+      setSelectedMonth(p.periodMonth);
+    }
+    if (direction === 'next' && canGoNext) {
+      const p = periods[currentIndex - 1];
+      setSelectedYear(p.periodYear);
+      setSelectedMonth(p.periodMonth);
+    }
+  }
+
+  /* Collection summary for the selected month */
+  const { data: collectionRaw, isLoading: collectionLoading } = useQuery({
+    queryKey: ['collection-summary', selectedYear, selectedMonth],
+    queryFn: () =>
+      reportsApi
+        .collectionSummary({ year: selectedYear, month: selectedMonth })
+        .then((r: any) => r.data ?? r)
+        .catch(() => null),
+    enabled: !!selectedYear && !!selectedMonth,
+  });
+  const collection = collectionRaw?.error ? null : collectionRaw;
+
+  /* Expense summary for the selected month */
+  const { data: expenseRaw } = useQuery({
+    queryKey: ['expense-summary', selectedYear, selectedMonth],
+    queryFn: () => {
+      const startDate = new Date(selectedYear, selectedMonth - 1, 1).toISOString().split('T')[0];
+      const endDate = new Date(selectedYear, selectedMonth, 0).toISOString().split('T')[0];
+      return reportsApi
+        .expenseSummary({ fromDate: startDate, toDate: endDate })
+        .then((r: any) => r.data ?? r)
+        .catch(() => null);
+    },
+    enabled: !!selectedYear && !!selectedMonth,
+  });
+  const totalExpenses = Array.isArray(expenseRaw?.categories)
+    ? expenseRaw.categories.reduce((s: number, c: any) => s + parseFloat(c.total ?? 0), 0)
+    : expenseRaw?.total
+    ? parseFloat(expenseRaw.total)
+    : 0;
+
+  /* Society stats + account balances (not month-specific) */
+  const { data: summary, isLoading: summaryLoading } = useQuery({
+    queryKey: ['dashboard-base'],
     queryFn: () => dashboardApi.getSummary().then((r) => r.data),
   });
 
   const { data: pendingPayments } = useQuery({
     queryKey: ['payments', 'pending'],
-    queryFn: () =>
-      paymentsApi
-        .list({ status: 'PENDING', limit: 5 })
-        .then((r) => r.data),
+    queryFn: () => paymentsApi.list({ status: 'PENDING', limit: 5 }).then((r) => r.data),
   });
 
-  if (isLoading) return <PageSpinner />;
+  const isLoading = summaryLoading || collectionLoading;
+  if (isLoading && !summary) return <PageSpinner />;
 
   const s = summary;
 
@@ -47,7 +128,10 @@ export default function DashboardPage() {
           <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-5 py-3">
             <Clock size={18} className="text-amber-600 flex-shrink-0" />
             <p className="text-sm text-amber-800">
-              <span className="font-semibold">{s.pendingApprovals} payment{s.pendingApprovals > 1 ? 's' : ''}</span> pending verification —{' '}
+              <span className="font-semibold">
+                {s.pendingApprovals} payment{s.pendingApprovals > 1 ? 's' : ''}
+              </span>{' '}
+              pending verification —{' '}
               <Link href="/payments?status=PENDING" className="underline font-medium">
                 review now
               </Link>
@@ -55,15 +139,56 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Month picker */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => goMonth('prev')}
+            disabled={!canGoPrev}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <div className="flex flex-wrap gap-1.5">
+            {periods.map((p: any) => (
+              <button
+                key={p.id}
+                onClick={() => { setSelectedYear(p.periodYear); setSelectedMonth(p.periodMonth); }}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  p.periodYear === selectedYear && p.periodMonth === selectedMonth
+                    ? 'bg-primary-600 text-white'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:border-primary-300 hover:text-primary-700'
+                }`}
+              >
+                {MONTH_NAMES[p.periodMonth]} {p.periodYear}
+              </button>
+            ))}
+            {periods.length === 0 && (
+              <span className="text-xs text-slate-400 py-1">No published periods yet</span>
+            )}
+          </div>
+          <button
+            onClick={() => goMonth('next')}
+            disabled={!canGoNext}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+
         {/* Financial stats */}
         <section>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Financials
+            {collection && (
+              <span className="ml-2 normal-case text-slate-400 font-normal">
+                — {MONTH_NAMES[selectedMonth]} {selectedYear}
+              </span>
+            )}
           </h2>
           <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
             <StatCard
               label="Total Billed"
-              value={s ? formatCurrency(s.totalBilled) : '—'}
+              value={collection ? formatCurrency(collection.totalBilled) : '—'}
               icon={IndianRupee}
               iconColor="text-blue-600"
               iconBg="bg-blue-50"
@@ -71,7 +196,7 @@ export default function DashboardPage() {
             />
             <StatCard
               label="Collected"
-              value={s ? formatCurrency(s.totalCollected) : '—'}
+              value={collection ? formatCurrency(collection.totalCollected) : '—'}
               icon={TrendingUp}
               iconColor="text-green-600"
               iconBg="bg-green-50"
@@ -79,7 +204,7 @@ export default function DashboardPage() {
             />
             <StatCard
               label="Outstanding"
-              value={s ? formatCurrency(s.totalOutstanding) : '—'}
+              value={collection ? formatCurrency(collection.totalPending) : '—'}
               icon={AlertCircle}
               iconColor="text-red-600"
               iconBg="bg-red-50"
@@ -87,7 +212,7 @@ export default function DashboardPage() {
             />
             <StatCard
               label="Total Expenses"
-              value={s ? formatCurrency(s.totalExpenses) : '—'}
+              value={totalExpenses > 0 ? formatCurrency(totalExpenses) : '—'}
               icon={Wallet}
               iconColor="text-orange-600"
               iconBg="bg-orange-50"

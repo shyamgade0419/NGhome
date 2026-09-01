@@ -11,7 +11,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { formatCurrency, formatDate, cn } from '@/lib/utils';
+import { formatCurrency, formatDate, parseDecimalLike, cn } from '@/lib/utils';
 
 const MONTH_NAMES = [
   '', 'January', 'February', 'March', 'April', 'May', 'June',
@@ -159,14 +159,14 @@ export default function MyBillsPage() {
   });
 
   const bills: any[] = Array.isArray(data) ? data : (data?.data ?? []);
-  const totalPending = bills.reduce((s, b) => s + parseFloat(b.pendingAmount), 0);
-  const totalPaid = bills.reduce((s, b) => s + parseFloat(b.paidAmount), 0);
+  const totalPending = bills.reduce((s, b) => s + parseDecimalLike(b.pendingAmount), 0);
+  const totalPaid = bills.reduce((s, b) => s + parseDecimalLike(b.paidAmount), 0);
 
   return (
     <>
       <Header
         title="My Bills"
-        subtitle={activeMembership?.flatId ? `Flat ${activeMembership.flatId}` : 'Your maintenance bills'}
+        subtitle={activeMembership?.flatNumber ? `Flat ${activeMembership.flatNumber}` : 'Your maintenance bills'}
       />
       <PageContainer className="space-y-6">
         {isLoading ? (
