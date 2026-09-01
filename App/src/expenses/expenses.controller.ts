@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query, UseGuards,
+  Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SystemRole, ExpenseStatus } from '@prisma/client';
@@ -64,6 +64,23 @@ export class ExpensesController {
   @ApiOperation({ summary: 'Get expense by ID' })
   findOne(@SocietyId() societyId: string, @Param('id') id: string) {
     return this.expensesService.findOne(societyId, id);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Update a pending expense' })
+  update(
+    @SocietyId() societyId: string,
+    @Param('id') id: string,
+    @Body() dto: Partial<CreateExpenseDto>,
+  ) {
+    return this.expensesService.update(societyId, id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @ApiOperation({ summary: 'Delete a pending expense' })
+  remove(@SocietyId() societyId: string, @Param('id') id: string) {
+    return this.expensesService.remove(societyId, id);
   }
 
   @Post(':id/approve')

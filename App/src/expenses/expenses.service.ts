@@ -153,6 +153,38 @@ export class ExpensesService {
     });
   }
 
+  async update(societyId: string, expenseId: string, dto: Partial<CreateExpenseDto>) {
+    const expense = await this.findOne(societyId, expenseId);
+    if (expense.status !== ExpenseStatus.PENDING) {
+      throw new ForbiddenException('Only pending expenses can be edited');
+    }
+    return this.prisma.expense.update({
+      where: { id: expenseId },
+      data: {
+        ...(dto.description   !== undefined && { description:   dto.description }),
+        ...(dto.amount        !== undefined && { amount:        new Prisma.Decimal(dto.amount) }),
+        ...(dto.expenseDate   !== undefined && { expenseDate:   new Date(dto.expenseDate) }),
+        ...(dto.categoryId    !== undefined && { categoryId:    dto.categoryId }),
+        ...(dto.vendorPayee   !== undefined && { vendorPayee:   dto.vendorPayee }),
+        ...(dto.notes         !== undefined && { notes:         dto.notes }),
+        ...(dto.invoiceNumber !== undefined && { invoiceNumber: dto.invoiceNumber }),
+      },
+      include: {
+        category: { select: { id: true, name: true } },
+        account:  { select: { id: true, name: true } },
+      },
+    });
+  }
+
+  async remove(societyId: string, expenseId: string) {
+    const expense = await this.findOne(societyId, expenseId);
+    if (expense.status !== ExpenseStatus.PENDING) {
+      throw new ForbiddenException('Only pending expenses can be deleted');
+    }
+    await this.prisma.expense.delete({ where: { id: expenseId } });
+    return { success: true };
+  }
+
   async getCategories(societyId: string) {
     return this.prisma.expenseCategory.findMany({
       where: { societyId, isActive: true },
