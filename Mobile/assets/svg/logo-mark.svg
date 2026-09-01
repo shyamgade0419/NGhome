@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 240">
+  <!-- Shield shape -->
+  <path d="M100,8 L182,34 L182,128 C182,180 144,212 100,231 C56,212 18,180 18,128 L18,34 Z"
+        fill="#0D2147"/>
+  <!-- Shield inner highlight (subtle border) -->
+  <path d="M100,14 L176,38 L176,128 C176,176 140,207 100,225 C60,207 24,176 24,128 L24,38 Z"
+        fill="none" stroke="#1a3a6a" stroke-width="1.5"/>
+
+  <!-- NG lettering – N -->
+  <path d="M33,105 L33,52 L67,105 L67,52"
+        stroke="white" stroke-width="13" fill="none"
+        stroke-linecap="square" stroke-linejoin="miter"/>
+
+  <!-- NG lettering – G -->
+  <path d="M128,60 C121,53 112,49 100,49
+           C84,49 73,60 73,78
+           C73,97 84,108 100,108
+           C113,108 122,102 128,94
+           L128,79 L103,79"
+        stroke="white" stroke-width="12" fill="none"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Home icon – roof -->
+  <polygon points="100,122 128,147 72,147" fill="white"/>
+  <!-- Home icon – body -->
+  <rect x="76" y="147" width="48" height="36" fill="white" rx="1"/>
+  <!-- Green grid (2×2 windows) -->
+  <rect x="80" y="151" width="16" height="13" fill="#3D8C3C" rx="1.5"/>
+  <rect x="100" y="151" width="16" height="13" fill="#3D8C3C" rx="1.5"/>
+  <rect x="80" y="166" width="16" height="13" fill="#3D8C3C" rx="1.5"/>
+  <rect x="100" y="166" width="16" height="13" fill="#3D8C3C" rx="1.5"/>
+
+  <!-- Wrench – handle -->
+  <line x1="88" y1="176" x2="58" y2="200"
+        stroke="white" stroke-width="9" stroke-linecap="round"/>
+  <!-- Wrench – open jaw head -->
+  <path d="M100,158 C93,150 93,140 99,135
+           C105,130 114,131 119,137
+           L113,143 C110,140 105,141 103,144
+           C101,148 103,153 107,155 Z"
+        fill="white"/>
+
+  <!-- Green swoosh at bottom -->
+  <path d="M42,198 Q100,222 158,196"
+        stroke="#3D8C3C" stroke-width="11"
+        fill="none" stroke-linecap="round"/>
+</svg>

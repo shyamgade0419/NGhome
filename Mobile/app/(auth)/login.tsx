@@ -8,6 +8,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,7 +19,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthContext } from '@/auth/AuthContext';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { NGLogo } from '@/components/ui/NGLogo';
 import { colors, spacing, typography, radius } from '@/theme';
+
+/* ─── Brand colours matching the logo design ─────────────────── */
+const BRAND_NAVY   = '#0D2147';
+const BRAND_GREEN  = '#3D8C3C';
 
 const schema = z.object({
   identifier: z
@@ -69,205 +75,249 @@ export default function LoginScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+    <>
+      <StatusBar barStyle="light-content" backgroundColor={BRAND_NAVY} />
+      <SafeAreaView style={styles.safe}>
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          {/* Brand */}
-          <View style={styles.brand}>
-            <View style={styles.logoMark}>
-              <Ionicons name="home" size={32} color={colors.textInverse} />
-            </View>
-            <Text style={styles.brandName}>NG Home</Text>
-            <Text style={styles.brandTagline}>Powered by NovaGade</Text>
-          </View>
-
-          {/* Card */}
-          <View style={styles.card}>
-            <Text style={styles.heading}>Welcome back</Text>
-            <Text style={styles.subheading}>Sign in to your society account</Text>
-
-            <View style={styles.form}>
-              <Controller
-                control={control}
-                name="identifier"
-                render={({ field: { onChange, onBlur, value } }) => (
-                  <Input
-                    label="Email or Mobile Number"
-                    placeholder="your@email.com or 9876543210"
-                    value={value}
-                    onChangeText={onChange}
-                    onBlur={onBlur}
-                    error={errors.identifier?.message}
-                    leftIcon="person-outline"
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    required
-                  />
-                )}
-              />
-
-              <Controller
-                control={control}
-                name="password"
-                render={({ field: { onChange, onBlur, value } }) => (
-                  <Input
-                    label="Password"
-                    placeholder="Enter your password"
-                    value={value}
-                    onChangeText={onChange}
-                    onBlur={onBlur}
-                    error={errors.password?.message}
-                    leftIcon="lock-closed-outline"
-                    secureTextEntry
-                    required
-                  />
-                )}
-              />
-
-              <TouchableOpacity
-                onPress={() => router.push('/(auth)/forgot-password')}
-                style={styles.forgotRow}
-              >
-                <Text style={styles.forgotText}>Forgot password?</Text>
-              </TouchableOpacity>
-
-              <Button
-                label="Sign In"
-                onPress={handleSubmit(onSubmit)}
-                loading={loading}
-                fullWidth
-                size="lg"
-              />
-            </View>
-          </View>
-
-          {/* Register new society */}
-          <View style={styles.registerRow}>
-            <Text style={styles.registerText}>New society? </Text>
-            <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
-              <Text style={styles.registerLink}>Register here</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Resident join via invite code */}
-          <TouchableOpacity
-            style={styles.joinRow}
-            onPress={() => router.push('/(auth)/register/join-code')}
-            activeOpacity={0.7}
+          <ScrollView
+            contentContainerStyle={styles.scroll}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
           >
-            <Ionicons name="key-outline" size={16} color={colors.primary} />
-            <Text style={styles.joinText}>Have an invite code? </Text>
-            <Text style={styles.joinLink}>Join your society</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+            {/* ── Hero / Brand area ───────────────────────────── */}
+            <View style={styles.hero}>
+              {/* Shield logo — centered */}
+              <View style={styles.logoWrap}>
+                <NGLogo size={130} />
+              </View>
+
+              {/* Name + tagline */}
+              <Text style={styles.brandName}>NG HOME</Text>
+              <View style={styles.taglineRow}>
+                <View style={styles.taglineLine} />
+                <Text style={styles.tagline}>Powered by NovaGade</Text>
+                <View style={styles.taglineLine} />
+              </View>
+            </View>
+
+            {/* ── Login card ──────────────────────────────────── */}
+            <View style={styles.card}>
+              <Text style={styles.heading}>Welcome back</Text>
+              <Text style={styles.subheading}>
+                Sign in to your society account
+              </Text>
+
+              <View style={styles.form}>
+                <Controller
+                  control={control}
+                  name="identifier"
+                  render={({ field: { onChange, onBlur, value } }) => (
+                    <Input
+                      label="Email or Mobile Number"
+                      placeholder="your@email.com or 9876543210"
+                      value={value}
+                      onChangeText={onChange}
+                      onBlur={onBlur}
+                      error={errors.identifier?.message}
+                      leftIcon="person-outline"
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      required
+                    />
+                  )}
+                />
+
+                <Controller
+                  control={control}
+                  name="password"
+                  render={({ field: { onChange, onBlur, value } }) => (
+                    <Input
+                      label="Password"
+                      placeholder="Enter your password"
+                      value={value}
+                      onChangeText={onChange}
+                      onBlur={onBlur}
+                      error={errors.password?.message}
+                      leftIcon="lock-closed-outline"
+                      secureTextEntry
+                      required
+                    />
+                  )}
+                />
+
+                <TouchableOpacity
+                  onPress={() => router.push('/(auth)/forgot-password')}
+                  style={styles.forgotRow}
+                >
+                  <Text style={styles.forgotText}>Forgot password?</Text>
+                </TouchableOpacity>
+
+                <Button
+                  label="Sign In"
+                  onPress={handleSubmit(onSubmit)}
+                  loading={loading}
+                  fullWidth
+                  size="lg"
+                />
+              </View>
+            </View>
+
+            {/* ── Footer links ────────────────────────────────── */}
+            <View style={styles.footer}>
+              {/* Register new society */}
+              <View style={styles.footerRow}>
+                <Text style={styles.footerText}>New society? </Text>
+                <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
+                  <Text style={styles.footerLink}>Register here</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Join via invite code */}
+              <TouchableOpacity
+                style={styles.joinRow}
+                onPress={() => router.push('/(auth)/register/join-code')}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="key-outline" size={15} color={BRAND_NAVY} />
+                <Text style={styles.joinText}>Have an invite code? </Text>
+                <Text style={styles.joinLink}>Join your society</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
+  safe: {
+    flex: 1,
+    backgroundColor: BRAND_NAVY,
+  },
   flex: { flex: 1 },
   scroll: {
     flexGrow: 1,
-    paddingHorizontal: spacing.base,
-    paddingBottom: spacing['3xl'],
+    backgroundColor: BRAND_NAVY,
   },
 
-  brand: {
+  /* ── Hero ──────────────────────────────────────────────────── */
+  hero: {
     alignItems: 'center',
-    paddingTop: spacing['4xl'],
-    paddingBottom: spacing['2xl'],
-    gap: spacing.sm,
+    paddingTop: 48,
+    paddingBottom: 36,
+    backgroundColor: BRAND_NAVY,
   },
-  logoMark: {
-    width: 72,
-    height: 72,
-    borderRadius: 20,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.sm,
+  logoWrap: {
+    marginBottom: 20,
+    /* Subtle glow ring behind the shield */
+    shadowColor: '#3D8C3C',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 12,
   },
   brandName: {
-    ...typography.displaySmall,
-    color: colors.text,
-    letterSpacing: -0.5,
+    color: '#FFFFFF',
+    fontSize: 34,
+    fontWeight: '800',
+    letterSpacing: 6,
+    fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'sans-serif-condensed',
   },
-  brandTagline: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    letterSpacing: 0.5,
+  taglineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 8,
+  },
+  taglineLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    maxWidth: 48,
+  },
+  tagline: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 12,
+    fontWeight: '400',
+    letterSpacing: 1.5,
   },
 
+  /* ── Card ──────────────────────────────────────────────────── */
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: spacing.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    paddingBottom: 28,
+    flex: 1,
+    minHeight: 420,
   },
   heading: {
-    ...typography.headingLarge,
-    color: colors.text,
+    fontSize: 24,
+    fontWeight: '700',
+    color: BRAND_NAVY,
+    letterSpacing: -0.3,
   },
   subheading: {
-    ...typography.bodyMedium,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-    marginBottom: spacing.xl,
+    fontSize: 14,
+    color: '#64748B',
+    marginTop: 4,
+    marginBottom: 24,
   },
 
-  form: { gap: spacing.base },
-  forgotRow: { alignItems: 'flex-end', marginTop: -spacing.xs },
+  form: { gap: 14 },
+  forgotRow: { alignItems: 'flex-end', marginTop: -4 },
   forgotText: {
-    ...typography.labelMedium,
-    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '600',
+    color: BRAND_NAVY,
   },
 
-  registerRow: {
+  /* ── Footer ────────────────────────────────────────────────── */
+  footer: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 24,
+    paddingBottom: 40,
+    gap: 10,
+  },
+  footerRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: spacing.xl,
   },
-  registerText: {
-    ...typography.bodyMedium,
-    color: colors.textSecondary,
+  footerText: {
+    fontSize: 14,
+    color: '#64748B',
   },
-  registerLink: {
-    ...typography.bodyMedium,
-    color: colors.primary,
+  footerLink: {
+    fontSize: 14,
+    color: BRAND_NAVY,
     fontWeight: '600',
   },
-
   joinRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xs,
-    marginTop: spacing.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.base,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(13,33,71,0.15)',
+    backgroundColor: '#F8FAFC',
   },
   joinText: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
+    fontSize: 13,
+    color: '#64748B',
   },
   joinLink: {
-    ...typography.bodySmall,
-    color: colors.primary,
+    fontSize: 13,
+    color: BRAND_NAVY,
     fontWeight: '600',
   },
 });

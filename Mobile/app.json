@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/images/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1B4FFF"
+      "backgroundColor": "#0D2147"
     },
     "ios": {
       "supportsTablet": false,
@@ -20,7 +20,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#1B4FFF"
+        "backgroundColor": "#0D2147"
       },
       "package": "in.novagade.nghome",
       "versionCode": 1,
