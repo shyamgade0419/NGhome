@@ -88,6 +88,12 @@ export default function SettingsScreen() {
       onPress: () => router.push('/(app)/admin/meetings' as any),
     },
     {
+      icon: 'sparkles-outline',
+      label: 'Events & Activities',
+      sublabel: 'Society events & planned upcoming activities',
+      onPress: () => router.push('/(app)/admin/events' as any),
+    },
+    {
       icon: 'receipt-outline',
       label: 'My Bills',
       sublabel: 'Your own maintenance bills',
