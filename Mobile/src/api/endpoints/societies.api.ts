@@ -18,11 +18,23 @@ export const societiesApi = {
     return data.data;
   },
 
+  /**
+   * BuildingsService.findAll returns a bare array (prisma.building.findMany()
+   * directly), not the {data, meta} wrapper every other paginated list here
+   * returns. Web already works around this with
+   * `Array.isArray(x) ? x : (x?.data ?? [])`; mirror it rather than assume
+   * the wrapper exists.
+   */
   getBuildings: async (query?: PaginationQuery) => {
-    const { data } = await apiClient.get<PaginatedResponse<Building>>('/buildings', {
+    const { data } = await apiClient.get<Building[] | PaginatedResponse<Building>>('/buildings', {
       params: query,
     });
-    return data;
+    const buildings = Array.isArray(data) ? data : ((data as any)?.data ?? []);
+    return {
+      success: true as const,
+      data: buildings,
+      meta: { total: buildings.length, page: 1, limit: buildings.length, totalPages: 1 },
+    };
   },
 
   getFlats: async (query?: PaginationQuery & { buildingId?: string }) => {

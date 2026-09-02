@@ -1,5 +1,5 @@
 import apiClient from '@/api/client';
-import { ApiResponse, PaginatedResponse } from '@/api/types';
+import { ApiResponse } from '@/api/types';
 
 export type SalaryStatus = 'DRAFT' | 'PROCESSED' | 'PAID';
 
@@ -40,11 +40,19 @@ export const salariesApi = {
     return unwrap<Employee[]>(data);
   },
 
+  /**
+   * findSalaryRecords returns a bare array (prisma.salaryRecord.findMany()
+   * directly), not the {data, meta} wrapper every paginated list elsewhere
+   * in this API returns. Web already works around this with `.data ?? r`;
+   * mirror it rather than assume the wrapper exists.
+   */
   listRecords: async (params?: { month?: number; year?: number }) => {
-    const { data } = await apiClient.get<PaginatedResponse<SalaryRecord>>('/salaries/records', {
-      params,
-    });
-    return data;
+    const { data } = await apiClient.get<SalaryRecord[] | { data: SalaryRecord[] }>(
+      '/salaries/records',
+      { params },
+    );
+    const records = Array.isArray(data) ? data : (data?.data ?? []);
+    return { data: records, meta: { total: records.length, page: 1, limit: records.length, totalPages: 1 } };
   },
 
   process: async (payload: {
