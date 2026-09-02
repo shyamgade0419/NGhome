@@ -107,8 +107,19 @@ interface FlatEntry {
   flatCode: string;
   opening: string;
   closing: string;
+  /** True when opening was carried forward from a previous month's closing. */
+  carriedForward: boolean;
 }
 
+/**
+ * Only the closing reading is entered once a flat has history: the opening is
+ * last month's closing, carried forward automatically. Typing it again each
+ * month is busywork and a chance to introduce a gap between periods, which
+ * would silently mis-bill consumption.
+ *
+ * The very first time a flat is read there is nothing to carry forward, so the
+ * opening is editable and clearly labelled as the starting reading.
+ */
 function FlatReadingRow({
   entry,
   onChange,
@@ -116,38 +127,51 @@ function FlatReadingRow({
   entry: FlatEntry;
   onChange: (field: 'opening' | 'closing', val: string) => void;
 }) {
-  const units =
-    parseFloat(entry.closing || '0') - parseFloat(entry.opening || '0');
-  const hasReading = entry.opening !== '' || entry.closing !== '';
+  const units = parseFloat(entry.closing || '0') - parseFloat(entry.opening || '0');
+  const hasClosing = entry.closing !== '';
+  const invalid = hasClosing && units < 0;
 
   return (
     <View style={flatStyles.row}>
       <View style={flatStyles.flatInfo}>
         <Text style={flatStyles.flatCode}>{entry.flatCode}</Text>
-        {hasReading && units >= 0 && (
-          <Text style={flatStyles.units}>{units} KL</Text>
-        )}
-        {hasReading && units < 0 && (
-          <Text style={[flatStyles.units, { color: colors.error }]}>Check!</Text>
+        {hasClosing && !invalid && <Text style={flatStyles.units}>{units} KL</Text>}
+        {invalid && (
+          <Text style={[flatStyles.units, { color: colors.error }]}>Below previous</Text>
         )}
       </View>
+
       <View style={flatStyles.inputs}>
         <View style={flatStyles.inputGroup}>
-          <Text style={flatStyles.inputLabel}>Opening</Text>
-          <TextInput
-            style={flatStyles.input}
-            value={entry.opening}
-            onChangeText={(v) => onChange('opening', v)}
-            keyboardType="decimal-pad"
-            placeholder="0"
-            placeholderTextColor={colors.textTertiary}
-          />
+          <Text style={flatStyles.inputLabel}>
+            {entry.carriedForward ? 'Previous' : 'Opening'}
+          </Text>
+          {entry.carriedForward ? (
+            /* Read-only: this is last month's closing, not something to retype. */
+            <View style={flatStyles.readOnly}>
+              <Text style={flatStyles.readOnlyText}>{entry.opening}</Text>
+            </View>
+          ) : (
+            <TextInput
+              style={flatStyles.input}
+              value={entry.opening}
+              onChangeText={(v) => onChange('opening', v)}
+              keyboardType="decimal-pad"
+              placeholder="0"
+              placeholderTextColor={colors.textTertiary}
+            />
+          )}
         </View>
+
         <Ionicons name="arrow-forward" size={14} color={colors.textTertiary} style={{ marginTop: 18 }} />
+
         <View style={flatStyles.inputGroup}>
-          <Text style={flatStyles.inputLabel}>Closing</Text>
+          <Text style={flatStyles.inputLabel}>Current</Text>
           <TextInput
-            style={[flatStyles.input, { borderColor: entry.closing ? colors.primary : colors.border }]}
+            style={[
+              flatStyles.input,
+              { borderColor: invalid ? colors.error : entry.closing ? colors.primary : colors.border },
+            ]}
             value={entry.closing}
             onChangeText={(v) => onChange('closing', v)}
             keyboardType="decimal-pad"
@@ -156,6 +180,12 @@ function FlatReadingRow({
           />
         </View>
       </View>
+
+      {entry.carriedForward && (
+        <Text style={flatStyles.carryNote}>
+          Previous reading carried forward from last month
+        </Text>
+      )}
     </View>
   );
 }
@@ -187,6 +217,17 @@ const flatStyles = StyleSheet.create({
     color: colors.text,
     textAlign: 'center',
   },
+  readOnly: {
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surfaceSecondary ?? colors.background,
+    alignItems: 'center',
+  },
+  readOnlyText: { ...typography.bodyMedium, color: colors.textSecondary, textAlign: 'center' },
+  carryNote: { ...typography.bodySmall, color: colors.textTertiary, fontSize: 10, marginTop: 2 },
 });
 
 /* ── Main Screen ─────────────────────────────────────────────────── */
@@ -226,25 +267,46 @@ export default function WaterReadingsScreen() {
     }
   }, [periodsData, selectedPeriodId]);
 
-  // Build flat entries when flats load
+  // Whole reading history, newest first — used to carry each flat's last
+  // closing reading forward as this month's opening.
+  const { data: history } = useQuery({
+    queryKey: ['water-readings-history'],
+    queryFn: () => waterApi.getReadings(),
+  });
+
+  // Build flat entries once both flats and reading history are available.
   useEffect(() => {
-    if (flatsData?.data?.length) {
-      setFlatEntries(
-        flatsData.data.map((f: Flat) => ({
+    if (!flatsData?.data?.length) return;
+
+    // getReadings returns newest first, so the first hit per flat is the latest.
+    const lastClosingByFlat = new Map<string, string>();
+    for (const r of history ?? []) {
+      if (!lastClosingByFlat.has(r.flatId)) {
+        lastClosingByFlat.set(r.flatId, String(r.closingReading ?? ''));
+      }
+    }
+
+    setFlatEntries(
+      flatsData.data.map((f: Flat) => {
+        const carried = lastClosingByFlat.get(f.id);
+        return {
           flatId: f.id,
           flatCode: f.flatCode ?? f.unitNumber ?? f.id,
-          opening: '',
+          opening: carried ?? '',
           closing: '',
-        })),
-      );
-    }
-  }, [flatsData]);
+          carriedForward: carried !== undefined,
+        };
+      }),
+    );
+  }, [flatsData, history]);
 
   const allocateMutation = useMutation({
     mutationFn: (payload: AllocateCostsPayload) =>
       waterApi.allocatePeriodCosts(selectedPeriodId!, payload),
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ['water-period-summary', selectedPeriodId] });
+      // Refresh history so these closing readings become next month's openings.
+      qc.invalidateQueries({ queryKey: ['water-readings-history'] });
       const rate = result?.ratePerUnit?.toFixed(2) ?? '—';
       const total = result?.flatReadings?.length ?? 0;
       Alert.alert(
@@ -262,13 +324,23 @@ export default function WaterReadingsScreen() {
       Alert.alert('Select Period', 'Please select a billing period first.');
       return;
     }
-    const filledReadings = flatEntries.filter(
-      (e) => e.opening !== '' || e.closing !== '',
-    );
+    // A flat counts as entered when it has a current reading. The opening is
+    // carried forward automatically, so it is no longer a signal of intent.
+    const filledReadings = flatEntries.filter((e) => e.closing !== '');
     if (filledReadings.length === 0) {
-      Alert.alert('No Readings', 'Enter at least one flat reading before saving.');
+      Alert.alert('No Readings', 'Enter at least one current reading before saving.');
       return;
     }
+
+    const missingOpening = filledReadings.find((e) => e.opening === '');
+    if (missingOpening) {
+      Alert.alert(
+        'Opening Reading Needed',
+        `Flat ${missingOpening.flatCode} has no previous reading on record. Enter its opening reading — this is a one-time step.`,
+      );
+      return;
+    }
+
     const invalid = filledReadings.find(
       (e) =>
         isNaN(parseFloat(e.opening)) ||
@@ -276,7 +348,10 @@ export default function WaterReadingsScreen() {
         parseFloat(e.closing) < parseFloat(e.opening),
     );
     if (invalid) {
-      Alert.alert('Invalid Reading', `Flat ${invalid.flatCode}: closing must be ≥ opening.`);
+      Alert.alert(
+        'Invalid Reading',
+        `Flat ${invalid.flatCode}: the current reading cannot be lower than the previous one (${invalid.opening}).`,
+      );
       return;
     }
 
@@ -456,7 +531,10 @@ export default function WaterReadingsScreen() {
               <Text style={styles.sectionTitle}>Flat Readings</Text>
               <Text style={styles.sectionHint2}>{flatEntries.length} flats</Text>
             </View>
-            <Text style={styles.sectionHint}>Enter meter readings for each flat. Leave blank to skip.</Text>
+            <Text style={styles.sectionHint}>
+              Enter only the current meter reading. The previous reading is carried forward
+              from last month automatically. Leave a flat blank to skip it.
+            </Text>
 
             {flatEntries.map((entry, i) => (
               <FlatReadingRow

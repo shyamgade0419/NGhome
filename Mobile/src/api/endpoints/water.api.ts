@@ -40,7 +40,30 @@ export interface AllocationResult {
   }>;
 }
 
+/** A stored reading as returned by GET /water/readings. */
+export interface StoredReading {
+  id: string;
+  flatId: string;
+  billingPeriodId: string | null;
+  readingDate: string;
+  openingReading: string;
+  closingReading: string;
+  consumption: string;
+  unit: string;
+  flat?: { id: string; flatCode: string } | null;
+}
+
 export const waterApi = {
+  /**
+   * Readings, newest first. Passing no periodId returns the whole history,
+   * which is how the entry screen finds each flat's last closing reading to
+   * carry forward as this month's opening.
+   */
+  getReadings: async (params?: { periodId?: string; flatId?: string }) => {
+    const { data } = await apiClient.get('/water/readings', { params });
+    return ((data as any)?.data ?? data ?? []) as StoredReading[];
+  },
+
   allocatePeriodCosts: async (periodId: string, payload: AllocateCostsPayload) => {
     const { data } = await apiClient.post<ApiResponse<AllocationResult>>(
       `/water/periods/${periodId}/allocate`,

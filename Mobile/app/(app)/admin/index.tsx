@@ -18,14 +18,10 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { Card, StatCard, SectionHeader } from '@/components/ui/Card';
 import { StatusBadge, billingStatusVariant } from '@/components/ui/StatusBadge';
 import { colors, spacing, typography, radius } from '@/theme';
+import { inrCompact } from '@/utils/format';
 
-function formatCurrency(amount: string | undefined): string {
-  if (!amount) return '₹0';
-  const n = parseFloat(amount);
-  if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
-  if (n >= 1000) return `₹${(n / 1000).toFixed(1)}K`;
-  return `₹${n.toFixed(0)}`;
-}
+/** Compact rupees; tolerates the API sending numbers, decimal strings or nothing. */
+const formatCurrency = inrCompact;
 
 const QUICK_ACTIONS = [
   { label: 'Manage Billing', icon: 'receipt-outline', route: '/(app)/admin/maintenance/index' },

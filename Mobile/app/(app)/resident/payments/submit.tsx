@@ -27,6 +27,7 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { colors, spacing, typography, radius } from '@/theme';
+import { toNum, inr } from '@/utils/format';
 
 const PAYMENT_METHODS = [
   { value: 'UPI', label: 'UPI' },
@@ -142,7 +143,7 @@ export default function SubmitPaymentScreen() {
                 <View style={styles.billAmountItem}>
                   <Text style={styles.billAmountLabel}>Outstanding</Text>
                   <Text style={[styles.billAmountValue, { color: colors.warning }]}>
-                    ₹{parseFloat(myBill.pendingAmount).toLocaleString('en-IN')}
+                    {inr(myBill.pendingAmount)}
                   </Text>
                 </View>
               </View>
@@ -231,7 +232,9 @@ export default function SubmitPaymentScreen() {
 
             {/* UPI payment section — deep link + QR fallback for iOS */}
             {selectedMethod === 'UPI' && upiId && myBill && (() => {
-              const amount = parseFloat(myBill.pendingAmount).toFixed(2);
+              // Guarded: an undefined pendingAmount would put "NaN" in the UPI
+              // deep link's am= parameter, which UPI apps reject outright.
+              const amount = toNum(myBill.pendingAmount).toFixed(2);
               const note = activePeriod ? billingPeriodName(activePeriod) : 'Maintenance';
               const upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent('Society')}&am=${amount}&tn=${encodeURIComponent(note)}&cu=INR`;
 
@@ -250,7 +253,7 @@ export default function SubmitPaymentScreen() {
                     <View style={styles.upiCardLeft}>
                       <Ionicons name="qr-code-outline" size={28} color={colors.primary} />
                       <View style={styles.upiCardText}>
-                        <Text style={styles.upiCardTitle}>Pay ₹{parseFloat(myBill.pendingAmount).toLocaleString('en-IN')} via UPI</Text>
+                        <Text style={styles.upiCardTitle}>Pay {inr(myBill.pendingAmount)} via UPI</Text>
                         <Text style={styles.upiCardSub}>Opens PhonePe · GPay · Paytm · BHIM</Text>
                         <Text style={styles.upiCardId}>{upiId}</Text>
                       </View>

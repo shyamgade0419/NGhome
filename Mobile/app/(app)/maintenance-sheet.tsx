@@ -33,6 +33,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { colors, spacing, typography, radius } from '@/theme';
+import { toNum, inr, inrCompact } from '@/utils/format';
 import { BillingPeriod, billingPeriodName } from '@/types/billing.types';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -209,29 +210,27 @@ function FlatCard({
         <View style={styles.amountRow}>
           <View style={styles.amountItem}>
             <Text style={styles.amountLabel}>Maintenance</Text>
-            <Text style={styles.amountValue}>
-              ₹{flat.generalMaintenance.toLocaleString('en-IN')}
-            </Text>
+            <Text style={styles.amountValue}>{inr(flat.generalMaintenance)}</Text>
           </View>
           <View style={styles.amountItem}>
             <Text style={styles.amountLabel}>Water</Text>
             <Text style={[styles.amountValue, { color: colors.info }]}>
-              ₹{flat.waterCharges.toLocaleString('en-IN')}
+              {inr(flat.waterCharges)}
             </Text>
           </View>
           <View style={styles.amountItem}>
             <Text style={styles.amountLabel}>Total</Text>
             <Text style={[styles.amountValue, { color: flat.isPaid ? colors.success : colors.warning }]}>
-              ₹{flat.totalPayable.toLocaleString('en-IN')}
+              {inr(flat.totalPayable)}
             </Text>
           </View>
         </View>
 
-        {flat.arrears > 0 && (
+        {toNum(flat.arrears) > 0 && (
           <View style={styles.noteRow}>
             <Ionicons name="alert-circle-outline" size={13} color={colors.error} />
             <Text style={[styles.noteText, { color: colors.error }]}>
-              Includes ₹{flat.arrears.toLocaleString('en-IN')} arrears from earlier periods
+              Includes {inr(flat.arrears)} arrears from earlier periods
             </Text>
           </View>
         )}
@@ -314,8 +313,8 @@ export default function MaintenanceSheetScreen() {
   // Stats
   const totalFlats = rows.length;
   const paidFlats = rows.filter((r) => r.isPaid).length;
-  const totalCollected = rows.reduce((s, r) => s + (r.isPaid ? r.totalPayable : 0), 0);
-  const totalPending = rows.reduce((s, r) => s + (r.isPaid ? 0 : r.totalPayable), 0);
+  const totalCollected = rows.reduce((s, r) => s + (r.isPaid ? toNum(r.totalPayable) : 0), 0);
+  const totalPending = rows.reduce((s, r) => s + (r.isPaid ? 0 : toNum(r.totalPayable)), 0);
 
   // Filter + search
   const filtered = rows.filter((r) => {
@@ -362,14 +361,14 @@ export default function MaintenanceSheetScreen() {
           <View style={styles.summaryDivider} />
           <View style={styles.summaryItem}>
             <Text style={[styles.summaryValue, { color: colors.success }]}>
-              ₹{(totalCollected / 1000).toFixed(1)}K
+              {inrCompact(totalCollected)}
             </Text>
             <Text style={styles.summaryLabel}>Collected</Text>
           </View>
           <View style={styles.summaryDivider} />
           <View style={styles.summaryItem}>
             <Text style={[styles.summaryValue, { color: colors.warning }]}>
-              ₹{(totalPending / 1000).toFixed(1)}K
+              {inrCompact(totalPending)}
             </Text>
             <Text style={styles.summaryLabel}>Pending</Text>
           </View>
