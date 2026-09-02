@@ -21,10 +21,13 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import apiClient from '@/api/client';
 import { billingApi } from '@/api/endpoints/billing.api';
 import { useAuth } from '@/hooks/useAuth';
@@ -187,15 +190,16 @@ function FlatCard({
       <View style={[styles.stripe, { backgroundColor: flat.isPaid ? colors.success : colors.warning }]} />
 
       <View style={styles.flatCardBody}>
-        {/* Header row */}
+        {/* Header row — resident name + phone instead of the invoice number,
+            which isn't something anyone scanning this sheet needs to see. */}
         <View style={styles.flatCardTop}>
           <View style={{ flex: 1 }}>
             <Text style={styles.flatCode}>Flat {flat.flatCode}</Text>
-            {flat.invoiceNumber && (
-              <Text style={styles.buildingName}>{flat.invoiceNumber}</Text>
-            )}
             {flat.residentName && (
               <Text style={styles.ownerName}>{flat.residentName}</Text>
+            )}
+            {flat.residentPhone && (
+              <Text style={styles.buildingName}>{flat.residentPhone}</Text>
             )}
           </View>
           <View style={styles.flatCardRight}>
@@ -261,6 +265,88 @@ function FlatCard({
   );
 }
 
+// ── PDF export ───────────────────────────────────────────────────────────────
+
+/**
+ * Landscape US Letter. expo-print's `orientation` option only takes effect on
+ * iOS — Android ignores it — so a swapped width/height (792x612 instead of
+ * 612x792) is the only way to guarantee landscape on both platforms.
+ * Deliberately drops the invoice number column: nobody scanning a collection
+ * sheet needs it, and resident name + phone are far more useful for chasing
+ * payment.
+ */
+function buildSheetHtml(periodLabel: string, rows: FlatRow[]): string {
+  const generated = new Date().toLocaleDateString('en-IN', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  });
+  const totalCollected = rows.reduce((s, r) => s + (r.isPaid ? toNum(r.totalPayable) : 0), 0);
+  const totalPending = rows.reduce((s, r) => s + (r.isPaid ? 0 : toNum(r.totalPayable)), 0);
+  const paidCount = rows.filter((r) => r.isPaid).length;
+
+  const body = rows
+    .map((r) => `
+      <tr>
+        <td class="flat">${r.flatCode}</td>
+        <td>${r.residentName || '—'}</td>
+        <td class="mono">${r.residentPhone || '—'}</td>
+        <td class="num">${inr(r.generalMaintenance)}</td>
+        <td class="num">${inr(r.waterCharges)}</td>
+        ${toNum(r.arrears) > 0 ? `<td class="num arrears">${inr(r.arrears)}</td>` : '<td class="num">—</td>'}
+        <td class="num total">${inr(r.totalPayable)}</td>
+        <td class="status ${r.isPaid ? 'paid' : 'pending'}">${r.isPaid ? 'PAID' : 'PENDING'}</td>
+      </tr>`)
+    .join('');
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  @page { size: landscape; margin: 24px 28px; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Helvetica, Arial, sans-serif; color: #1E293B; margin: 0; }
+  .head { display: flex; justify-content: space-between; align-items: flex-end;
+          border-bottom: 3px solid #0D2147; padding-bottom: 10px; margin-bottom: 14px; }
+  .head h1 { font-size: 19px; margin: 0; color: #0D2147; }
+  .head .period { font-size: 13px; color: #4A5568; margin-top: 2px; }
+  .head .gen { font-size: 10px; color: #94A3B8; text-align: right; }
+  .summary { display: flex; gap: 26px; margin-bottom: 14px; }
+  .summary div { font-size: 11px; color: #4A5568; }
+  .summary b { display: block; font-size: 16px; color: #0D2147; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  th { text-align: left; background: #0D2147; color: #fff; padding: 7px 9px;
+       font-size: 9.5px; letter-spacing: .4px; text-transform: uppercase; }
+  th.num, td.num { text-align: right; }
+  td { padding: 6px 9px; border-bottom: 1px solid #E2E8F0; }
+  tr:nth-child(even) td { background: #F8FAFC; }
+  td.flat { font-weight: 700; }
+  td.mono { font-family: 'Courier New', monospace; font-size: 10.5px; }
+  td.total { font-weight: 700; }
+  td.arrears { color: #EF4444; }
+  td.status { font-weight: 700; font-size: 9.5px; letter-spacing: .3px; }
+  td.status.paid { color: #15803D; }
+  td.status.pending { color: #92400E; }
+  .foot { margin-top: 12px; font-size: 9px; color: #94A3B8; }
+</style></head>
+<body>
+  <div class="head">
+    <div><h1>Maintenance Collection Sheet</h1><div class="period">${periodLabel}</div></div>
+    <div class="gen">Generated ${generated}<br/>NG Home · Powered by NovaGade</div>
+  </div>
+  <div class="summary">
+    <div><b>${paidCount}/${rows.length}</b>Flats Paid</div>
+    <div><b style="color:#15803D">${inr(totalCollected)}</b>Collected</div>
+    <div><b style="color:#B45309">${inr(totalPending)}</b>Pending</div>
+  </div>
+  <table>
+    <thead><tr>
+      <th>Flat</th><th>Resident</th><th>Phone</th>
+      <th class="num">Maintenance</th><th class="num">Water</th><th class="num">Arrears</th>
+      <th class="num">Total</th><th>Status</th>
+    </tr></thead>
+    <tbody>${body}</tbody>
+  </table>
+  <div class="foot">${rows.length} flat${rows.length === 1 ? '' : 's'} · This document is for internal society use.</div>
+</body></html>`;
+}
+
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function MaintenanceSheetScreen() {
@@ -269,6 +355,7 @@ export default function MaintenanceSheetScreen() {
   const [search, setSearch] = useState('');
   const [filterPaid, setFilterPaid] = useState<'ALL' | 'PAID' | 'PENDING'>('ALL');
   const [editingFlat, setEditingFlat] = useState<FlatRow | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   // PATCH /billing/bills/:billId/notes is ADMIN/ACCOUNTANT-only — residents read.
   const { user } = useAuth();
@@ -328,15 +415,52 @@ export default function MaintenanceSheetScreen() {
 
   const selectedPeriod = periods.find((p) => p.id === selectedPeriodId);
 
+  const handleDownloadPdf = async () => {
+    if (filtered.length === 0) {
+      Alert.alert('Nothing to export', 'There are no flats in the current view to include.');
+      return;
+    }
+    setIsExporting(true);
+    try {
+      const label = selectedPeriod ? billingPeriodName(selectedPeriod) : 'Maintenance Sheet';
+      const html = buildSheetHtml(label, filtered);
+      // 792x612 is US Letter with width/height swapped — Print.Orientation
+      // only takes effect on iOS, so this is what actually forces landscape
+      // on Android too.
+      const { uri } = await Print.printToFileAsync({ html, width: 792, height: 612 });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: `${label} — Maintenance Sheet`,
+        });
+      } else {
+        Alert.alert('Saved', 'PDF generated, but sharing isn’t available on this device.');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Failed to generate PDF.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScreenHeader
         title="Maintenance Sheet"
         showBack
         rightAction={
-          <TouchableOpacity onPress={() => refetch()} hitSlop={8}>
-            <Ionicons name="refresh-outline" size={20} color={colors.primary} />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity onPress={handleDownloadPdf} hitSlop={8} disabled={isExporting}>
+              {isExporting ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Ionicons name="download-outline" size={20} color={colors.primary} />
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => refetch()} hitSlop={8}>
+              <Ionicons name="refresh-outline" size={20} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
         }
       />
 
@@ -447,6 +571,8 @@ export default function MaintenanceSheetScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
+
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.base },
 
   periodWrap: {
     backgroundColor: colors.surface,
