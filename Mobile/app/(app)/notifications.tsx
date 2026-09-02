@@ -72,7 +72,7 @@ function NotifRow({ item }: { item: Notification }) {
 export default function ResidentNotificationsScreen() {
   const qc = useQueryClient();
 
-  const { data, isLoading, refetch, isRefetching } = useQuery({
+  const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['resident-notifications'],
     queryFn: () => notificationsApi.getMine({ limit: 40, page: 1 }),
   });
@@ -104,6 +104,12 @@ export default function ResidentNotificationsScreen() {
 
       {isLoading ? (
         <LoadingState fullscreen message="Loading notifications…" />
+      ) : isError ? (
+        <EmptyState
+          icon="alert-circle-outline"
+          title="Couldn't load notifications"
+          description="Pull down to try again."
+        />
       ) : (
         <FlatList
           data={notifications}
