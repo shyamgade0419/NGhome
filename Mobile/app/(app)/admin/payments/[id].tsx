@@ -92,10 +92,10 @@ export default function PaymentDetailScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScreenHeader title="Payment Review" showBack />
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 }}>
-        <Ionicons name="card-outline" size={48} color="#CBD5E1" />
+        <Ionicons name="card-outline" size={48} color={colors.textDisabled} />
         <Text style={{ fontSize: 16, fontWeight: '600', color: '#334155' }}>Payment not found</Text>
         <Text style={{ fontSize: 14, color: '#64748B', textAlign: 'center' }}>This payment may have been removed or already processed.</Text>
-        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 8, backgroundColor: '#0D2147', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 12 }}>
+        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 8, backgroundColor: colors.primary, borderRadius: 10, paddingHorizontal: 24, paddingVertical: 12 }}>
           <Text style={{ color: '#fff', fontWeight: '600' }}>Go Back</Text>
         </TouchableOpacity>
       </View>

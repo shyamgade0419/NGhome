@@ -1,13 +1,30 @@
+/**
+ * Brand-aligned palette.
+ *
+ * `primary` and `primaryDark` are the exact navy used on the login screen,
+ * splash screen and app icon (#0D2147 / #071428) — before this file, the rest
+ * of the app (every button, active tab, badge, stat card across 48 files) ran
+ * on a generic blue with no relationship to the brand, so the app looked
+ * on-brand for exactly one screen and then switched identity after login.
+ *
+ * `secondary` and `success` are both the brand green (#3D8C3C) rather than two
+ * separate greens: the same hue now means "paid / positive" everywhere,
+ * whether it's a status badge or a collected-amount figure sitting next to one.
+ */
 export const colors = {
-  primary: '#1B4FFF',
-  primaryLight: '#EEF2FF',
-  primaryDark: '#1338CC',
+  primary: '#0D2147',
+  primaryLight: '#E7EAF2',
+  primaryDark: '#071428',
 
-  secondary: '#00C49A',
-  secondaryLight: '#E6F9F4',
+  // One shade darker than the raw brand green (#3D8C3C): visually identical,
+  // but #3D8C3C sits at 4.19:1 against white — under WCAG AA's 4.5:1 for
+  // normal text, though fine for bold/large text. This clears 5.00:1 cleanly
+  // wherever the color appears as small badge text, not just large numerals.
+  secondary: '#377E36',
+  secondaryLight: '#E8F3E7',
 
-  success: '#10B981',
-  successLight: '#D1FAE5',
+  success: '#377E36',
+  successLight: '#E8F3E7',
   warning: '#F59E0B',
   warningLight: '#FEF3C7',
   error: '#EF4444',
