@@ -34,6 +34,27 @@ export const documentsApi = {
     return { data: docs, meta: { total: docs.length, page: 1, limit: docs.length, totalPages: 1 } };
   },
 
+  /**
+   * There is no upload endpoint anywhere in this product yet (checked both
+   * backend and web) — web's own "Add Document" form is plain text fields
+   * for fileName/fileKey/mimeType/fileSize, presumably referencing a file
+   * stored elsewhere. This matches that exact capability rather than
+   * inventing a new upload pipeline unilaterally on mobile.
+   */
+  create: async (payload: {
+    title: string;
+    description?: string;
+    fileName: string;
+    fileKey: string;
+    fileSize: number;
+    mimeType: string;
+    accessLevel: DocumentAccessLevel;
+    category?: string;
+  }) => {
+    const { data } = await apiClient.post<ApiResponse<SocietyDocument>>('/documents', payload);
+    return data.data ?? (data as unknown as SocietyDocument);
+  },
+
   get: async (id: string) => {
     const { data } = await apiClient.get<ApiResponse<SocietyDocument>>(`/documents/${id}`);
     return data.data ?? (data as unknown as SocietyDocument);

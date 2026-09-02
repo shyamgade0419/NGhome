@@ -118,6 +118,11 @@ export default function ResidentProfileScreen() {
               onPress: () => router.push('/(app)/documents' as any),
             },
             {
+              icon: 'pie-chart-outline' as const,
+              label: 'Society Finances',
+              onPress: () => router.push('/(app)/resident/finances' as any),
+            },
+            {
               icon: 'help-circle-outline' as const,
               label: 'Help Center',
               onPress: () => router.push('/(app)/help' as any),

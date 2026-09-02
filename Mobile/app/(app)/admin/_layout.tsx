@@ -1,8 +1,21 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@tanstack/react-query';
+import apiClient from '@/api/client';
 import { colors, typography } from '@/theme';
 
 export default function AdminLayout() {
+  // Water tab is hidden when the society has turned off water billing
+  // (Settings → Billing Configuration). Defaults to shown while loading and
+  // for societies that never touched the setting, so existing behavior is
+  // unchanged until an admin explicitly opts out.
+  const { data: config } = useQuery({
+    queryKey: ['society-config-mobile'],
+    queryFn: () => apiClient.get('/societies/my/config').then((r: any) => r.data?.data ?? r.data),
+    staleTime: 5 * 60_000,
+  });
+  const waterEnabled = config?.additionalConfig?.waterBillingEnabled ?? true;
+
   return (
     <Tabs
       screenOptions={{
@@ -44,6 +57,7 @@ export default function AdminLayout() {
         name="water/index"
         options={{
           title: 'Water',
+          href: waterEnabled ? undefined : null,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'water' : 'water-outline'} size={22} color={color} />
           ),
@@ -84,15 +98,11 @@ export default function AdminLayout() {
       <Tabs.Screen name="salaries/index" options={{ href: null }} />
       <Tabs.Screen name="audit-logs/index" options={{ href: null }} />
       <Tabs.Screen name="billing-rules/index" options={{ href: null }} />
-      <Tabs.Screen name="settings/billing" options={{ href: null }} />
       <Tabs.Screen name="payments/[id]" options={{ href: null }} />
       <Tabs.Screen name="billing/[id]" options={{ href: null }} />
-      <Tabs.Screen name="settings/index" options={{ href: null }} />
-      <Tabs.Screen name="settings/society" options={{ href: null }} />
-      <Tabs.Screen name="settings/roles" options={{ href: null }} />
-      <Tabs.Screen name="settings/residents" options={{ href: null }} />
-      <Tabs.Screen name="settings/buildings" options={{ href: null }} />
-      <Tabs.Screen name="settings/notifications" options={{ href: null }} />
+      {/* settings/_layout.tsx nests all seven settings/* screens in their own
+          Stack so "back" returns to the Settings list, not Dashboard. */}
+      <Tabs.Screen name="settings" options={{ href: null }} />
       <Tabs.Screen name="profile/index" options={{ href: null }} />
     </Tabs>
   );

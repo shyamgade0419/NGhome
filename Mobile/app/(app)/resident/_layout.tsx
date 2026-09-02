@@ -83,6 +83,7 @@ export default function ResidentLayout() {
       {/* Navigable but hidden from tab bar */}
       <Tabs.Screen name="payments/submit" options={{ href: null }} />
       <Tabs.Screen name="bills/[id]" options={{ href: null }} />
+      <Tabs.Screen name="finances" options={{ href: null }} />
     </Tabs>
   );
 }

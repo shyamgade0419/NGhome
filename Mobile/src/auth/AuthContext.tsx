@@ -120,8 +120,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (identifier: string, password: string): Promise<boolean> => {
     const result = await authApi.login({ identifier, password });
-    await tokenService.setTokens(result.accessToken, result.refreshToken);
 
+    // Do NOT persist tokens yet if society selection is still pending. GET
+    // /auth/me only requires a valid JWT (no TenantGuard), so it happily
+    // returns a plausible-looking activeMembership even for a token that
+    // carries no societyId claim. If a context-less token were stored here
+    // and the app were then backgrounded or killed before selectSociety()
+    // completes, restoreSession() would treat it as a full session on next
+    // launch — the user would land straight in the app, looking logged in,
+    // while every TenantGuard-protected call (notifications, residents,
+    // reports, ...) 403s with "No active society context". Confirmed live
+    // against production: /auth/me returns 200 with this exact token shape.
     if (result.requiresSocietySelection && result.memberships.length > 1) {
       if (mounted.current) {
         setState({
@@ -135,6 +144,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return true; // caller should navigate to society-select
     }
 
+    await tokenService.setTokens(result.accessToken, result.refreshToken);
     const activeMembership = result.memberships[0];
     if (mounted.current) {
       setState({

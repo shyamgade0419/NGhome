@@ -46,13 +46,14 @@ export const accountsApi = {
   },
 };
 
+/** Matches the real Fund model — fundType and targetAmount never existed. */
 export interface SocietyFund {
   id: string;
   name: string;
-  fundType: string;
   currentBalance: string;
-  targetAmount: string | null;
+  openingBalance: string;
   description: string | null;
+  isVisibleToResidents: boolean;
 }
 
 export const fundsApi = {

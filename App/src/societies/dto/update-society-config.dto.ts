@@ -96,4 +96,11 @@ export class UpdateSocietyConfigDto {
   @IsOptional()
   @IsString()
   upiId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Whether this society bills for water usage (stored in additionalConfig). Defaults to true for societies that never set it, so existing behavior is unchanged.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  waterBillingEnabled?: boolean;
 }

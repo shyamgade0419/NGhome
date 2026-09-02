@@ -21,6 +21,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -159,10 +160,117 @@ function MeetingModal({ meeting, onClose }: { meeting: SocietyMeeting; onClose: 
   );
 }
 
+// ── Create sheet ─────────────────────────────────────────────────────────────
+
+function CreateMeetingModal({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+  const [showDate, setShowDate] = useState(false);
+  const [form, setForm] = useState({
+    title: '',
+    meetingDate: new Date().toISOString().split('T')[0],
+    location: '',
+    agenda: '',
+  });
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      meetingsApi.create({
+        title: form.title.trim(),
+        meetingDate: new Date(form.meetingDate).toISOString(),
+        location: form.location.trim() || undefined,
+        agenda: form.agenda.trim() || undefined,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['meetings'] });
+      Alert.alert('Scheduled', 'Meeting added.');
+      onClose();
+    },
+    onError: (e: any) => Alert.alert('Error', e?.response?.data?.message ?? 'Failed to schedule meeting.'),
+  });
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>New Meeting</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={12}>
+            <Ionicons name="close" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+            <Text style={styles.blockLabel}>Title *</Text>
+            <TextInput
+              style={[styles.minutesInput, { minHeight: 44 }]}
+              value={form.title}
+              onChangeText={(v) => setForm((f) => ({ ...f, title: v }))}
+              placeholder="e.g. Annual General Meeting 2026"
+              placeholderTextColor={colors.textTertiary}
+            />
+
+            <Text style={[styles.blockLabel, { marginTop: spacing.base }]}>Date *</Text>
+            <TouchableOpacity style={styles.dateTouchable} onPress={() => setShowDate(true)} activeOpacity={0.7}>
+              <Ionicons name="calendar-outline" size={18} color={colors.textSecondary} />
+              <Text style={styles.dateText}>
+                {new Date(form.meetingDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+              </Text>
+            </TouchableOpacity>
+            {showDate && (
+              <DateTimePicker
+                value={new Date(form.meetingDate)}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(_: DateTimePickerEvent, d?: Date) => {
+                  setShowDate(Platform.OS === 'ios');
+                  if (d) setForm((f) => ({ ...f, meetingDate: d.toISOString().split('T')[0] }));
+                }}
+              />
+            )}
+
+            <Text style={[styles.blockLabel, { marginTop: spacing.base }]}>Location</Text>
+            <TextInput
+              style={[styles.minutesInput, { minHeight: 44 }]}
+              value={form.location}
+              onChangeText={(v) => setForm((f) => ({ ...f, location: v }))}
+              placeholder="e.g. Clubhouse"
+              placeholderTextColor={colors.textTertiary}
+            />
+
+            <Text style={[styles.blockLabel, { marginTop: spacing.base }]}>Agenda</Text>
+            <TextInput
+              style={[styles.minutesInput, { minHeight: 100 }]}
+              value={form.agenda}
+              onChangeText={(v) => setForm((f) => ({ ...f, agenda: v }))}
+              placeholder="What will be discussed"
+              placeholderTextColor={colors.textTertiary}
+              multiline
+            />
+
+            <Button
+              label={mutation.isPending ? 'Saving…' : 'Schedule Meeting'}
+              onPress={() => {
+                if (!form.title.trim()) {
+                  Alert.alert('Required', 'Enter a meeting title.');
+                  return;
+                }
+                mutation.mutate();
+              }}
+              loading={mutation.isPending}
+              fullWidth
+              style={{ marginTop: spacing.xl }}
+            />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
 // ── Screen ───────────────────────────────────────────────────────────────────
 
 export default function MeetingsScreen() {
   const [selected, setSelected] = useState<SocietyMeeting | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['meetings'],
@@ -173,7 +281,15 @@ export default function MeetingsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader title="Meetings" showBack />
+      <ScreenHeader
+        title="Meetings"
+        showBack
+        rightAction={
+          <TouchableOpacity onPress={() => setShowCreate(true)} hitSlop={8}>
+            <Ionicons name="add-circle-outline" size={24} color={colors.primary} />
+          </TouchableOpacity>
+        }
+      />
 
       {isLoading ? (
         <LoadingState message="Loading meetings…" />
@@ -226,6 +342,7 @@ export default function MeetingsScreen() {
       )}
 
       {selected && <MeetingModal meeting={selected} onClose={() => setSelected(null)} />}
+      {showCreate && <CreateMeetingModal onClose={() => setShowCreate(false)} />}
     </SafeAreaView>
   );
 }
@@ -288,4 +405,10 @@ const styles = StyleSheet.create({
     color: colors.text,
     textAlignVertical: 'top',
   },
+  dateTouchable: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 13, marginTop: 6,
+  },
+  dateText: { ...typography.bodyMedium, color: colors.text },
 });

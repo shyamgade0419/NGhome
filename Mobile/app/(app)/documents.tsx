@@ -18,15 +18,161 @@ import {
   RefreshControl,
   TextInput,
   Alert,
+  Modal,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
-import { documentsApi, SocietyDocument } from '@/api/endpoints/documents.api';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { documentsApi, SocietyDocument, DocumentAccessLevel } from '@/api/endpoints/documents.api';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Button } from '@/components/ui/Button';
+import { useAuth } from '@/hooks/useAuth';
 import { colors, spacing, typography, radius } from '@/theme';
+
+const ACCESS_LEVELS: Array<{ value: DocumentAccessLevel; label: string }> = [
+  { value: 'PUBLIC', label: 'Everyone' },
+  { value: 'RESIDENTS_ONLY', label: 'Residents' },
+  { value: 'COMMITTEE_ONLY', label: 'Committee' },
+  { value: 'ADMIN_ONLY', label: 'Admins only' },
+];
+
+/**
+ * There is no upload endpoint anywhere in this product yet — web's own "Add
+ * Document" form is plain text fields for the file metadata, presumably
+ * referencing a file already hosted elsewhere. This mirrors that exact
+ * capability rather than inventing a new upload pipeline unilaterally here.
+ */
+function AddDocumentModal({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    title: '',
+    description: '',
+    category: '',
+    fileName: '',
+    fileKey: '',
+    mimeType: 'application/pdf',
+    accessLevel: 'RESIDENTS_ONLY' as DocumentAccessLevel,
+  });
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      documentsApi.create({
+        title: form.title.trim(),
+        description: form.description.trim() || undefined,
+        category: form.category.trim() || undefined,
+        fileName: form.fileName.trim(),
+        fileKey: form.fileKey.trim(),
+        fileSize: 0,
+        mimeType: form.mimeType.trim() || 'application/octet-stream',
+        accessLevel: form.accessLevel,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['documents'] });
+      Alert.alert('Added', 'Document recorded.');
+      onClose();
+    },
+    onError: (e: any) =>
+      Alert.alert('Error', e?.response?.data?.message ?? 'Failed to add document.'),
+  });
+
+  const canSubmit =
+    form.title.trim().length > 0 && form.fileName.trim().length > 0 && form.fileKey.trim().length > 0;
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <SafeAreaView style={modal.safe} edges={['top', 'bottom']}>
+        <View style={modal.header}>
+          <Text style={modal.title}>Add Document</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={12}>
+            <Ionicons name="close" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView contentContainerStyle={modal.content} keyboardShouldPersistTaps="handled">
+            <Text style={modal.label}>Title *</Text>
+            <TextInput
+              style={modal.input}
+              value={form.title}
+              onChangeText={(v) => setForm((f) => ({ ...f, title: v }))}
+              placeholder="e.g. Society Bye-Laws 2026"
+              placeholderTextColor={colors.textTertiary}
+            />
+
+            <Text style={modal.label}>Description</Text>
+            <TextInput
+              style={[modal.input, modal.textarea]}
+              value={form.description}
+              onChangeText={(v) => setForm((f) => ({ ...f, description: v }))}
+              placeholder="Optional"
+              placeholderTextColor={colors.textTertiary}
+              multiline
+            />
+
+            <Text style={modal.label}>Category</Text>
+            <TextInput
+              style={modal.input}
+              value={form.category}
+              onChangeText={(v) => setForm((f) => ({ ...f, category: v }))}
+              placeholder="e.g. Bye-Laws, Circular, Minutes"
+              placeholderTextColor={colors.textTertiary}
+            />
+
+            <Text style={modal.label}>File Name *</Text>
+            <TextInput
+              style={modal.input}
+              value={form.fileName}
+              onChangeText={(v) => setForm((f) => ({ ...f, fileName: v }))}
+              placeholder="bye-laws-2026.pdf"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+            />
+
+            <Text style={modal.label}>File Link / Key *</Text>
+            <TextInput
+              style={modal.input}
+              value={form.fileKey}
+              onChangeText={(v) => setForm((f) => ({ ...f, fileKey: v }))}
+              placeholder="URL where the file is hosted"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+              keyboardType="url"
+            />
+
+            <Text style={modal.label}>Visible To</Text>
+            <View style={modal.chipRow}>
+              {ACCESS_LEVELS.map((a) => (
+                <TouchableOpacity
+                  key={a.value}
+                  style={[modal.chip, form.accessLevel === a.value && modal.chipActive]}
+                  onPress={() => setForm((f) => ({ ...f, accessLevel: a.value }))}
+                >
+                  <Text style={[modal.chipText, form.accessLevel === a.value && modal.chipTextActive]}>
+                    {a.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Button
+              label={mutation.isPending ? 'Saving…' : 'Save Document'}
+              onPress={() => mutation.mutate()}
+              loading={mutation.isPending}
+              disabled={!canSubmit}
+              fullWidth
+              size="lg"
+              style={{ marginTop: spacing.md }}
+            />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -116,6 +262,9 @@ function DocumentRow({ doc }: { doc: SocietyDocument }) {
 
 export default function DocumentsScreen() {
   const [search, setSearch] = useState('');
+  const [showAdd, setShowAdd] = useState(false);
+  const { user } = useAuth();
+  const isAdmin = user?.currentRole === 'SOCIETY_ADMIN' || user?.currentRole === 'SOCIETY_STAFF';
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['documents'],
@@ -141,7 +290,17 @@ export default function DocumentsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader title="Documents" showBack />
+      <ScreenHeader
+        title="Documents"
+        showBack
+        rightAction={
+          isAdmin ? (
+            <TouchableOpacity onPress={() => setShowAdd(true)} hitSlop={8}>
+              <Ionicons name="add-circle-outline" size={24} color={colors.primary} />
+            </TouchableOpacity>
+          ) : undefined
+        }
+      />
 
       {/* Search */}
       <View style={styles.searchBar}>
@@ -218,6 +377,8 @@ export default function DocumentsScreen() {
           ListFooterComponent={<View style={{ height: spacing['3xl'] }} />}
         />
       )}
+
+      {showAdd && <AddDocumentModal onClose={() => setShowAdd(false)} />}
     </SafeAreaView>
   );
 }
@@ -284,4 +445,29 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2, flexWrap: 'wrap' },
   meta: { ...typography.bodySmall, color: colors.textTertiary, fontSize: 11 },
   metaDot: { color: colors.textTertiary, fontSize: 11 },
+});
+
+const modal = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    padding: spacing.base, borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  title: { ...typography.headingSmall, color: colors.text, fontWeight: '700' },
+  content: { padding: spacing.base, gap: spacing.sm },
+  label: { ...typography.labelMedium, color: colors.textSecondary, marginBottom: 4, marginTop: spacing.sm },
+  input: {
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 10,
+    ...typography.bodyMedium, color: colors.text,
+  },
+  textarea: { minHeight: 72, textAlignVertical: 'top' },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  chip: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
+  },
+  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { ...typography.labelMedium, color: colors.textSecondary },
+  chipTextActive: { color: '#fff' },
 });

@@ -49,7 +49,7 @@ export default function ManageResidentsScreen() {
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
 
-  const { data, isLoading, refetch, isRefetching } = useQuery({
+  const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['admin-residents'],
     queryFn: () => societiesApi.getResidents({ limit: 200 }),
   });
@@ -91,6 +91,18 @@ export default function ManageResidentsScreen() {
     : residents;
 
   if (isLoading) return <LoadingState fullscreen message="Loading residents…" />;
+  if (isError) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <ScreenHeader title="Residents" showBack />
+        <EmptyState
+          icon="alert-circle-outline"
+          title="Couldn't load residents"
+          description="Pull down to try again."
+        />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>

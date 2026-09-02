@@ -146,6 +146,37 @@ export default function ResidentDashboard() {
           </View>
         )}
 
+        {/* Quick links — Maintenance Sheet, Documents and Finances existed
+            only inside Profile's menu before, which several residents never
+            found. Surfacing them here directly. */}
+        <SectionHeader title="Quick Links" />
+        <View style={styles.quickLinksRow}>
+          <TouchableOpacity
+            style={styles.quickLink}
+            activeOpacity={0.8}
+            onPress={() => router.push('/(app)/maintenance-sheet' as any)}
+          >
+            <Ionicons name="grid-outline" size={20} color={colors.primary} />
+            <Text style={styles.quickLinkText}>Maintenance{'\n'}Sheet</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickLink}
+            activeOpacity={0.8}
+            onPress={() => router.push('/(app)/documents' as any)}
+          >
+            <Ionicons name="folder-open-outline" size={20} color={colors.primary} />
+            <Text style={styles.quickLinkText}>Documents</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickLink}
+            activeOpacity={0.8}
+            onPress={() => router.push('/(app)/resident/finances' as any)}
+          >
+            <Ionicons name="pie-chart-outline" size={20} color={colors.primary} />
+            <Text style={styles.quickLinkText}>Society{'\n'}Finances</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Announcements preview */}
         <SectionHeader
           title="Announcements"
@@ -247,6 +278,15 @@ const styles = StyleSheet.create({
   statBox: { flex: 1 },
   statLabel: { ...typography.labelSmall, color: colors.textSecondary },
   statValue: { ...typography.headingSmall, marginTop: 4 },
+
+  quickLinksRow: { flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.base, marginBottom: spacing.md },
+  quickLink: {
+    flex: 1, alignItems: 'center', gap: 6,
+    backgroundColor: colors.surface, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border,
+    paddingVertical: spacing.md, paddingHorizontal: spacing.xs,
+  },
+  quickLinkText: { ...typography.labelSmall, color: colors.text, textAlign: 'center', lineHeight: 14 },
 
   noAnnouncements: { paddingHorizontal: spacing.base, paddingVertical: spacing.xl, alignItems: 'center' },
   noAnnouncementsText: { ...typography.bodyMedium, color: colors.textTertiary },

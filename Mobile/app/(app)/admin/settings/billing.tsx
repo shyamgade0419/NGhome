@@ -23,6 +23,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -50,6 +51,8 @@ interface BillingConfig {
   invoicePrefix: string;
   currency: string;
   financialYearStartMonth: string;
+  /** Stored in additionalConfig, not a DB column — same pattern as upiId. */
+  waterBillingEnabled: boolean;
 }
 
 const DEFAULTS: BillingConfig = {
@@ -62,6 +65,7 @@ const DEFAULTS: BillingConfig = {
   invoicePrefix: '',
   currency: 'INR',
   financialYearStartMonth: '4',
+  waterBillingEnabled: true,
 };
 
 function Field({
@@ -113,6 +117,9 @@ export default function BillingConfigScreen() {
         invoicePrefix: data.invoicePrefix ?? '',
         currency: data.currency ?? 'INR',
         financialYearStartMonth: String(data.financialYearStartMonth ?? 4),
+        // Defaults to true (via ?? true) so societies that never touched this
+        // setting keep seeing water billing exactly as before.
+        waterBillingEnabled: data.additionalConfig?.waterBillingEnabled ?? true,
       });
       setDirty(false);
     }
@@ -133,6 +140,7 @@ export default function BillingConfigScreen() {
         ...(form.invoicePrefix.trim() ? { invoicePrefix: form.invoicePrefix.trim() } : {}),
         currency: form.currency || 'INR',
         financialYearStartMonth: parseInt(form.financialYearStartMonth || '4', 10),
+        waterBillingEnabled: form.waterBillingEnabled,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['society-config-mobile'] });
@@ -198,6 +206,28 @@ export default function BillingConfigScreen() {
               keyboardType="number-pad"
               suffix="days"
             />
+          </View>
+
+          {/* Water billing */}
+          <View style={styles.section}>
+            <View style={styles.toggleRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sectionTitle}>Water Usage Billing</Text>
+                <Text style={styles.hint}>
+                  Turn off if this society doesn&apos;t meter or bill water separately.
+                  Hides the Water tab and water charges from new bills; existing bills
+                  are unaffected.
+                </Text>
+              </View>
+              <Switch
+                value={form.waterBillingEnabled}
+                onValueChange={(v) => {
+                  setForm((f) => ({ ...f, waterBillingEnabled: v }));
+                  setDirty(true);
+                }}
+                trackColor={{ false: colors.border, true: colors.primary }}
+              />
+            </View>
           </View>
 
           {/* Late fees */}
@@ -298,6 +328,7 @@ const styles = StyleSheet.create({
     padding: spacing.base,
   },
   sectionTitle: { ...typography.headingSmall, color: colors.text, marginBottom: spacing.md },
+  toggleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
 
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm },
   chip: {

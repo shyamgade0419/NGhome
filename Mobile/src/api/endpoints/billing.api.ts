@@ -79,8 +79,10 @@ export const billingApi = {
   getDashboardSummary: async () => {
     const currentYear = new Date().getFullYear();
     const currentMonth = new Date().getMonth() + 1;
+    const monthStart = new Date(currentYear, currentMonth - 1, 1).toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0];
 
-    const [collectionRes, accountsRes, pendingRes] = await Promise.all([
+    const [collectionRes, accountsRes, pendingRes, expenseRes] = await Promise.all([
       apiClient
         .get<ApiResponse<{
           totalBilled: string;
@@ -101,11 +103,21 @@ export const billingApi = {
           params: { status: 'PENDING', limit: 1 },
         })
         .catch(() => null),
+      // totalExpenses used to be hardcoded to '0' here — the tile always
+      // read zero regardless of real spending. expense-summary already
+      // exists and is exactly this month-to-date total.
+      apiClient
+        .get<ApiResponse<{ byCategory: Array<{ category: string; total: number }>; total: number }>>(
+          '/reports/expense-summary',
+          { params: { fromDate: monthStart, toDate: today } },
+        )
+        .catch(() => null),
     ]);
 
     const collection = collectionRes?.data?.data;
     const accounts = accountsRes?.data?.data ?? [];
     const pendingApprovals = pendingRes?.data?.meta?.total ?? 0;
+    const totalExpenses = expenseRes?.data?.data?.total ?? 0;
 
     const bankAccount =
       accounts.find((a) => a.accountType === 'CURRENT' || a.accountType === 'SAVINGS') ??
@@ -118,7 +130,7 @@ export const billingApi = {
       totalBilled: collection?.totalBilled ?? '0',
       totalCollected: collection?.totalCollected ?? '0',
       totalOutstanding: collection?.totalPending ?? '0',
-      totalExpenses: '0',
+      totalExpenses: String(totalExpenses),
       accountBalance: bankAccount?.currentBalance ?? '0',
       corpusBalance: corpusAccount?.currentBalance ?? '0',
       pendingApprovals,

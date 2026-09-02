@@ -60,6 +60,19 @@ export class SocietiesController {
     return this.societiesService.getConfiguration(societyId);
   }
 
+  /**
+   * Any authenticated society member (residents included) — deliberately no
+   * RolesGuard. Every figure is individually gated server-side by the
+   * corresponding show*ToResidents flag, so a resident can never see more
+   * than the admin has switched on no matter what the client sends.
+   */
+  @Get('my/financial-summary')
+  @UseGuards(TenantGuard)
+  @ApiOperation({ summary: 'Resident-safe financial transparency summary (gated by society config)' })
+  async getFinancialSummary(@SocietyId() societyId: string) {
+    return this.societiesService.getResidentFinancialSummary(societyId);
+  }
+
   @Patch('my/config')
   @UseGuards(TenantGuard, RolesGuard)
   @Roles(SystemRole.SOCIETY_ADMIN)

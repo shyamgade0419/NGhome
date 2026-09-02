@@ -80,6 +80,26 @@ export const societiesApi = {
 
   // ─── Join code ─────────────────────────────────────────────────────────────
 
+  /**
+   * Resident-safe financial transparency — any authenticated member can call
+   * this; every figure is gated server-side by the corresponding
+   * show*ToResidents config flag, so a resident only ever sees what the
+   * admin has switched on in Society Settings.
+   *
+   * Requires the backend change in this same change set to be deployed —
+   * on an older API build this 404s, which callers should treat as "not
+   * available yet" rather than an error.
+   */
+  getFinancialSummary: async () => {
+    const { data } = await apiClient.get<ApiResponse<{
+      showBalances: boolean;
+      showExpenses: boolean;
+      totalBalance: number | null;
+      monthlyExpenses: number | null;
+    }>>('/societies/my/financial-summary');
+    return data.data;
+  },
+
   getSocietyConfig: async () => {
     const { data } = await apiClient.get<ApiResponse<Record<string, any>>>('/societies/my/config');
     return data.data;
@@ -101,19 +121,57 @@ export const societiesApi = {
     return data.data;
   },
 
-  // Admin: list all residents in the society
+  /**
+   * Admin: list all society members (residents, staff, admins).
+   *
+   * UsersService.findBySociety returns raw User rows with a nested
+   * `memberships` array (a user can hold more than one — the seeded demo
+   * accountant has two) — never the flat {displayName, flatNumber,
+   * buildingName, role} shape this call used to assume. That mismatch made
+   * every row's `role` genuinely undefined, and residents.tsx calls
+   * `role.replace(...)` unconditionally in roleLabel() — a real, throwing
+   * crash on every load, not just a display bug. admin/settings/roles.tsx
+   * already reads the real shape correctly (`memberships?.[0]?.role`);
+   * this mirrors that and maps it into the flat shape the UI wants.
+   */
   getResidents: async (query?: PaginationQuery & { buildingId?: string; flatId?: string }) => {
-    const { data } = await apiClient.get<PaginatedResponse<{
-      id: string;
-      userId: string;
-      displayName: string;
-      email: string;
-      phone: string | null;
-      flatNumber: string;
-      buildingName: string;
-      role: string;
-      status: string;
-    }>>('/users/society', { params: query });
-    return data;
+    const { data } = await apiClient.get<{
+      success: boolean;
+      data: Array<{
+        id: string;
+        email: string;
+        phone: string | null;
+        firstName: string;
+        lastName: string;
+        memberships: Array<{
+          role: string;
+          status: string;
+          flat: { id: string; flatCode: string } | null;
+        }>;
+      }>;
+      meta: { total: number; page: number; limit: number; totalPages: number };
+    }>('/users/society', { params: query });
+
+    const rows = data?.data ?? [];
+    const mapped = rows.map((u) => {
+      const m = u.memberships?.[0];
+      return {
+        id: u.id,
+        userId: u.id,
+        displayName: `${u.firstName} ${u.lastName}`.trim(),
+        email: u.email,
+        phone: u.phone,
+        flatNumber: m?.flat?.flatCode ?? '—',
+        buildingName: '',
+        role: m?.role ?? 'RESIDENT',
+        status: m?.status ?? 'ACTIVE',
+      };
+    });
+
+    return {
+      success: true as const,
+      data: mapped,
+      meta: data?.meta ?? { total: mapped.length, page: 1, limit: mapped.length, totalPages: 1 },
+    };
   },
 };

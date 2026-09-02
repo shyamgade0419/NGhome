@@ -103,18 +103,20 @@ export default function AdminDashboard() {
           </Card>
         )}
 
-        {/* Stats grid */}
+        {/* Stats grid — every tile drills into the report it summarizes */}
         <SectionHeader title="Financial Overview" />
         <View style={styles.statsGrid}>
           <StatCard
             label="Total Billed"
             value={formatCurrency(summary?.totalBilled)}
             color={colors.primary}
+            onPress={() => router.push('/(app)/admin/reports' as any)}
           />
           <StatCard
             label="Collected"
             value={formatCurrency(summary?.totalCollected)}
             color={colors.secondary}
+            onPress={() => router.push('/(app)/admin/reports' as any)}
           />
         </View>
         <View style={styles.statsGrid}>
@@ -123,11 +125,13 @@ export default function AdminDashboard() {
             value={formatCurrency(summary?.totalOutstanding)}
             color={colors.warning}
             subtitle="pending collection"
+            onPress={() => router.push('/(app)/admin/reports' as any)}
           />
           <StatCard
             label="Expenses"
             value={formatCurrency(summary?.totalExpenses)}
             color={colors.error}
+            onPress={() => router.push('/(app)/admin/expenses' as any)}
           />
         </View>
         <View style={styles.statsGrid}>
@@ -135,11 +139,13 @@ export default function AdminDashboard() {
             label="Bank Balance"
             value={formatCurrency(summary?.accountBalance)}
             color={colors.info}
+            onPress={() => router.push('/(app)/admin/accounts' as any)}
           />
           <StatCard
             label="Corpus Fund"
             value={formatCurrency(summary?.corpusBalance)}
             color="#7C3AED"
+            onPress={() => router.push('/(app)/admin/accounts' as any)}
           />
         </View>
 

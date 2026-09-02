@@ -92,17 +92,25 @@ export class SocietiesService {
   async updateConfiguration(societyId: string, dto: UpdateSocietyConfigDto) {
     await this.findOne(societyId);
 
-    // upiId has no DB column; store it in the existing additionalConfig JSON field
-    const { upiId, ...configFields } = dto as UpdateSocietyConfigDto & { upiId?: string };
+    // upiId and waterBillingEnabled have no DB column; fold both into the
+    // existing additionalConfig JSON field rather than migrate the schema.
+    const { upiId, waterBillingEnabled, ...configFields } = dto as UpdateSocietyConfigDto & {
+      upiId?: string;
+      waterBillingEnabled?: boolean;
+    };
 
     let additionalConfigPatch: Prisma.InputJsonValue | undefined;
-    if (upiId !== undefined) {
+    if (upiId !== undefined || waterBillingEnabled !== undefined) {
       const current = await this.prisma.societyConfiguration.findUnique({
         where: { societyId },
         select: { additionalConfig: true },
       });
       const existing = (current?.additionalConfig as Record<string, unknown>) ?? {};
-      additionalConfigPatch = { ...existing, upiId } as Prisma.InputJsonValue;
+      additionalConfigPatch = {
+        ...existing,
+        ...(upiId !== undefined ? { upiId } : {}),
+        ...(waterBillingEnabled !== undefined ? { waterBillingEnabled } : {}),
+      } as Prisma.InputJsonValue;
     }
 
     const data: Prisma.SocietyConfigurationUpdateInput = {
@@ -141,6 +149,49 @@ export class SocietiesService {
     ]);
 
     return { buildings, flats, members, currentPeriod: activePeriod };
+  }
+
+  /**
+   * Resident-safe financial transparency summary. showCorpusToResidents,
+   * showFundBalancesToResidents and showExpensesToResidents have existed on
+   * SocietyConfiguration since it was added, but nothing anywhere in the API
+   * ever read them — there was no endpoint a resident could call for this
+   * data at all (accounts/reports are SOCIETY_ADMIN/ACCOUNTANT-only). This is
+   * the first thing that actually enforces them, server-side, so a resident
+   * can never see more than the admin has switched on regardless of what the
+   * client requests.
+   */
+  async getResidentFinancialSummary(societyId: string) {
+    const config = await this.prisma.societyConfiguration.findUnique({ where: { societyId } });
+
+    const showBalances = config?.showFundBalancesToResidents ?? false;
+    const showExpenses = config?.showExpensesToResidents ?? false;
+
+    const [totalBalance, monthlyExpenses] = await Promise.all([
+      showBalances
+        ? this.prisma.account.aggregate({
+            where: { societyId, isActive: true },
+            _sum: { currentBalance: true },
+          })
+        : null,
+      showExpenses
+        ? this.prisma.expense.aggregate({
+            where: {
+              societyId,
+              status: { in: ['APPROVED', 'PAID'] },
+              expenseDate: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
+            },
+            _sum: { amount: true },
+          })
+        : null,
+    ]);
+
+    return {
+      showBalances,
+      showExpenses,
+      totalBalance: showBalances ? (totalBalance?._sum.currentBalance?.toNumber() ?? 0) : null,
+      monthlyExpenses: showExpenses ? (monthlyExpenses?._sum.amount?.toNumber() ?? 0) : null,
+    };
   }
 
   // ─── Join-code endpoints ────────────────────────────────────────────────────

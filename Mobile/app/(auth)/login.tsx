@@ -124,7 +124,13 @@ export default function LoginScreen() {
                       error={errors.identifier?.message}
                       leftIcon="person-outline"
                       autoCapitalize="none"
-                      keyboardType="email-address"
+                      // "default" (not "email-address") since the backend accepts
+                      // phone numbers here too — an email-optimized keyboard
+                      // hides the number row, which is awkward for a 10-digit
+                      // phone. autoComplete lets iOS/Android suggest either.
+                      keyboardType="default"
+                      autoComplete="username"
+                      textContentType="username"
                       required
                     />
                   )}

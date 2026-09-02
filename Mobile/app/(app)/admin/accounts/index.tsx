@@ -129,28 +129,21 @@ function FundsTab() {
       }
       ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
       renderItem={({ item }) => {
-        const target = item.targetAmount ? parseFloat(item.targetAmount) : 0;
         const current = parseFloat(item.currentBalance ?? '0');
-        const pct = target > 0 ? Math.min((current / target) * 100, 100) : 0;
         return (
           <View style={styles.fundCard}>
             <View style={styles.cardTopRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowTitle}>{item.name}</Text>
-                <Text style={styles.rowMeta}>{item.fundType?.replace(/_/g, ' ')}</Text>
+                {item.description ? (
+                  <Text style={styles.rowMeta} numberOfLines={1}>{item.description}</Text>
+                ) : null}
+                <Text style={styles.rowMeta}>
+                  {item.isVisibleToResidents ? 'Visible to residents' : 'Admin only'}
+                </Text>
               </View>
               <Text style={[styles.rowAmount, { color: colors.primary }]}>{inr(current)}</Text>
             </View>
-            {target > 0 && (
-              <>
-                <View style={styles.track}>
-                  <View style={[styles.fill, { width: `${pct}%` }]} />
-                </View>
-                <Text style={styles.rowMeta}>
-                  {pct.toFixed(0)}% of {inr(target)} target
-                </Text>
-              </>
-            )}
           </View>
         );
       }}
