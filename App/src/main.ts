@@ -1,5 +1,5 @@
-import { NestFactory, Reflector } from '@nestjs/core';
-import { ValidationPipe, ClassSerializerInterceptor } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
@@ -66,8 +66,20 @@ async function bootstrap() {
     }),
   );
 
-  // Serialization
-  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
+  // ClassSerializerInterceptor deliberately NOT registered. It runs every
+  // response through class-transformer's instanceToPlain(), which does a
+  // property-by-property flatten of the object graph and does not call
+  // toJSON() on nested values — so every Prisma Decimal field came out as
+  // the raw {s, e, d} internal shape instead of a numeric string, silently,
+  // on every endpoint. Proven directly: instanceToPlain({amount: new
+  // Decimal('4250')}) serializes to {"amount":{"s":1,"e":3,"d":[4250]}},
+  // while plain JSON.stringify on the same value correctly produces
+  // {"amount":"4250"} via the toJSON patch below. flats.service.ts already
+  // worked around this once, per-field, for Flat.area — the same defect was
+  // silently present on every other Decimal column (bill totals, account
+  // balances, everything) since nothing in this codebase actually uses
+  // @Exclude/@Expose, which is the only thing this interceptor would have
+  // been doing for us. Removing it lets the toJSON patch work as intended.
 
   // Swagger (only in non-production or when explicitly enabled)
   const swaggerEnabled = configService.get<boolean>('swagger.enabled') ?? nodeEnv !== 'production';
