@@ -175,6 +175,14 @@ export default function ResidentDashboard() {
             <Ionicons name="pie-chart-outline" size={20} color={colors.primary} />
             <Text style={styles.quickLinkText}>Society{'\n'}Finances</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickLink}
+            activeOpacity={0.8}
+            onPress={() => router.push('/(app)/resident/events' as any)}
+          >
+            <Ionicons name="sparkles-outline" size={20} color={colors.primary} />
+            <Text style={styles.quickLinkText}>Events</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Announcements preview */}

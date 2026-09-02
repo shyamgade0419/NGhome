@@ -123,6 +123,11 @@ export default function ResidentProfileScreen() {
               onPress: () => router.push('/(app)/resident/finances' as any),
             },
             {
+              icon: 'sparkles-outline' as const,
+              label: 'Events & Activities',
+              onPress: () => router.push('/(app)/resident/events' as any),
+            },
+            {
               icon: 'help-circle-outline' as const,
               label: 'Help Center',
               onPress: () => router.push('/(app)/help' as any),
