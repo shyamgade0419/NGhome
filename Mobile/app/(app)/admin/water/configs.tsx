@@ -41,6 +41,7 @@ import {
   ConfigurableWaterBillingModel,
   WaterSlab,
 } from '@/api/endpoints/water.api';
+import { useIsSocietyAdmin } from '@/hooks/useAuth';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -342,6 +343,10 @@ function CreateConfigModal({ onClose }: { onClose: () => void }) {
 
 export default function WaterConfigsScreen() {
   const [showCreate, setShowCreate] = useState(false);
+  // POST /water/configs is SOCIETY_ADMIN-only; GET is ADMIN + ACCOUNTANT.
+  // An Accountant can legitimately view this screen, so only the create
+  // action is gated here.
+  const canCreate = useIsSocietyAdmin();
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['water-configs'],
@@ -356,9 +361,11 @@ export default function WaterConfigsScreen() {
         title="Water Billing Model"
         showBack
         rightAction={
-          <TouchableOpacity onPress={() => setShowCreate(true)} hitSlop={8}>
-            <Ionicons name="add-circle-outline" size={24} color={colors.primary} />
-          </TouchableOpacity>
+          canCreate ? (
+            <TouchableOpacity onPress={() => setShowCreate(true)} hitSlop={8}>
+              <Ionicons name="add-circle-outline" size={24} color={colors.primary} />
+            </TouchableOpacity>
+          ) : undefined
         }
       />
 

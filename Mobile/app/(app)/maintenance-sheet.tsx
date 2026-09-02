@@ -241,9 +241,16 @@ function BillDetailModal({
   const adjustments = toNum(bill?.adjustments ?? flat.adjustments);
   const otherCharges = toNum(bill?.otherCharges ?? flat.otherCharges);
   const arrears = toNum(flat.arrears); // statement-only; not on the raw bill
-  const total = toNum(bill?.totalAmount) || flat.totalPayable;
-  const paid = toNum(bill?.paidAmount);
-  const due = toNum(bill?.pendingAmount) || (flat.isPaid ? 0 : flat.totalPayable);
+  // `bill` is undefined for residents (the fetch is admin-only, gated by
+  // `enabled: canManage` above) — fall back to the statement row's figures
+  // in that case. Checking `bill` presence explicitly, rather than `||`
+  // against toNum(...), matters here: a genuinely-zero totalAmount/
+  // pendingAmount (e.g. a fully-discounted or fully-paid bill) is falsy
+  // and would otherwise wrongly trigger the flat.* fallback even though
+  // the live bill data is right there.
+  const total = bill ? toNum(bill.totalAmount) : flat.totalPayable;
+  const paid = bill ? toNum(bill.paidAmount) : (flat.isPaid ? flat.totalPayable : 0);
+  const due = bill ? toNum(bill.pendingAmount) : (flat.isPaid ? 0 : flat.totalPayable);
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>

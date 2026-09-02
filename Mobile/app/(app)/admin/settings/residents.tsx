@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/api/client';
 import { societiesApi } from '@/api/endpoints/societies.api';
+import { useIsSocietyAdmin } from '@/hooks/useAuth';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -155,6 +156,11 @@ export default function ManageResidentsScreen() {
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<Resident | null>(null);
+  // PATCH /users/:id and DELETE .../remove are both SOCIETY_ADMIN-only —
+  // this screen is reachable by Accountant/Staff too (they can view the
+  // list), so gate the actions themselves rather than let them tap into
+  // a guaranteed 403.
+  const canManage = useIsSocietyAdmin();
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['admin-residents'],
@@ -269,16 +275,18 @@ export default function ManageResidentsScreen() {
             </View>
 
             {/* Actions */}
-            <View style={styles.actions}>
-              <TouchableOpacity style={styles.actionBtn} onPress={() => setEditing(r)} hitSlop={8}>
-                <Ionicons name="create-outline" size={18} color={colors.primary} />
-              </TouchableOpacity>
-              {r.role !== 'SOCIETY_ADMIN' && (
-                <TouchableOpacity style={styles.actionBtn} onPress={() => handleRemove(r)} hitSlop={8}>
-                  <Ionicons name="person-remove-outline" size={18} color={colors.error} />
+            {canManage && (
+              <View style={styles.actions}>
+                <TouchableOpacity style={styles.actionBtn} onPress={() => setEditing(r)} hitSlop={8}>
+                  <Ionicons name="create-outline" size={18} color={colors.primary} />
                 </TouchableOpacity>
-              )}
-            </View>
+                {r.role !== 'SOCIETY_ADMIN' && (
+                  <TouchableOpacity style={styles.actionBtn} onPress={() => handleRemove(r)} hitSlop={8}>
+                    <Ionicons name="person-remove-outline" size={18} color={colors.error} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
           </View>
         )}
         ItemSeparatorComponent={() => <View style={styles.sep} />}
