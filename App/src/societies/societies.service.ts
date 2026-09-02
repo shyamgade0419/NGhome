@@ -167,30 +167,69 @@ export class SocietiesService {
     const showBalances = config?.showFundBalancesToResidents ?? false;
     const showExpenses = config?.showExpensesToResidents ?? false;
 
-    const [totalBalance, monthlyExpenses] = await Promise.all([
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [totalBalance, expenses, salaryAgg] = await Promise.all([
       showBalances
         ? this.prisma.account.aggregate({
             where: { societyId, isActive: true },
             _sum: { currentBalance: true },
           })
         : null,
+      // findMany (not aggregate) so we can group by category below — same
+      // approach as ReportsController.expenseSummary, but this endpoint is
+      // TenantGuard-only (no RolesGuard), so residents can actually call it.
       showExpenses
-        ? this.prisma.expense.aggregate({
+        ? this.prisma.expense.findMany({
+            where: { societyId, status: { in: ['APPROVED', 'PAID'] }, expenseDate: { gte: monthStart } },
+            include: { category: { select: { name: true } } },
+          })
+        : null,
+      // "Watchmen salary" lives in SalaryRecord, a separate ledger from
+      // Expense — folded in here so the resident's month view is genuinely
+      // holistic rather than silently missing payroll.
+      showExpenses
+        ? this.prisma.salaryRecord.aggregate({
             where: {
               societyId,
-              status: { in: ['APPROVED', 'PAID'] },
-              expenseDate: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
+              salaryMonth: now.getMonth() + 1,
+              salaryYear: now.getFullYear(),
+              status: { in: ['PROCESSED', 'PAID'] },
             },
-            _sum: { amount: true },
+            _sum: { netSalary: true },
           })
         : null,
     ]);
+
+    let byCategory: { category: string; total: number }[] | null = null;
+    let monthlyExpenses: number | null = null;
+
+    if (showExpenses) {
+      const byCategoryMap: Record<string, number> = {};
+      let total = 0;
+      for (const expense of expenses ?? []) {
+        const cat = expense.category?.name ?? 'Uncategorized';
+        byCategoryMap[cat] = (byCategoryMap[cat] ?? 0) + expense.amount.toNumber();
+        total += expense.amount.toNumber();
+      }
+      const salaryTotal = salaryAgg?._sum.netSalary?.toNumber() ?? 0;
+      if (salaryTotal > 0) {
+        byCategoryMap['Staff Salaries'] = salaryTotal;
+        total += salaryTotal;
+      }
+      byCategory = Object.entries(byCategoryMap)
+        .map(([category, catTotal]) => ({ category, total: catTotal }))
+        .sort((a, b) => b.total - a.total);
+      monthlyExpenses = total;
+    }
 
     return {
       showBalances,
       showExpenses,
       totalBalance: showBalances ? (totalBalance?._sum.currentBalance?.toNumber() ?? 0) : null,
-      monthlyExpenses: showExpenses ? (monthlyExpenses?._sum.amount?.toNumber() ?? 0) : null,
+      monthlyExpenses,
+      byCategory,
     };
   }
 

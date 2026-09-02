@@ -129,6 +129,59 @@ export class ReportsController {
     return { byCategory, total, count: expenses.length };
   }
 
+  @Get('monthly-overview')
+  @ApiOperation({
+    summary:
+      'Holistic view of a month\'s spending — Expense categories plus staff salaries combined, ' +
+      'since payroll lives in a separate SalaryRecord ledger that expense-summary never touched',
+  })
+  async monthlyOverview(
+    @SocietyId() societyId: string,
+    @Query('year') year?: number,
+    @Query('month') month?: number,
+  ) {
+    const now = new Date();
+    const targetYear = year ? +year : now.getFullYear();
+    const targetMonth = month ? +month : now.getMonth() + 1;
+    const from = new Date(targetYear, targetMonth - 1, 1);
+    const to = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
+
+    const [expenses, salaryAgg] = await Promise.all([
+      this.prisma.expense.findMany({
+        where: { societyId, status: { in: ['APPROVED', 'PAID'] }, expenseDate: { gte: from, lte: to } },
+        include: { category: { select: { name: true } } },
+      }),
+      this.prisma.salaryRecord.aggregate({
+        where: { societyId, salaryMonth: targetMonth, salaryYear: targetYear, status: { in: ['PROCESSED', 'PAID'] } },
+        _sum: { netSalary: true },
+      }),
+    ]);
+
+    const byCategoryMap: Record<string, number> = {};
+    let expenseTotal = 0;
+    for (const expense of expenses) {
+      const cat = expense.category?.name ?? 'Uncategorized';
+      byCategoryMap[cat] = (byCategoryMap[cat] ?? 0) + expense.amount.toNumber();
+      expenseTotal += expense.amount.toNumber();
+    }
+
+    const salaryTotal = salaryAgg._sum.netSalary?.toNumber() ?? 0;
+    if (salaryTotal > 0) byCategoryMap['Staff Salaries'] = salaryTotal;
+
+    const byCategory = Object.entries(byCategoryMap)
+      .map(([category, amount]) => ({ category, total: amount }))
+      .sort((a, b) => b.total - a.total);
+
+    return {
+      periodYear: targetYear,
+      periodMonth: targetMonth,
+      byCategory,
+      expenseTotal,
+      salaryTotal,
+      total: expenseTotal + salaryTotal,
+    };
+  }
+
   @Get('account-balances')
   @ApiOperation({ summary: 'Current balances of all accounts' })
   async accountBalances(@SocietyId() societyId: string) {

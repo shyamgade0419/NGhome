@@ -112,6 +112,7 @@ async function bootstrap() {
       .addTag('Monthly Statements')
       .addTag('Announcements')
       .addTag('Meetings')
+      .addTag('Events')
       .addTag('Documents')
       .addTag('Audit Logs')
       .addTag('Health')

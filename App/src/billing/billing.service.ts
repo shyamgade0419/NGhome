@@ -367,6 +367,29 @@ export class BillingService {
     return bill;
   }
 
+  /**
+   * Resident: preview the flat's bill for the next period once bills have
+   * been generated but before the period is officially published. DRAFT
+   * periods have no bills yet (nothing to return); PUBLISHED and later are
+   * already visible through the normal my-bills list — this fills only the
+   * CALCULATED/REVIEW gap, and only for the caller's own flat.
+   */
+  async previewMyBill(societyId: string, flatId: string) {
+    const period = await this.prisma.billingPeriod.findFirst({
+      where: { societyId, status: { in: ['CALCULATED', 'REVIEW'] } },
+      orderBy: [{ periodYear: 'desc' }, { periodMonth: 'desc' }],
+    });
+    if (!period) return null;
+
+    const bill = await this.prisma.maintenanceBill.findFirst({
+      where: { societyId, flatId, billingPeriodId: period.id },
+      include: { lineItems: true },
+    });
+    if (!bill) return null;
+
+    return { ...bill, periodStatus: period.status, isPreview: true as const };
+  }
+
   /** Returns all bills for a period with line items — for holistic report / PDF download */
   async getPeriodReport(societyId: string, periodId: string) {
     const period = await this.findPeriod(societyId, periodId);

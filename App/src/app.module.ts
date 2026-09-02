@@ -34,6 +34,7 @@ import { HelpdeskModule } from './helpdesk/helpdesk.module';
 import { HealthModule } from './health/health.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
+import { EventsModule } from './events/events.module';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { ReportsModule } from './reports/reports.module';
     HelpdeskModule,
     NotificationsModule,
     ReportsModule,
+    EventsModule,
     HealthModule,
   ],
   providers: [

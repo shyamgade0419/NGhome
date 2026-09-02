@@ -177,6 +177,17 @@ export class BillingController {
     return this.billingService.findMyBills(societyId, user.flatId, +page, +limit);
   }
 
+  /**
+   * MUST be declared before @Get('my-bills/:billId') or NestJS will treat
+   * the literal string "preview" as the :billId parameter value.
+   */
+  @Get('my-bills/preview')
+  @ApiOperation({ summary: 'Resident: Preview next bill before the period is published' })
+  previewMyBill(@SocietyId() societyId: string, @CurrentUser() user: AuthenticatedUser) {
+    if (!user.flatId) return null;
+    return this.billingService.previewMyBill(societyId, user.flatId);
+  }
+
   @Get('my-bills/:billId')
   @ApiOperation({ summary: 'Resident: Get a specific bill' })
   findMyBill(

@@ -209,6 +209,12 @@ enum MaintenanceRequestStatus {
   CLOSED
 }
 
+enum EventStatus {
+  PLANNED
+  COMPLETED
+  CANCELLED
+}
+
 // ─── USER & AUTH ──────────────────────────────────────────────────────────────
 
 model User {
@@ -227,19 +233,20 @@ model User {
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
 
-  refreshTokens      RefreshToken[]
-  passwordResetTokens PasswordResetToken[]
-  memberships        SocietyMembership[]
-  auditLogs          AuditLog[]            @relation("AuditActor")
-  notificationRecords NotificationRecord[]
-  paymentSubmissions PaymentSubmission[]
-  createdExpenses    Expense[]             @relation("ExpenseCreator")
-  approvedExpenses   Expense[]             @relation("ExpenseApprover")
+  refreshTokens        RefreshToken[]
+  passwordResetTokens  PasswordResetToken[]
+  memberships          SocietyMembership[]
+  auditLogs            AuditLog[]           @relation("AuditActor")
+  notificationRecords  NotificationRecord[]
+  paymentSubmissions   PaymentSubmission[]
+  createdExpenses      Expense[]            @relation("ExpenseCreator")
+  approvedExpenses     Expense[]            @relation("ExpenseApprover")
   createdAnnouncements Announcement[]
-  createdMeetings    Meeting[]
-  uploadedDocuments  Document[]
-  submittedRequests  MaintenanceRequest[]  @relation("RequestSubmitter")
-  assignedRequests   MaintenanceRequest[]  @relation("RequestAssignee")
+  createdMeetings      Meeting[]
+  uploadedDocuments    Document[]
+  submittedRequests    MaintenanceRequest[] @relation("RequestSubmitter")
+  assignedRequests     MaintenanceRequest[] @relation("RequestAssignee")
+  createdEvents        Event[]
 
   @@map("users")
 }
@@ -285,76 +292,77 @@ model PasswordResetToken {
 // ─── SOCIETY STRUCTURE ────────────────────────────────────────────────────────
 
 model Society {
-  id                 String    @id @default(uuid())
-  name               String
-  displayName        String?
-  registrationNumber String?
-  address            String?
-  city               String?
-  state              String?
-  pincode            String?
-  country            String    @default("India")
-  email              String?
-  phone              String?
-  website            String?
-  logoUrl            String?
-  isActive           Boolean   @default(true)
+  id                  String    @id @default(uuid())
+  name                String
+  displayName         String?
+  registrationNumber  String?
+  address             String?
+  city                String?
+  state               String?
+  pincode             String?
+  country             String    @default("India")
+  email               String?
+  phone               String?
+  website             String?
+  logoUrl             String?
+  isActive            Boolean   @default(true)
   // Resident self-registration via join code
-  joinCode              String?   @unique
-  joinCodeGeneratedAt   DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-  deletedAt          DateTime?
+  joinCode            String?   @unique
+  joinCodeGeneratedAt DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
 
-  configuration      SocietyConfiguration?
-  buildings          Building[]
-  memberships        SocietyMembership[]
-  billingRules       BillingRule[]
-  billingPeriods     BillingPeriod[]
-  accounts           Account[]
-  funds              Fund[]
-  expenses           Expense[]
-  expenseCategories  ExpenseCategory[]
-  employees          SocietyEmployee[]
-  announcements      Announcement[]
-  meetings           Meeting[]
-  documents          Document[]
-  auditLogs          AuditLog[]
-  notifications      Notification[]
-  statements         MonthlyStatement[]
-  waterConfigs       WaterBillingConfig[]
-  transactions       Transaction[]
+  configuration       SocietyConfiguration?
+  buildings           Building[]
+  memberships         SocietyMembership[]
+  billingRules        BillingRule[]
+  billingPeriods      BillingPeriod[]
+  accounts            Account[]
+  funds               Fund[]
+  expenses            Expense[]
+  expenseCategories   ExpenseCategory[]
+  employees           SocietyEmployee[]
+  announcements       Announcement[]
+  meetings            Meeting[]
+  documents           Document[]
+  auditLogs           AuditLog[]
+  notifications       Notification[]
+  statements          MonthlyStatement[]
+  waterConfigs        WaterBillingConfig[]
+  transactions        Transaction[]
   maintenanceRequests MaintenanceRequest[]
+  events              Event[]
 
   @@map("societies")
 }
 
 model SocietyConfiguration {
-  id                           String           @id @default(uuid())
-  societyId                    String           @unique
-  currency                     String           @default("INR")
-  financialYearStartMonth      Int              @default(4)
-  billingCycle                 BillingCycleType @default(MONTHLY)
-  billingDueDay                Int              @default(10)
-  gracePeriodDays              Int              @default(5)
-  lateFeeType                  String?
-  lateFeeValue                 Decimal?         @db.Decimal(10, 2)
-  lateFeeMaxAmount             Decimal?         @db.Decimal(10, 2)
-  roundingRule                 String           @default("NEAREST")
-  invoicePrefix                String           @default("INV")
-  invoiceStartNumber           Int              @default(1)
-  invoiceCurrentNumber         Int              @default(1)
-  paymentVerificationRequired  Boolean          @default(true)
-  allowPaymentProofUpload      Boolean          @default(true)
-  showCorpusToResidents        Boolean          @default(false)
-  showFundBalancesToResidents  Boolean          @default(false)
-  showExpensesToResidents      Boolean          @default(false)
-  publishStatementToResidents  Boolean          @default(true)
-  publishMeetingMinutes        Boolean          @default(true)
-  notificationChannels         Json             @default("[]")
-  additionalConfig             Json             @default("{}")
-  createdAt                    DateTime         @default(now())
-  updatedAt                    DateTime         @updatedAt
+  id                          String           @id @default(uuid())
+  societyId                   String           @unique
+  currency                    String           @default("INR")
+  financialYearStartMonth     Int              @default(4)
+  billingCycle                BillingCycleType @default(MONTHLY)
+  billingDueDay               Int              @default(10)
+  gracePeriodDays             Int              @default(5)
+  lateFeeType                 String?
+  lateFeeValue                Decimal?         @db.Decimal(10, 2)
+  lateFeeMaxAmount            Decimal?         @db.Decimal(10, 2)
+  roundingRule                String           @default("NEAREST")
+  invoicePrefix               String           @default("INV")
+  invoiceStartNumber          Int              @default(1)
+  invoiceCurrentNumber        Int              @default(1)
+  paymentVerificationRequired Boolean          @default(true)
+  allowPaymentProofUpload     Boolean          @default(true)
+  showCorpusToResidents       Boolean          @default(false)
+  showFundBalancesToResidents Boolean          @default(false)
+  showExpensesToResidents     Boolean          @default(false)
+  publishStatementToResidents Boolean          @default(true)
+  publishMeetingMinutes       Boolean          @default(true)
+  notificationChannels        Json             @default("[]")
+  additionalConfig            Json             @default("{}")
+  createdAt                   DateTime         @default(now())
+  updatedAt                   DateTime         @updatedAt
 
   society Society @relation(fields: [societyId], references: [id], onDelete: Cascade)
 
@@ -399,31 +407,31 @@ model Floor {
 }
 
 model Flat {
-  id            String     @id @default(uuid())
-  societyId     String
-  buildingId    String
-  floorId       String?
-  unitNumber    String
-  flatCode      String
-  area          Decimal?   @db.Decimal(10, 2)
-  bedrooms      Int?
-  bathrooms     Int?
-  category      String?
-  status        FlatStatus @default(ACTIVE)
-  ownershipType String?
-  parkingSlots  Int        @default(0)
-  additionalInfo Json      @default("{}")
-  isActive      Boolean    @default(true)
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  deletedAt     DateTime?
+  id             String     @id @default(uuid())
+  societyId      String
+  buildingId     String
+  floorId        String?
+  unitNumber     String
+  flatCode       String
+  area           Decimal?   @db.Decimal(10, 2)
+  bedrooms       Int?
+  bathrooms      Int?
+  category       String?
+  status         FlatStatus @default(ACTIVE)
+  ownershipType  String?
+  parkingSlots   Int        @default(0)
+  additionalInfo Json       @default("{}")
+  isActive       Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  deletedAt      DateTime?
 
-  building         Building            @relation(fields: [buildingId], references: [id])
-  floor            Floor?              @relation(fields: [floorId], references: [id])
-  memberships      SocietyMembership[]
-  maintenanceBills MaintenanceBill[]
-  waterReadings    WaterMeterReading[]
-  paymentSubmissions PaymentSubmission[]
+  building            Building             @relation(fields: [buildingId], references: [id])
+  floor               Floor?               @relation(fields: [floorId], references: [id])
+  memberships         SocietyMembership[]
+  maintenanceBills    MaintenanceBill[]
+  waterReadings       WaterMeterReading[]
+  paymentSubmissions  PaymentSubmission[]
   maintenanceRequests MaintenanceRequest[]
 
   @@unique([societyId, flatCode])
@@ -433,18 +441,18 @@ model Flat {
 }
 
 model SocietyMembership {
-  id                   String           @id @default(uuid())
-  societyId            String
-  userId               String
-  flatId               String?
-  role                 SystemRole       @default(RESIDENT)
-  status               MembershipStatus @default(ACTIVE)
-  joinedAt             DateTime         @default(now())
-  leftAt               DateTime?
-  isPrimary            Boolean          @default(false)
-  additionalPermissions Json            @default("[]")
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
+  id                    String           @id @default(uuid())
+  societyId             String
+  userId                String
+  flatId                String?
+  role                  SystemRole       @default(RESIDENT)
+  status                MembershipStatus @default(ACTIVE)
+  joinedAt              DateTime         @default(now())
+  leftAt                DateTime?
+  isPrimary             Boolean          @default(false)
+  additionalPermissions Json             @default("[]")
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
 
   society Society @relation(fields: [societyId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -473,7 +481,7 @@ model BillingRule {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
-  society    Society              @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  society    Society                @relation(fields: [societyId], references: [id], onDelete: Cascade)
   components BillingRuleComponent[]
   lineItems  BillLineItem[]
 
@@ -604,7 +612,7 @@ model WaterBillingConfig {
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
-  society      Society             @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  society       Society             @relation(fields: [societyId], references: [id], onDelete: Cascade)
   meterReadings WaterMeterReading[]
 
   @@index([societyId])
@@ -653,7 +661,7 @@ model Account {
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
 
-  society       Society       @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  society       Society        @relation(fields: [societyId], references: [id], onDelete: Cascade)
   transactions  Transaction[]
   expenses      Expense[]
   salaryRecords SalaryRecord[]
@@ -679,6 +687,7 @@ model Fund {
   society      Society       @relation(fields: [societyId], references: [id], onDelete: Cascade)
   account      Account?      @relation(fields: [accountId], references: [id])
   transactions Transaction[]
+  events       Event[]
 
   @@index([societyId])
   @@map("funds")
@@ -753,12 +762,12 @@ model Expense {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  society   Society          @relation(fields: [societyId], references: [id], onDelete: Cascade)
-  category  ExpenseCategory? @relation(fields: [categoryId], references: [id])
-  account   Account?         @relation(fields: [accountId], references: [id])
-  createdBy User             @relation("ExpenseCreator", fields: [createdById], references: [id])
-  approvedBy User?           @relation("ExpenseApprover", fields: [approvedById], references: [id])
-  documents Document[]       @relation("ExpenseDocuments")
+  society    Society          @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  category   ExpenseCategory? @relation(fields: [categoryId], references: [id])
+  account    Account?         @relation(fields: [accountId], references: [id])
+  createdBy  User             @relation("ExpenseCreator", fields: [createdById], references: [id])
+  approvedBy User?            @relation("ExpenseApprover", fields: [approvedById], references: [id])
+  documents  Document[]       @relation("ExpenseDocuments")
 
   @@index([societyId])
   @@index([expenseDate])
@@ -860,26 +869,26 @@ model PaymentSubmission {
 // ─── MONTHLY STATEMENT ────────────────────────────────────────────────────────
 
 model MonthlyStatement {
-  id                String   @id @default(uuid())
+  id                String    @id @default(uuid())
   societyId         String
-  billingPeriodId   String   @unique
+  billingPeriodId   String    @unique
   title             String
   periodYear        Int
   periodMonth       Int
-  totalMaintenance  Decimal  @default(0) @db.Decimal(15, 2)
-  totalCollected    Decimal  @default(0) @db.Decimal(15, 2)
-  totalPending      Decimal  @default(0) @db.Decimal(15, 2)
-  totalExpenses     Decimal  @default(0) @db.Decimal(15, 2)
-  totalSalaries     Decimal  @default(0) @db.Decimal(15, 2)
-  totalWaterExpense Decimal  @default(0) @db.Decimal(15, 2)
-  otherExpenses     Decimal  @default(0) @db.Decimal(15, 2)
-  content           Json     @default("{}")
-  isPublished       Boolean  @default(false)
+  totalMaintenance  Decimal   @default(0) @db.Decimal(15, 2)
+  totalCollected    Decimal   @default(0) @db.Decimal(15, 2)
+  totalPending      Decimal   @default(0) @db.Decimal(15, 2)
+  totalExpenses     Decimal   @default(0) @db.Decimal(15, 2)
+  totalSalaries     Decimal   @default(0) @db.Decimal(15, 2)
+  totalWaterExpense Decimal   @default(0) @db.Decimal(15, 2)
+  otherExpenses     Decimal   @default(0) @db.Decimal(15, 2)
+  content           Json      @default("{}")
+  isPublished       Boolean   @default(false)
   publishedAt       DateTime?
   publishedById     String?
   notes             String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   society       Society       @relation(fields: [societyId], references: [id], onDelete: Cascade)
   billingPeriod BillingPeriod @relation(fields: [billingPeriodId], references: [id])
@@ -906,8 +915,8 @@ model Announcement {
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 
-  society   Society  @relation(fields: [societyId], references: [id], onDelete: Cascade)
-  createdBy User     @relation(fields: [createdById], references: [id])
+  society   Society    @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  createdBy User       @relation(fields: [createdById], references: [id])
   documents Document[] @relation("AnnouncementDocuments")
 
   @@index([societyId])
@@ -928,11 +937,11 @@ model Meeting {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  society   Society          @relation(fields: [societyId], references: [id], onDelete: Cascade)
-  createdBy User             @relation(fields: [createdById], references: [id])
+  society   Society           @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  createdBy User              @relation(fields: [createdById], references: [id])
   minutes   MeetingMinutes?
   attendees MeetingAttendee[]
-  documents Document[]       @relation("MeetingDocuments")
+  documents Document[]        @relation("MeetingDocuments")
 
   @@index([societyId])
   @@map("meetings")
@@ -968,6 +977,39 @@ model MeetingAttendee {
   @@map("meeting_attendees")
 }
 
+// ─── EVENTS ───────────────────────────────────────────────────────────────────
+//
+// Covers both society events (Diwali celebration, AGM) and admin-planned
+// upcoming activities with a known or estimated cost (AMC servicing, water
+// tank cleaning) — same shape either way: a title, a date, and an optional
+// cost. estimatedCost is set at planning time; actualCost is filled in once
+// it's known. Linking to a Fund is optional and purely informational — it
+// does not move money; any real spend still goes through Expense.
+
+model Event {
+  id                   String      @id @default(uuid())
+  societyId            String
+  title                String
+  description          String?
+  eventDate            DateTime
+  fundId               String?
+  estimatedCost        Decimal?    @db.Decimal(12, 2)
+  actualCost           Decimal?    @db.Decimal(12, 2)
+  status               EventStatus @default(PLANNED)
+  isVisibleToResidents Boolean     @default(true)
+  createdById          String
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  society   Society @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  fund      Fund?   @relation(fields: [fundId], references: [id], onDelete: SetNull)
+  createdBy User    @relation(fields: [createdById], references: [id])
+
+  @@index([societyId])
+  @@index([eventDate])
+  @@map("events")
+}
+
 // ─── DOCUMENTS ────────────────────────────────────────────────────────────────
 
 model Document {
@@ -989,12 +1031,12 @@ model Document {
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 
-  society       Society            @relation(fields: [societyId], references: [id], onDelete: Cascade)
-  uploadedBy    User               @relation(fields: [uploadedById], references: [id])
-  expenses      Expense[]          @relation("ExpenseDocuments")
+  society       Society             @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  uploadedBy    User                @relation(fields: [uploadedById], references: [id])
+  expenses      Expense[]           @relation("ExpenseDocuments")
   payments      PaymentSubmission[] @relation("PaymentDocuments")
-  announcements Announcement[]     @relation("AnnouncementDocuments")
-  meetings      Meeting[]          @relation("MeetingDocuments")
+  announcements Announcement[]      @relation("AnnouncementDocuments")
+  meetings      Meeting[]           @relation("MeetingDocuments")
 
   @@index([societyId])
   @@map("documents")
@@ -1003,18 +1045,18 @@ model Document {
 // ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
 
 model Notification {
-  id             String               @id @default(uuid())
+  id             String                @id @default(uuid())
   societyId      String
   title          String
   body           String
   type           String
-  data           Json                 @default("{}")
+  data           Json                  @default("{}")
   channels       NotificationChannel[]
-  audience       AnnouncementAudience @default(ALL_RESIDENTS)
-  audienceConfig Json                 @default("{}")
+  audience       AnnouncementAudience  @default(ALL_RESIDENTS)
+  audienceConfig Json                  @default("{}")
   scheduledAt    DateTime?
   sentAt         DateTime?
-  createdAt      DateTime             @default(now())
+  createdAt      DateTime              @default(now())
 
   society Society              @relation(fields: [societyId], references: [id], onDelete: Cascade)
   records NotificationRecord[]
@@ -1024,16 +1066,16 @@ model Notification {
 }
 
 model NotificationRecord {
-  id             String             @id @default(uuid())
+  id             String              @id @default(uuid())
   notificationId String
   userId         String
   channel        NotificationChannel
-  status         NotificationStatus @default(PENDING)
+  status         NotificationStatus  @default(PENDING)
   sentAt         DateTime?
   readAt         DateTime?
   error          String?
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id])
@@ -1087,10 +1129,10 @@ model MaintenanceRequest {
   createdAt    DateTime                 @default(now())
   updatedAt    DateTime                 @updatedAt
 
-  society    Society  @relation(fields: [societyId], references: [id])
-  flat       Flat?    @relation(fields: [flatId], references: [id])
-  resident   User     @relation("RequestSubmitter", fields: [residentId], references: [id])
-  assignedTo User?    @relation("RequestAssignee", fields: [assignedToId], references: [id])
+  society    Society @relation(fields: [societyId], references: [id])
+  flat       Flat?   @relation(fields: [flatId], references: [id])
+  resident   User    @relation("RequestSubmitter", fields: [residentId], references: [id])
+  assignedTo User?   @relation("RequestAssignee", fields: [assignedToId], references: [id])
 
   @@index([societyId])
   @@index([residentId])
