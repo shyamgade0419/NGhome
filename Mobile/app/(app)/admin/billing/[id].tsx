@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { colors, spacing, typography, radius } from '@/theme';
 import { BillingPeriod, MaintenanceBill, billingPeriodName } from '@/types/billing.types';
+import { toNum, inr } from '@/utils/format';
 
 const MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
@@ -31,9 +32,9 @@ function buildBillMessage(bill: MaintenanceBill, period: BillingPeriod): string 
   const due = period.dueDate
     ? new Date(period.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
     : '';
-  const total = parseFloat(bill.totalAmount);
-  const pending = parseFloat(bill.pendingAmount ?? '0');
-  const water = parseFloat(bill.waterCharges ?? '0');
+  const total = toNum(bill.totalAmount);
+  const pending = toNum(bill.pendingAmount);
+  const water = toNum(bill.waterCharges);
 
   const lines = [
     `🏢 *${month} Maintenance*`,
@@ -44,7 +45,7 @@ function buildBillMessage(bill: MaintenanceBill, period: BillingPeriod): string 
     `💰 Total: *₹${total.toLocaleString('en-IN')}*`,
   ];
   if (water > 0) {
-    lines.push(`   • Maintenance: ₹${parseFloat(bill.baseAmount ?? '0').toLocaleString('en-IN')}`);
+    lines.push(`   • Maintenance: ${inr(bill.baseAmount)}`);
     lines.push(`   • Water: ₹${water.toLocaleString('en-IN')}`);
   }
   if (bill.isPaid) {
@@ -88,7 +89,7 @@ function BillRow({
   period: BillingPeriod;
   isAdmin: boolean;
 }) {
-  const pending = parseFloat(bill.pendingAmount ?? '0');
+  const pending = toNum(bill.pendingAmount);
 
   const handleWhatsApp = async () => {
     try {
@@ -106,10 +107,10 @@ function BillRow({
       </View>
 
       <View style={billStyles.amounts}>
-        <Text style={billStyles.total}>₹{parseFloat(bill.totalAmount).toLocaleString('en-IN')}</Text>
+        <Text style={billStyles.total}>{inr(bill.totalAmount)}</Text>
         {pending > 0 && !bill.isPaid && (
           <Text style={billStyles.pending}>
-            Due ₹{pending.toLocaleString('en-IN')}
+            Due {inr(pending)}
           </Text>
         )}
       </View>
@@ -223,9 +224,9 @@ export default function BillingDetailScreen() {
   if (periodLoading) return <LoadingState fullscreen message="Loading period…" />;
   if (!period) return null;
 
-  const totalBilled = parseFloat(period.totalBilled ?? '0');
-  const totalCollected = parseFloat(period.totalCollected ?? '0');
-  const totalPending = parseFloat(period.totalPending ?? '0');
+  const totalBilled = toNum(period.totalBilled);
+  const totalCollected = toNum(period.totalCollected);
+  const totalPending = toNum(period.totalPending);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -262,21 +263,21 @@ export default function BillingDetailScreen() {
                 <View style={styles.stat}>
                   <Text style={styles.statLabel}>Billed</Text>
                   <Text style={[styles.statValue, { color: colors.primary }]}>
-                    ₹{totalBilled.toLocaleString('en-IN')}
+                    {inr(totalBilled)}
                   </Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.stat}>
                   <Text style={styles.statLabel}>Collected</Text>
                   <Text style={[styles.statValue, { color: colors.secondary }]}>
-                    ₹{totalCollected.toLocaleString('en-IN')}
+                    {inr(totalCollected)}
                   </Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.stat}>
                   <Text style={styles.statLabel}>Pending</Text>
                   <Text style={[styles.statValue, { color: totalPending > 0 ? colors.warning : colors.secondary }]}>
-                    ₹{totalPending.toLocaleString('en-IN')}
+                    {inr(totalPending)}
                   </Text>
                 </View>
               </View>

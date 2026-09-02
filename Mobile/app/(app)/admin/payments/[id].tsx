@@ -21,6 +21,7 @@ import { StatusBadge, paymentStatusVariant } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { colors, spacing, typography, radius } from '@/theme';
+import { inr } from '@/utils/format';
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
@@ -110,7 +111,7 @@ export default function PaymentDetailScreen() {
           <View style={styles.statusRow}>
             <View>
               <Text style={styles.amountLarge}>
-                ₹{parseFloat(payment.amount).toLocaleString('en-IN')}
+                {inr(payment.amount)}
               </Text>
               <Text style={styles.submittedLabel}>
                 Submitted {new Date(payment.createdAt).toLocaleDateString('en-IN')}
@@ -189,7 +190,7 @@ export default function PaymentDetailScreen() {
                   onPress={() =>
                     Alert.alert(
                       'Approve Payment',
-                      `Approve ₹${parseFloat(payment.amount).toLocaleString('en-IN')}${creditAccount ? ` → ${creditAccount.name}` : ''}?`,
+                      `Approve ${inr(payment.amount)}${creditAccount ? ` → ${creditAccount.name}` : ''}?`,
                       [
                         { text: 'Cancel', style: 'cancel' },
                         { text: 'Approve', onPress: () => approveMutation.mutate() },

@@ -19,6 +19,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusBadge, paymentStatusVariant } from '@/components/ui/StatusBadge';
 import { colors, spacing, typography, radius } from '@/theme';
 import { PaymentSubmission } from '@/types/billing.types';
+import { inr } from '@/utils/format';
 
 const STATUS_FILTERS = ['ALL', 'PENDING', 'UNDER_REVIEW', 'APPROVED', 'REJECTED'] as const;
 type Filter = (typeof STATUS_FILTERS)[number];
@@ -75,7 +76,7 @@ export default function AdminPaymentsScreen() {
 
       <View style={styles.cardBottom}>
         <View>
-          <Text style={styles.amount}>₹{parseFloat(item.amount).toLocaleString('en-IN')}</Text>
+          <Text style={styles.amount}>{inr(item.amount)}</Text>
           <Text style={styles.method}>{item.paymentMethod.replace('_', ' ')}</Text>
         </View>
         {item.referenceNumber && (

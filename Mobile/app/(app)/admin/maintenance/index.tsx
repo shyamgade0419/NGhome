@@ -20,6 +20,7 @@ import { StatusBadge, billingStatusVariant } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius } from '@/theme';
 import { BillingPeriod, billingPeriodName } from '@/types/billing.types';
+import { inr } from '@/utils/format';
 
 export default function MaintenanceScreen() {
   const router = useRouter();
@@ -76,19 +77,19 @@ export default function MaintenanceScreen() {
         <View style={styles.amount}>
           <Text style={styles.amountLabel}>Billed</Text>
           <Text style={[styles.amountValue, { color: colors.primary }]}>
-            ₹{parseFloat(item.totalBilled).toLocaleString('en-IN')}
+            {inr(item.totalBilled)}
           </Text>
         </View>
         <View style={styles.amount}>
           <Text style={styles.amountLabel}>Collected</Text>
           <Text style={[styles.amountValue, { color: colors.secondary }]}>
-            ₹{parseFloat(item.totalCollected).toLocaleString('en-IN')}
+            {inr(item.totalCollected)}
           </Text>
         </View>
         <View style={styles.amount}>
           <Text style={styles.amountLabel}>Outstanding</Text>
           <Text style={[styles.amountValue, { color: colors.warning }]}>
-            ₹{parseFloat(item.totalPending).toLocaleString('en-IN')}
+            {inr(item.totalPending)}
           </Text>
         </View>
       </View>

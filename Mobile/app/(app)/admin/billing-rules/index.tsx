@@ -41,6 +41,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius } from '@/theme';
+import { inr } from '@/utils/format';
 
 // ── Create sheet ─────────────────────────────────────────────────────────────
 
@@ -271,9 +272,7 @@ export default function BillingRulesScreen() {
                     <View key={c.id} style={styles.componentRow}>
                       <Text style={styles.componentName}>{c.name}</Text>
                       {c.amount ? (
-                        <Text style={styles.componentAmount}>
-                          ₹{parseFloat(c.amount).toLocaleString('en-IN')}
-                        </Text>
+                        <Text style={styles.componentAmount}>{inr(c.amount)}</Text>
                       ) : null}
                     </View>
                   ))}

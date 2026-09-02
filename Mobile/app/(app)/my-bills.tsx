@@ -11,6 +11,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { colors, spacing, typography, radius } from '@/theme';
 import { MaintenanceBill } from '@/types/billing.types';
+import { inr } from '@/utils/format';
 
 export default function ResidentMaintenanceScreen() {
   const router = useRouter();
@@ -44,20 +45,20 @@ export default function ResidentMaintenanceScreen() {
       {(item.lineItems ?? []).map((li, i) => (
         <View key={i} style={styles.lineItem}>
           <Text style={styles.lineItemName}>{li.componentName}</Text>
-          <Text style={styles.lineItemAmount}>₹{parseFloat(li.amount).toLocaleString('en-IN')}</Text>
+          <Text style={styles.lineItemAmount}>{inr(li.amount)}</Text>
         </View>
       ))}
 
       <View style={styles.divider} />
       <View style={styles.totalRow}>
         <Text style={styles.totalLabel}>Total</Text>
-        <Text style={styles.totalAmount}>₹{parseFloat(item.totalAmount).toLocaleString('en-IN')}</Text>
+        <Text style={styles.totalAmount}>{inr(item.totalAmount)}</Text>
       </View>
 
       {!item.isPaid && (
         <View style={styles.pendingRow}>
           <Text style={styles.pendingLabel}>Outstanding</Text>
-          <Text style={styles.pendingAmount}>₹{parseFloat(item.pendingAmount).toLocaleString('en-IN')}</Text>
+          <Text style={styles.pendingAmount}>{inr(item.pendingAmount)}</Text>
         </View>
       )}
 

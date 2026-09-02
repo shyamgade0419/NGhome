@@ -25,6 +25,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { colors, spacing, typography, radius } from '@/theme';
+import { inr } from '@/utils/format';
 
 interface Expense {
   id: string;
@@ -251,7 +252,7 @@ export default function ExpensesScreen() {
   const handleApprove = (item: Expense) => {
     Alert.alert(
       'Approve Expense',
-      `Approve ₹${parseFloat(item.amount).toLocaleString('en-IN')} for "${item.description}"?`,
+      `Approve ${inr(item.amount)} for "${item.description}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Approve', onPress: () => approveMutation.mutate(item.id) },
@@ -289,7 +290,7 @@ export default function ExpensesScreen() {
           ) : null}
         </View>
         <View style={styles.cardRight}>
-          <Text style={styles.amount}>₹{parseFloat(item.amount).toLocaleString('en-IN')}</Text>
+          <Text style={styles.amount}>{inr(item.amount)}</Text>
           <Text style={styles.date}>
             {new Date(item.expenseDate).toLocaleDateString('en-IN')}
           </Text>
@@ -396,7 +397,7 @@ export default function ExpensesScreen() {
               </View>
               {rejectingExpense && (
                 <Text style={rejectModal.desc}>
-                  {rejectingExpense.description} · ₹{parseFloat(rejectingExpense.amount).toLocaleString('en-IN')}
+                  {rejectingExpense.description} · {inr(rejectingExpense.amount)}
                 </Text>
               )}
               <TextInput

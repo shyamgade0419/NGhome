@@ -137,7 +137,7 @@ export default function SubmitPaymentScreen() {
                 <View style={styles.billAmountItem}>
                   <Text style={styles.billAmountLabel}>Total Bill</Text>
                   <Text style={styles.billAmountValue}>
-                    ₹{parseFloat(myBill.totalAmount).toLocaleString('en-IN')}
+                    {inr(myBill.totalAmount)}
                   </Text>
                 </View>
                 <View style={styles.billAmountItem}>

@@ -12,6 +12,7 @@ import { StatusBadge, paymentStatusVariant } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius } from '@/theme';
 import { PaymentSubmission } from '@/types/billing.types';
+import { inr } from '@/utils/format';
 
 export default function ResidentPaymentsScreen() {
   const router = useRouter();
@@ -25,7 +26,7 @@ export default function ResidentPaymentsScreen() {
     <View style={styles.card}>
       <View style={styles.cardTop}>
         <View>
-          <Text style={styles.amount}>₹{parseFloat(item.amount).toLocaleString('en-IN')}</Text>
+          <Text style={styles.amount}>{inr(item.amount)}</Text>
           <Text style={styles.date}>
             {new Date(item.paymentDate).toLocaleDateString('en-IN')} ·{' '}
             {item.paymentMethod.replace(/_/g, ' ')}

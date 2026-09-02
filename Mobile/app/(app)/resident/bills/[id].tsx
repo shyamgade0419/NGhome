@@ -19,6 +19,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { colors, spacing, typography, radius } from '@/theme';
+import { inr } from '@/utils/format';
 
 function InfoRow({ label, value, valueStyle }: { label: string; value: string; valueStyle?: any }) {
   return (
@@ -59,7 +60,7 @@ export default function ResidentBillDetailScreen() {
     const lines = [
       `🏢 Maintenance Bill — ${bill.invoiceNumber}`,
       `Flat: ${bill.flatCode ?? ''}`,
-      `Total: ₹${parseFloat(bill.totalAmount).toLocaleString('en-IN')}`,
+      `Total: ${inr(bill.totalAmount)}`,
       ...(water > 0 ? [`   • Maintenance: ₹${parseFloat(bill.baseAmount ?? '0').toLocaleString('en-IN')}`, `   • Water: ₹${water.toLocaleString('en-IN')}`] : []),
       `Status: ${bill.isPaid ? '✅ PAID' : `⚠️ Due ₹${pending.toLocaleString('en-IN')}`}`,
     ];
@@ -177,7 +178,7 @@ export default function ResidentBillDetailScreen() {
               <InfoRow
                 key={item.id}
                 label={item.description ?? item.name ?? item.type ?? 'Item'}
-                value={`₹${parseFloat(item.amount).toLocaleString('en-IN')}`}
+                value={inr(item.amount)}
               />
             ))}
           </Card>

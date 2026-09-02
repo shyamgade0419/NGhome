@@ -19,6 +19,7 @@ import { Card, SectionHeader } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { colors, spacing, typography, radius } from '@/theme';
 import { Announcement } from '@/types/society.types';
+import { toNum, inr } from '@/utils/format';
 
 export default function ResidentDashboard() {
   const router = useRouter();
@@ -41,7 +42,7 @@ export default function ResidentDashboard() {
 
   if (isLoading) return <LoadingState fullscreen message="Loading your account..." />;
 
-  const outstanding = myBill ? parseFloat(myBill.pendingAmount) : 0;
+  const outstanding = myBill ? toNum(myBill.pendingAmount) : 0;
   const isPaid = myBill?.isPaid ?? false;
 
   const periodLabel = myBill
@@ -95,7 +96,7 @@ export default function ResidentDashboard() {
           {myBill ? (
             <>
               <Text style={styles.heroAmount}>
-                ₹{parseFloat(myBill.totalAmount).toLocaleString('en-IN')}
+                {inr(myBill.totalAmount)}
               </Text>
               {!isPaid && (
                 <Text style={styles.heroDue}>
@@ -127,13 +128,13 @@ export default function ResidentDashboard() {
             <Card style={styles.statBox} padding="md">
               <Text style={styles.statLabel}>Total Bill</Text>
               <Text style={[styles.statValue, { color: colors.primary }]}>
-                ₹{parseFloat(myBill.totalAmount).toLocaleString('en-IN')}
+                {inr(myBill.totalAmount)}
               </Text>
             </Card>
             <Card style={styles.statBox} padding="md">
               <Text style={styles.statLabel}>Paid</Text>
               <Text style={[styles.statValue, { color: colors.secondary }]}>
-                ₹{parseFloat(myBill.paidAmount).toLocaleString('en-IN')}
+                {inr(myBill.paidAmount)}
               </Text>
             </Card>
             <Card style={styles.statBox} padding="md">
