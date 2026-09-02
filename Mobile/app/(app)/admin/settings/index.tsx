@@ -52,6 +52,48 @@ export default function SettingsScreen() {
       onPress: () => router.push('/(app)/maintenance-sheet' as any),
     },
     {
+      icon: 'bar-chart-outline',
+      label: 'Reports',
+      sublabel: 'Dues, collection, expenses, balances',
+      onPress: () => router.push('/(app)/admin/reports/index' as any),
+    },
+    {
+      icon: 'wallet-outline',
+      label: 'Accounts',
+      sublabel: 'Bank balances & transaction ledger',
+      onPress: () => router.push('/(app)/admin/accounts/index' as any),
+    },
+    {
+      icon: 'folder-open-outline',
+      label: 'Documents',
+      sublabel: 'Bye-laws, circulars & notices',
+      onPress: () => router.push('/(app)/documents' as any),
+    },
+    {
+      icon: 'calendar-outline',
+      label: 'Meetings',
+      sublabel: 'Agendas & minutes',
+      onPress: () => router.push('/(app)/admin/meetings/index' as any),
+    },
+    {
+      icon: 'receipt-outline',
+      label: 'My Bills',
+      sublabel: 'Your own maintenance bills',
+      onPress: () => router.push('/(app)/my-bills' as any),
+    },
+    {
+      icon: 'cash-outline',
+      label: 'Salaries',
+      sublabel: 'Staff roster & payroll records',
+      onPress: () => router.push('/(app)/admin/salaries/index' as any),
+    },
+    {
+      icon: 'shield-outline',
+      label: 'Audit Logs',
+      sublabel: 'Society-wide action history',
+      onPress: () => router.push('/(app)/admin/audit-logs/index' as any),
+    },
+    {
       icon: 'notifications-outline',
       label: 'Notification Settings',
       sublabel: 'Configure resident visibility',

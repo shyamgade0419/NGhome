@@ -113,6 +113,11 @@ export default function ResidentProfileScreen() {
               onPress: () => router.push('/(app)/maintenance-sheet' as any),
             },
             {
+              icon: 'folder-open-outline' as const,
+              label: 'Documents',
+              onPress: () => router.push('/(app)/documents' as any),
+            },
+            {
               icon: 'help-circle-outline' as const,
               label: 'Help Center',
               onPress: () => router.push('/(app)/help' as any),

@@ -21,6 +21,8 @@ export default function AppLayout() {
       <Stack.Screen name="help" />
       <Stack.Screen name="maintenance-sheet" />
       <Stack.Screen name="notifications" />
+      <Stack.Screen name="documents" />
+      <Stack.Screen name="my-bills" />
     </Stack>
   );
 }
