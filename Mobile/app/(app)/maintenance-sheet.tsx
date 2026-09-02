@@ -198,10 +198,14 @@ function BillDetailModal({
   const [reason, setReason] = useState('');
 
   // Fresh, authoritative figures straight from the bill row — the statement
-  // list can be a few seconds stale by the time an admin taps in.
+  // list can be a few seconds stale by the time an admin taps in. GET
+  // /billing/bills/:id is admin/accountant-only, so residents skip this
+  // fetch entirely and the breakdown below falls back to the `flat` prop,
+  // which already came from the statement endpoint every member can read.
   const { data: bill, isLoading } = useQuery({
     queryKey: ['bill-detail', flat.billId],
     queryFn: () => billingApi.getBill(flat.billId),
+    enabled: canManage,
   });
 
   // Pre-fill the reason with whatever note already exists so submitting
@@ -291,10 +295,10 @@ function BillDetailModal({
                 </View>
 
                 {/* Current note */}
-                {bill?.notes ? (
+                {(bill?.notes ?? flat.notes) ? (
                   <View style={styles.noteDisplay}>
                     <Ionicons name="document-text-outline" size={13} color={colors.textSecondary} />
-                    <Text style={styles.noteText}>{bill.notes}</Text>
+                    <Text style={styles.noteText}>{bill?.notes ?? flat.notes}</Text>
                   </View>
                 ) : null}
 
@@ -619,15 +623,21 @@ export default function MaintenanceSheetScreen() {
   const canEditNotes =
     user?.currentRole === 'SOCIETY_ADMIN' || user?.currentRole === 'SOCIETY_ACCOUNTANT';
 
-  // Load billing periods
-  const { data: periodsData } = useQuery({
-    queryKey: ['billing-periods-sheet'],
+  // Load billing periods — /billing/periods is admin/accountant-only and
+  // 403s for residents, so residents get the resident-safe published-only
+  // list instead. Both branches feed the same PeriodPicker/state below.
+  const { data: periods = [] } = useQuery({
+    queryKey: ['billing-periods-sheet', canEditNotes],
     // React Query v5 removed the onSuccess callback — the default period is
     // selected by the effect below instead.
-    queryFn: () => billingApi.getBillingPeriods({ limit: 24 }),
+    queryFn: async (): Promise<BillingPeriod[]> => {
+      if (canEditNotes) {
+        const res = await billingApi.getBillingPeriods({ limit: 24 });
+        return res.data ?? [];
+      }
+      return billingApi.listPublishedPeriods();
+    },
   });
-
-  const periods: BillingPeriod[] = periodsData?.data ?? [];
 
   // Ensure we set a default when periods load
   React.useEffect(() => {

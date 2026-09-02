@@ -5,12 +5,20 @@ import { BillingPeriod, MaintenanceBill } from '@/types/billing.types';
 export const billingApi = {
   // ─── Admin: billing periods ────────────────────────────────────────────────
 
+  // Admin/Accountant only — 403s for residents. Use listPublishedPeriods() below
+  // for any screen a resident can reach.
   getBillingPeriods: async (query?: PaginationQuery & { status?: string }) => {
     const { data } = await apiClient.get<PaginatedResponse<BillingPeriod>>(
       '/billing/periods',
       { params: query },
     );
     return data;
+  },
+
+  // Resident-safe: only ever returns PUBLISHED periods, no role guard.
+  listPublishedPeriods: async (): Promise<BillingPeriod[]> => {
+    const { data } = await apiClient.get<ApiResponse<BillingPeriod[]>>('/billing/periods/published');
+    return data.data ?? [];
   },
 
   // Returns the most recent non-closed billing period.
