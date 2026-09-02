@@ -189,4 +189,16 @@ export const billingApi = {
     );
     return data.data;
   },
+
+  /**
+   * Resident: preview the flat's bill for a period that's been calculated
+   * but not yet published. Returns null when there's nothing to preview
+   * (no CALCULATED/REVIEW period, or the resident has no flat).
+   */
+  previewMyBill: async (): Promise<(MaintenanceBill & { periodStatus: string; isPreview: true }) | null> => {
+    const { data } = await apiClient.get<ApiResponse<(MaintenanceBill & { periodStatus: string; isPreview: true }) | null>>(
+      '/billing/my-bills/preview',
+    );
+    return data.data ?? null;
+  },
 };

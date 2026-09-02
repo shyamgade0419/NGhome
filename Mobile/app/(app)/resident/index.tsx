@@ -30,6 +30,14 @@ export default function ResidentDashboard() {
     queryFn: billingApi.getMyCurrentBill,
   });
 
+  // Only worth fetching when there's no current published bill to show —
+  // once one exists, the preview (last period, already superseded) is noise.
+  const { data: preview, refetch: refetchPreview } = useQuery({
+    queryKey: ['my-bill-preview'],
+    queryFn: billingApi.previewMyBill,
+    enabled: !isLoading && !myBill,
+  });
+
   const { data: announcements, refetch: refetchAnnouncements } = useQuery({
     queryKey: ['announcements-preview'],
     queryFn: () => societiesApi.getAnnouncements({ limit: 3 }),
@@ -38,6 +46,7 @@ export default function ResidentDashboard() {
   const onRefresh = () => {
     refetchBill();
     refetchAnnouncements();
+    refetchPreview();
   };
 
   if (isLoading) return <LoadingState fullscreen message="Loading your account..." />;
@@ -47,7 +56,9 @@ export default function ResidentDashboard() {
 
   const periodLabel = myBill
     ? `${new Date(myBill.dueDate).toLocaleString('en-IN', { month: 'short', year: 'numeric' })} Maintenance`
-    : 'Current Maintenance';
+    : preview
+      ? `${new Date(preview.dueDate).toLocaleString('en-IN', { month: 'short', year: 'numeric' })} Maintenance (Upcoming)`
+      : 'Current Maintenance';
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -116,6 +127,22 @@ export default function ResidentDashboard() {
                   <Text style={styles.payBtnText}>I&apos;ve Made Payment</Text>
                 </TouchableOpacity>
               )}
+            </>
+          ) : preview ? (
+            <>
+              <View style={styles.previewBadgeRow}>
+                <StatusBadge label="PREVIEW" variant="info" size="sm" />
+                <Text style={styles.previewNote}>Not yet published — may still change</Text>
+              </View>
+              <Text style={styles.heroAmount}>{inr(preview.totalAmount)}</Text>
+              <TouchableOpacity
+                style={styles.previewLink}
+                onPress={() => router.push('/(app)/my-bills' as any)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.previewLinkText}>See full breakdown</Text>
+                <Ionicons name="chevron-forward" size={13} color={colors.primary} />
+              </TouchableOpacity>
             </>
           ) : (
             <Text style={styles.noBill}>No pending bill. You&apos;re all caught up!</Text>
@@ -276,6 +303,11 @@ const styles = StyleSheet.create({
   },
   payBtnText: { ...typography.labelLarge, color: colors.textInverse },
   noBill: { ...typography.bodyMedium, color: 'rgba(255,255,255,0.7)', textAlign: 'center' },
+
+  previewBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  previewNote: { ...typography.bodySmall, color: 'rgba(255,255,255,0.7)', flexShrink: 1 },
+  previewLink: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 2 },
+  previewLinkText: { ...typography.labelMedium, color: colors.textInverse, textDecorationLine: 'underline' },
 
   statsRow: {
     flexDirection: 'row',

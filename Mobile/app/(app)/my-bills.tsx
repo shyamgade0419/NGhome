@@ -11,7 +11,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { colors, spacing, typography, radius } from '@/theme';
 import { MaintenanceBill } from '@/types/billing.types';
-import { inr } from '@/utils/format';
+import { inr, toNum } from '@/utils/format';
 
 export default function ResidentMaintenanceScreen() {
   const router = useRouter();
@@ -19,6 +19,11 @@ export default function ResidentMaintenanceScreen() {
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['my-bills'],
     queryFn: () => billingApi.getMyBills({ limit: 24 }),
+  });
+
+  const { data: preview, refetch: refetchPreview } = useQuery({
+    queryKey: ['my-bill-preview'],
+    queryFn: billingApi.previewMyBill,
   });
 
   const renderItem = ({ item }: { item: MaintenanceBill }) => (
@@ -70,6 +75,50 @@ export default function ResidentMaintenanceScreen() {
     </TouchableOpacity>
   );
 
+  const previewCard = preview ? (
+    <View style={styles.previewCard}>
+      <View style={styles.previewHeader}>
+        <StatusBadge label="PREVIEW" variant="info" size="sm" />
+        <Text style={styles.previewHeaderText}>
+          {new Date(preview.dueDate).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
+        </Text>
+      </View>
+      <Text style={styles.previewNote}>
+        Not yet published by your society — figures may still change before the final bill.
+      </Text>
+      <View style={styles.divider} />
+      {toNum(preview.baseAmount) > 0 && (
+        <View style={styles.lineItem}>
+          <Text style={styles.lineItemName}>Maintenance</Text>
+          <Text style={styles.lineItemAmount}>{inr(preview.baseAmount)}</Text>
+        </View>
+      )}
+      {toNum(preview.waterCharges) > 0 && (
+        <View style={styles.lineItem}>
+          <Text style={styles.lineItemName}>Water</Text>
+          <Text style={styles.lineItemAmount}>{inr(preview.waterCharges)}</Text>
+        </View>
+      )}
+      {toNum(preview.lateFee) > 0 && (
+        <View style={styles.lineItem}>
+          <Text style={styles.lineItemName}>Late Fee</Text>
+          <Text style={styles.lineItemAmount}>{inr(preview.lateFee)}</Text>
+        </View>
+      )}
+      {toNum(preview.adjustments) !== 0 && (
+        <View style={styles.lineItem}>
+          <Text style={styles.lineItemName}>{toNum(preview.adjustments) < 0 ? 'Discount' : 'Surcharge'}</Text>
+          <Text style={styles.lineItemAmount}>{inr(preview.adjustments)}</Text>
+        </View>
+      )}
+      <View style={styles.divider} />
+      <View style={styles.totalRow}>
+        <Text style={styles.totalLabel}>Estimated Total</Text>
+        <Text style={styles.totalAmount}>{inr(preview.totalAmount)}</Text>
+      </View>
+    </View>
+  ) : null;
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScreenHeader title="My Maintenance Bills" />
@@ -82,15 +131,24 @@ export default function ResidentMaintenanceScreen() {
           renderItem={renderItem}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
+          ListHeaderComponent={
+            previewCard ? <View style={{ marginBottom: spacing.md }}>{previewCard}</View> : null
+          }
           refreshControl={
-            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />
+            <RefreshControl
+              refreshing={isRefetching}
+              onRefresh={() => { refetch(); refetchPreview(); }}
+              tintColor={colors.primary}
+            />
           }
           ListEmptyComponent={
-            <EmptyState
-              icon="receipt-outline"
-              title="No bills yet"
-              description="Your maintenance bills will appear here once generated."
-            />
+            previewCard ? null : (
+              <EmptyState
+                icon="receipt-outline"
+                title="No bills yet"
+                description="Your maintenance bills will appear here once generated."
+              />
+            )
           }
         />
       )}
@@ -124,4 +182,17 @@ const styles = StyleSheet.create({
   pendingAmount: { ...typography.headingSmall, color: '#92400E' },
   drillRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 2 },
   drillHint: { ...typography.bodySmall, color: colors.textTertiary },
+
+  previewCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.base,
+    borderWidth: 1.5,
+    borderColor: colors.info,
+    borderStyle: 'dashed',
+    gap: spacing.sm,
+  },
+  previewHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  previewHeaderText: { ...typography.labelLarge, color: colors.text, fontWeight: '600' },
+  previewNote: { ...typography.bodySmall, color: colors.textTertiary, lineHeight: 16 },
 });
