@@ -24,11 +24,11 @@ import { inrCompact } from '@/utils/format';
 const formatCurrency = inrCompact;
 
 const QUICK_ACTIONS = [
-  { label: 'Manage Billing', icon: 'receipt-outline', route: '/(app)/admin/maintenance/index' },
-  { label: 'Verify Payment', icon: 'checkmark-circle-outline', route: '/(app)/admin/payments/index' },
-  { label: 'Add Expense', icon: 'add-circle-outline', route: '/(app)/admin/expenses/index' },
-  { label: 'Helpdesk', icon: 'construct-outline', route: '/(app)/admin/helpdesk/index' },
-  { label: 'Announce', icon: 'megaphone-outline', route: '/(app)/admin/announcements/index' },
+  { label: 'Manage Billing', icon: 'receipt-outline', route: '/(app)/admin/maintenance' },
+  { label: 'Verify Payment', icon: 'checkmark-circle-outline', route: '/(app)/admin/payments' },
+  { label: 'Add Expense', icon: 'add-circle-outline', route: '/(app)/admin/expenses' },
+  { label: 'Helpdesk', icon: 'construct-outline', route: '/(app)/admin/helpdesk' },
+  { label: 'Announce', icon: 'megaphone-outline', route: '/(app)/admin/announcements' },
 ] as const;
 
 export default function AdminDashboard() {
@@ -67,10 +67,10 @@ export default function AdminDashboard() {
           <TouchableOpacity onPress={() => router.push('/(app)/notifications' as any)} hitSlop={8}>
             <Ionicons name="notifications-outline" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/(app)/admin/settings/index' as any)} hitSlop={8}>
+          <TouchableOpacity onPress={() => router.push('/(app)/admin/settings' as any)} hitSlop={8}>
             <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/(app)/admin/profile/index' as any)} hitSlop={8}>
+          <TouchableOpacity onPress={() => router.push('/(app)/admin/profile' as any)} hitSlop={8}>
             <View style={styles.avatarCircle}>
               <Text style={styles.avatarText}>
                 {user?.firstName?.[0]}
@@ -146,7 +146,7 @@ export default function AdminDashboard() {
         {/* Pending approvals */}
         {(summary?.pendingApprovals ?? 0) > 0 && (
           <TouchableOpacity
-            onPress={() => router.push('/(app)/admin/payments/index')}
+            onPress={() => router.push('/(app)/admin/payments')}
             style={styles.alertBanner}
           >
             <View style={styles.alertIconWrap}>

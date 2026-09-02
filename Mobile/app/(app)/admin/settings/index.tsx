@@ -61,19 +61,19 @@ export default function SettingsScreen() {
       icon: 'options-outline',
       label: 'Billing Rules',
       sublabel: 'How maintenance is calculated',
-      onPress: () => router.push('/(app)/admin/billing-rules/index' as any),
+      onPress: () => router.push('/(app)/admin/billing-rules' as any),
     },
     {
       icon: 'bar-chart-outline',
       label: 'Reports',
       sublabel: 'Dues, collection, expenses, balances',
-      onPress: () => router.push('/(app)/admin/reports/index' as any),
+      onPress: () => router.push('/(app)/admin/reports' as any),
     },
     {
       icon: 'wallet-outline',
       label: 'Accounts',
       sublabel: 'Bank balances & transaction ledger',
-      onPress: () => router.push('/(app)/admin/accounts/index' as any),
+      onPress: () => router.push('/(app)/admin/accounts' as any),
     },
     {
       icon: 'folder-open-outline',
@@ -85,7 +85,7 @@ export default function SettingsScreen() {
       icon: 'calendar-outline',
       label: 'Meetings',
       sublabel: 'Agendas & minutes',
-      onPress: () => router.push('/(app)/admin/meetings/index' as any),
+      onPress: () => router.push('/(app)/admin/meetings' as any),
     },
     {
       icon: 'receipt-outline',
@@ -97,13 +97,13 @@ export default function SettingsScreen() {
       icon: 'cash-outline',
       label: 'Salaries',
       sublabel: 'Staff roster & payroll records',
-      onPress: () => router.push('/(app)/admin/salaries/index' as any),
+      onPress: () => router.push('/(app)/admin/salaries' as any),
     },
     {
       icon: 'shield-outline',
       label: 'Audit Logs',
       sublabel: 'Society-wide action history',
-      onPress: () => router.push('/(app)/admin/audit-logs/index' as any),
+      onPress: () => router.push('/(app)/admin/audit-logs' as any),
     },
     {
       icon: 'notifications-outline',
@@ -121,7 +121,7 @@ export default function SettingsScreen() {
       icon: 'construct-outline',
       label: 'Helpdesk',
       sublabel: 'Manage maintenance requests',
-      onPress: () => router.push('/(app)/admin/helpdesk/index' as any),
+      onPress: () => router.push('/(app)/admin/helpdesk' as any),
     },
     {
       icon: 'help-circle-outline',
