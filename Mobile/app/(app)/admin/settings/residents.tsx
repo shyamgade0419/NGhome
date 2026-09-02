@@ -8,6 +8,9 @@ import {
   Alert,
   RefreshControl,
   TextInput,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,11 +21,14 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius } from '@/theme';
 
 interface Resident {
   id: string;
   userId: string;
+  firstName: string;
+  lastName: string;
   displayName: string;
   email: string;
   phone: string | null;
@@ -30,6 +36,106 @@ interface Resident {
   buildingName: string;
   role: string;
   status: string;
+}
+
+// ── Edit resident modal ──────────────────────────────────────────────────
+// Mirrors the web Edit Resident modal exactly, including the "email can't
+// be changed here" note — PATCH /users/:id doesn't even accept an email
+// field, so this isn't a client-side restriction, it's the real contract.
+function EditResidentModal({ resident, onClose }: { resident: Resident; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [firstName, setFirstName] = useState(resident.firstName);
+  const [lastName, setLastName] = useState(resident.lastName);
+  const [phone, setPhone] = useState(resident.phone ?? '');
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      societiesApi.updateResident(resident.userId, {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        phone: phone.trim() || undefined,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-residents'] });
+      Alert.alert('Saved', 'Resident info updated.');
+      onClose();
+    },
+    onError: (e: any) => Alert.alert('Error', e?.response?.data?.message ?? 'Failed to update resident.'),
+  });
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <SafeAreaView style={styles.modalSafe} edges={['top', 'bottom']}>
+        <View style={styles.modalHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.modalTitle}>Edit Resident</Text>
+            <Text style={styles.modalSub}>{resident.flatNumber} · {resident.email}</Text>
+          </View>
+          <TouchableOpacity onPress={onClose} hitSlop={12}>
+            <Ionicons name="close" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.modalBody}>
+            <View style={styles.nameRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>First Name</Text>
+                <TextInput
+                  style={styles.input}
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  placeholder="Ravi"
+                  placeholderTextColor={colors.textTertiary}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Last Name</Text>
+                <TextInput
+                  style={styles.input}
+                  value={lastName}
+                  onChangeText={setLastName}
+                  placeholder="Kumar"
+                  placeholderTextColor={colors.textTertiary}
+                />
+              </View>
+            </View>
+
+            <Text style={[styles.label, { marginTop: spacing.base }]}>Phone (WhatsApp)</Text>
+            <TextInput
+              style={styles.input}
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="+91 9876543210"
+              placeholderTextColor={colors.textTertiary}
+              keyboardType="phone-pad"
+            />
+            <Text style={styles.hint}>Used for WhatsApp billing reminders. Include country code.</Text>
+
+            <View style={styles.emailNotice}>
+              <Ionicons name="warning-outline" size={14} color={colors.warning} />
+              <Text style={styles.emailNoticeText}>
+                Email address can&apos;t be changed here. Contact platform support for email changes.
+              </Text>
+            </View>
+
+            <Button
+              label={mutation.isPending ? 'Saving…' : 'Save Changes'}
+              onPress={() => {
+                if (!firstName.trim() || !lastName.trim()) {
+                  Alert.alert('Required', 'First and last name are required.');
+                  return;
+                }
+                mutation.mutate();
+              }}
+              loading={mutation.isPending}
+              fullWidth
+              style={{ marginTop: spacing.xl }}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
+  );
 }
 
 function roleLabel(role: string) {
@@ -48,6 +154,7 @@ function roleVariant(role: string): 'success' | 'warning' | 'info' | 'neutral' {
 export default function ManageResidentsScreen() {
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
+  const [editing, setEditing] = useState<Resident | null>(null);
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['admin-residents'],
@@ -161,16 +268,17 @@ export default function ManageResidentsScreen() {
               ) : null}
             </View>
 
-            {/* Remove */}
-            {r.role !== 'SOCIETY_ADMIN' && (
-              <TouchableOpacity
-                style={styles.removeBtn}
-                onPress={() => handleRemove(r)}
-                hitSlop={8}
-              >
-                <Ionicons name="person-remove-outline" size={18} color={colors.error} />
+            {/* Actions */}
+            <View style={styles.actions}>
+              <TouchableOpacity style={styles.actionBtn} onPress={() => setEditing(r)} hitSlop={8}>
+                <Ionicons name="create-outline" size={18} color={colors.primary} />
               </TouchableOpacity>
-            )}
+              {r.role !== 'SOCIETY_ADMIN' && (
+                <TouchableOpacity style={styles.actionBtn} onPress={() => handleRemove(r)} hitSlop={8}>
+                  <Ionicons name="person-remove-outline" size={18} color={colors.error} />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         )}
         ItemSeparatorComponent={() => <View style={styles.sep} />}
@@ -184,6 +292,8 @@ export default function ManageResidentsScreen() {
         ListFooterComponent={<View style={{ height: spacing['3xl'] }} />}
         contentContainerStyle={filtered.length === 0 ? styles.emptyContainer : undefined}
       />
+
+      {editing && <EditResidentModal resident={editing} onClose={() => setEditing(null)} />}
     </SafeAreaView>
   );
 }
@@ -246,10 +356,35 @@ const styles = StyleSheet.create({
   flatTagText: { ...typography.labelSmall, color: colors.primary },
   phone: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },
 
-  removeBtn: {
-    padding: spacing.xs,
-    alignSelf: 'center',
-  },
+  actions: { flexDirection: 'row', gap: spacing.xs, alignSelf: 'center' },
+  actionBtn: { padding: spacing.xs },
 
   emptyContainer: { flex: 1 },
+
+  // Edit modal
+  modalSafe: { flex: 1, backgroundColor: colors.background },
+  modalHeader: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md,
+    padding: spacing.base,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  modalTitle: { ...typography.headingSmall, color: colors.text },
+  modalSub: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },
+  modalBody: { padding: spacing.base },
+  nameRow: { flexDirection: 'row', gap: spacing.md },
+  label: { ...typography.labelMedium, color: colors.textSecondary, marginBottom: 4 },
+  input: {
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md, paddingVertical: 10,
+    ...typography.bodyMedium, color: colors.text,
+  },
+  hint: { ...typography.bodySmall, color: colors.textTertiary, marginTop: 4 },
+  emailNotice: {
+    flexDirection: 'row', gap: spacing.xs, alignItems: 'flex-start',
+    backgroundColor: colors.warningLight, borderRadius: radius.md,
+    padding: spacing.sm, marginTop: spacing.base,
+  },
+  emailNoticeText: { ...typography.bodySmall, color: '#92400E', flex: 1, lineHeight: 16 },
 });

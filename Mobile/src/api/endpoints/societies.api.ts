@@ -37,9 +37,70 @@ export const societiesApi = {
     };
   },
 
+  createBuilding: async (payload: {
+    name: string;
+    code?: string;
+    description?: string;
+    totalFloors?: number;
+  }) => {
+    const { data } = await apiClient.post<ApiResponse<Building>>('/buildings', payload);
+    return data.data;
+  },
+
+  updateBuilding: async (id: string, payload: Partial<{
+    name: string;
+    code: string;
+    description: string;
+    totalFloors: number;
+  }>) => {
+    const { data } = await apiClient.patch<ApiResponse<Building>>(`/buildings/${id}`, payload);
+    return data.data;
+  },
+
+  // Soft-delete — the backend keeps the row (isActive: false) rather than
+  // dropping it, since bills/memberships may still reference it.
+  deleteBuilding: async (id: string): Promise<void> => {
+    await apiClient.delete(`/buildings/${id}`);
+  },
+
   getFlats: async (query?: PaginationQuery & { buildingId?: string }) => {
     const { data } = await apiClient.get<PaginatedResponse<Flat>>('/flats', { params: query });
     return data;
+  },
+
+  createFlat: async (payload: {
+    buildingId: string;
+    unitNumber: string;
+    flatCode: string;
+    area?: number;
+    bedrooms?: number;
+    bathrooms?: number;
+    category?: string;
+    status?: string;
+    ownershipType?: string;
+    parkingSlots?: number;
+  }) => {
+    const { data } = await apiClient.post<ApiResponse<Flat>>('/flats', payload);
+    return data.data;
+  },
+
+  updateFlat: async (id: string, payload: Partial<{
+    unitNumber: string;
+    flatCode: string;
+    area: number;
+    bedrooms: number;
+    bathrooms: number;
+    category: string;
+    status: string;
+    ownershipType: string;
+    parkingSlots: number;
+  }>) => {
+    const { data } = await apiClient.patch<ApiResponse<Flat>>(`/flats/${id}`, payload);
+    return data.data;
+  },
+
+  deleteFlat: async (id: string): Promise<void> => {
+    await apiClient.delete(`/flats/${id}`);
   },
 
   getMyFlat: async () => {
@@ -161,6 +222,8 @@ export const societiesApi = {
       return {
         id: u.id,
         userId: u.id,
+        firstName: u.firstName,
+        lastName: u.lastName,
         displayName: `${u.firstName} ${u.lastName}`.trim(),
         email: u.email,
         phone: u.phone,
@@ -176,5 +239,13 @@ export const societiesApi = {
       data: mapped,
       meta: data?.meta ?? { total: mapped.length, page: 1, limit: mapped.length, totalPages: 1 },
     };
+  },
+
+  // Matches web's Edit Resident modal exactly — email is deliberately not
+  // editable here (PATCH /users/:id would accept it, but changing a login
+  // identifier needs its own confirmation flow neither client has built).
+  updateResident: async (userId: string, payload: { firstName?: string; lastName?: string; phone?: string }) => {
+    const { data } = await apiClient.patch<ApiResponse<{ id: string }>>(`/users/${userId}`, payload);
+    return data.data;
   },
 };
