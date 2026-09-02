@@ -55,8 +55,15 @@ export interface MaintenanceBill {
   baseAmount?: string;
   /** Water charge allocated to this flat for the period. */
   waterCharges?: string;
-  /** Manual credits (negative) or surcharges (positive). */
+  /** Manual credits (negative) or surcharges (positive) — set via adjustBill(). */
   adjustments?: string;
+  /** Exists on the real model but nothing anywhere ever sets it — see the
+   *  round-6 audit. Always reads '0' today; kept typed for when that changes. */
+  lateFee?: string;
+  otherCharges?: string;
+  /** Set by both the Maintenance Sheet's note editor and adjustBill() — the
+   *  latter overwrites this field entirely rather than appending. */
+  notes?: string | null;
   isPaid: boolean;
   isPublished: boolean;
   dueDate: string;

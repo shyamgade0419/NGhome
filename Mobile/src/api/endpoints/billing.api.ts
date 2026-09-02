@@ -74,6 +74,24 @@ export const billingApi = {
     return data.data;
   },
 
+  /**
+   * Admin/Accountant only, and only while the bill's period is DRAFT,
+   * CALCULATED, REVIEW or PARTIALLY_PAID — the backend 403s on
+   * CLOSED/PUBLISHED/PAID. Negative amount = discount, positive = surcharge.
+   * `note` REPLACES the bill's notes field entirely (confirmed from source —
+   * it's `notes: note`, not an append), so the caller must pre-fill it with
+   * the bill's current notes to avoid silently destroying context set via
+   * the separate per-flat notes editor on the Maintenance Sheet, which
+   * writes the same column.
+   */
+  adjustBill: async (billId: string, amount: number, note: string) => {
+    const { data } = await apiClient.patch<ApiResponse<MaintenanceBill>>(
+      `/billing/bills/${billId}/adjust`,
+      { adjustment: amount, note },
+    );
+    return data.data;
+  },
+
   // ─── Admin: dashboard summary ──────────────────────────────────────────────
 
   getDashboardSummary: async () => {

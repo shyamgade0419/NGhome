@@ -173,19 +173,275 @@ function NotesModal({
   );
 }
 
+// ── Bill detail + discount/surcharge ────────────────────────────────────────
+//
+// adjustBill() is blocked server-side once a period reaches PUBLISHED,
+// PARTIALLY_PAID is NOT in that blocklist though — matched exactly, not
+// guessed, so the UI never shows an action the API will actually reject.
+const ADJUSTABLE_STATUSES = ['DRAFT', 'CALCULATED', 'REVIEW', 'PARTIALLY_PAID'];
+
+function BillDetailModal({
+  flat,
+  canManage,
+  periodStatus,
+  onClose,
+}: {
+  flat: FlatRow;
+  canManage: boolean;
+  periodStatus?: string;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [showAdjustForm, setShowAdjustForm] = useState(false);
+  const [kind, setKind] = useState<'DISCOUNT' | 'SURCHARGE'>('DISCOUNT');
+  const [amountText, setAmountText] = useState('');
+  const [reason, setReason] = useState('');
+
+  // Fresh, authoritative figures straight from the bill row — the statement
+  // list can be a few seconds stale by the time an admin taps in.
+  const { data: bill, isLoading } = useQuery({
+    queryKey: ['bill-detail', flat.billId],
+    queryFn: () => billingApi.getBill(flat.billId),
+  });
+
+  // Pre-fill the reason with whatever note already exists so submitting
+  // doesn't silently wipe it — adjustBill() overwrites notes wholesale.
+  React.useEffect(() => {
+    if (bill && !reason) setReason(bill.notes ?? '');
+  }, [bill]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const canAdjust = canManage && !!periodStatus && ADJUSTABLE_STATUSES.includes(periodStatus);
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      const amount = parseFloat(amountText);
+      const signed = kind === 'DISCOUNT' ? -Math.abs(amount) : Math.abs(amount);
+      return billingApi.adjustBill(flat.billId, signed, reason.trim());
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['maintenance-sheet'] });
+      qc.invalidateQueries({ queryKey: ['bill-detail', flat.billId] });
+      Alert.alert('Applied', `${kind === 'DISCOUNT' ? 'Discount' : 'Surcharge'} applied to Flat ${flat.flatCode}.`);
+      onClose();
+    },
+    onError: (e: any) =>
+      Alert.alert('Error', e?.response?.data?.message ?? 'Failed to apply adjustment.'),
+  });
+
+  const parsedAmount = parseFloat(amountText);
+  const canSubmit = !isNaN(parsedAmount) && parsedAmount > 0 && reason.trim().length > 0;
+
+  const maintenance = toNum(bill?.baseAmount ?? flat.generalMaintenance);
+  const water = toNum(bill?.waterCharges ?? flat.waterCharges);
+  const lateFee = toNum(bill?.lateFee ?? flat.lateFee);
+  const adjustments = toNum(bill?.adjustments ?? flat.adjustments);
+  const otherCharges = toNum(bill?.otherCharges ?? flat.otherCharges);
+  const arrears = toNum(flat.arrears); // statement-only; not on the raw bill
+  const total = toNum(bill?.totalAmount) || flat.totalPayable;
+  const paid = toNum(bill?.paidAmount);
+  const due = toNum(bill?.pendingAmount) || (flat.isPaid ? 0 : flat.totalPayable);
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <SafeAreaView style={styles.modalSafe} edges={['top']}>
+        <View style={styles.modalHeader}>
+          <View>
+            <Text style={styles.modalTitle}>Flat {flat.flatCode}</Text>
+            {flat.residentName && <Text style={styles.modalSub}>{flat.residentName}</Text>}
+          </View>
+          <TouchableOpacity onPress={onClose} hitSlop={8}>
+            <Ionicons name="close" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
+            {isLoading ? (
+              <LoadingState message="Loading bill…" />
+            ) : (
+              <>
+                <StatusBadge
+                  label={flat.isPaid ? 'PAID' : 'PENDING'}
+                  variant={flat.isPaid ? 'success' : 'warning'}
+                />
+
+                {/* Breakdown */}
+                <View style={styles.breakdownCard}>
+                  <BreakdownRow label="Maintenance" value={maintenance} />
+                  {water > 0 && <BreakdownRow label="Water Charges" value={water} tint={colors.info} />}
+                  {lateFee > 0 && <BreakdownRow label="Late Fee" value={lateFee} tint={colors.error} />}
+                  {arrears > 0 && <BreakdownRow label="Arrears (earlier periods)" value={arrears} tint={colors.error} />}
+                  {otherCharges > 0 && <BreakdownRow label="Other Charges" value={otherCharges} />}
+                  {adjustments !== 0 && (
+                    <BreakdownRow
+                      label={adjustments < 0 ? 'Discount' : 'Surcharge'}
+                      value={adjustments}
+                      tint={adjustments < 0 ? colors.success : colors.error}
+                      signed
+                    />
+                  )}
+                  <View style={styles.breakdownDivider} />
+                  <BreakdownRow label="Final Amount" value={total + arrears} bold />
+                </View>
+
+                {/* Payment summary */}
+                <View style={styles.breakdownCard}>
+                  <BreakdownRow label="Paid" value={paid} tint={colors.success} />
+                  <BreakdownRow label="Due" value={due + arrears} tint={due + arrears > 0 ? colors.warning : colors.success} bold />
+                </View>
+
+                {/* Current note */}
+                {bill?.notes ? (
+                  <View style={styles.noteDisplay}>
+                    <Ionicons name="document-text-outline" size={13} color={colors.textSecondary} />
+                    <Text style={styles.noteText}>{bill.notes}</Text>
+                  </View>
+                ) : null}
+
+                {/* Discount / surcharge action */}
+                {canAdjust && !showAdjustForm && (
+                  <TouchableOpacity
+                    style={styles.adjustToggleBtn}
+                    onPress={() => setShowAdjustForm(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="pricetag-outline" size={16} color={colors.primary} />
+                    <Text style={styles.adjustToggleText}>Apply Discount / Surcharge</Text>
+                  </TouchableOpacity>
+                )}
+
+                {canManage && !canAdjust && (
+                  <View style={styles.disabledNote}>
+                    <Ionicons name="lock-closed-outline" size={13} color={colors.textTertiary} />
+                    <Text style={styles.disabledNoteText}>
+                      Adjustments are only allowed before a period is fully paid or closed.
+                    </Text>
+                  </View>
+                )}
+
+                {showAdjustForm && (
+                  <View style={styles.adjustForm}>
+                    <View style={styles.kindRow}>
+                      <TouchableOpacity
+                        style={[styles.kindBtn, kind === 'DISCOUNT' && styles.kindBtnDiscount]}
+                        onPress={() => setKind('DISCOUNT')}
+                      >
+                        <Text style={[styles.kindText, kind === 'DISCOUNT' && styles.kindTextDiscount]}>
+                          Discount
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.kindBtn, kind === 'SURCHARGE' && styles.kindBtnSurcharge]}
+                        onPress={() => setKind('SURCHARGE')}
+                      >
+                        <Text style={[styles.kindText, kind === 'SURCHARGE' && styles.kindTextSurcharge]}>
+                          Surcharge
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <Text style={styles.fieldLabel}>Amount (₹)</Text>
+                    <TextInput
+                      style={styles.amountInput}
+                      value={amountText}
+                      onChangeText={(v) => setAmountText(v.replace(/[^0-9.]/g, ''))}
+                      keyboardType="decimal-pad"
+                      placeholder="0.00"
+                      placeholderTextColor={colors.textTertiary}
+                    />
+
+                    {!isNaN(parsedAmount) && parsedAmount > 0 && (
+                      <Text style={styles.previewText}>
+                        New total: {inr(total + (kind === 'DISCOUNT' ? -parsedAmount : parsedAmount))}
+                      </Text>
+                    )}
+
+                    <Text style={styles.fieldLabel}>
+                      Reason <Text style={{ color: colors.textTertiary }}>— replaces this bill&apos;s note</Text>
+                    </Text>
+                    <TextInput
+                      style={styles.reasonInput}
+                      value={reason}
+                      onChangeText={setReason}
+                      placeholder="e.g. Early payment discount agreed with committee"
+                      placeholderTextColor={colors.textTertiary}
+                      multiline
+                      numberOfLines={3}
+                      textAlignVertical="top"
+                    />
+
+                    <View style={styles.adjustActions}>
+                      <TouchableOpacity
+                        style={styles.adjustCancelBtn}
+                        onPress={() => { setShowAdjustForm(false); setAmountText(''); }}
+                      >
+                        <Text style={styles.adjustCancelText}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.adjustSubmitBtn,
+                          (!canSubmit || mutation.isPending) && { opacity: 0.6 },
+                        ]}
+                        onPress={() => mutation.mutate()}
+                        disabled={!canSubmit || mutation.isPending}
+                      >
+                        <Text style={styles.adjustSubmitText}>
+                          {mutation.isPending ? 'Applying…' : `Apply ${kind === 'DISCOUNT' ? 'Discount' : 'Surcharge'}`}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </>
+            )}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+function BreakdownRow({
+  label, value, tint, bold, signed,
+}: { label: string; value: number; tint?: string; bold?: boolean; signed?: boolean }) {
+  const display = signed
+    ? `${value < 0 ? '−' : '+'}${inr(Math.abs(value))}`
+    : inr(value);
+  return (
+    <View style={styles.breakdownRow}>
+      <Text style={[styles.breakdownLabel, bold && styles.breakdownLabelBold]}>{label}</Text>
+      <Text
+        style={[
+          styles.breakdownValue,
+          bold && styles.breakdownValueBold,
+          tint ? { color: tint } : null,
+        ]}
+      >
+        {display}
+      </Text>
+    </View>
+  );
+}
+
 // ── Flat row card ─────────────────────────────────────────────────────────────
 
 function FlatCard({
   flat,
   onNotePress,
+  onPress,
   canEditNotes,
 }: {
   flat: FlatRow;
   onNotePress: (f: FlatRow) => void;
+  onPress: (f: FlatRow) => void;
   canEditNotes: boolean;
 }) {
   return (
-    <View style={[styles.flatCard, flat.isPaid && styles.flatCardPaid]}>
+    <TouchableOpacity
+      style={[styles.flatCard, flat.isPaid && styles.flatCardPaid]}
+      onPress={() => onPress(flat)}
+      activeOpacity={0.75}
+    >
       {/* Status stripe */}
       <View style={[styles.stripe, { backgroundColor: flat.isPaid ? colors.success : colors.warning }]} />
 
@@ -261,7 +517,7 @@ function FlatCard({
           </TouchableOpacity>
         )}
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -355,6 +611,7 @@ export default function MaintenanceSheetScreen() {
   const [search, setSearch] = useState('');
   const [filterPaid, setFilterPaid] = useState<'ALL' | 'PAID' | 'PENDING'>('ALL');
   const [editingFlat, setEditingFlat] = useState<FlatRow | null>(null);
+  const [selectedFlat, setSelectedFlat] = useState<FlatRow | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
   // PATCH /billing/bills/:billId/notes is ADMIN/ACCOUNTANT-only — residents read.
@@ -538,6 +795,16 @@ export default function MaintenanceSheetScreen() {
         <NotesModal flat={editingFlat} onClose={() => setEditingFlat(null)} />
       )}
 
+      {/* Bill detail / discount modal */}
+      {selectedFlat && (
+        <BillDetailModal
+          flat={selectedFlat}
+          canManage={canEditNotes}
+          periodStatus={selectedPeriod?.status}
+          onClose={() => setSelectedFlat(null)}
+        />
+      )}
+
       {isLoading ? (
         <LoadingState message="Loading maintenance sheet…" />
       ) : !selectedPeriodId ? (
@@ -553,7 +820,12 @@ export default function MaintenanceSheetScreen() {
           data={filtered}
           keyExtractor={(r) => r.flatId}
           renderItem={({ item }) => (
-            <FlatCard flat={item} onNotePress={setEditingFlat} canEditNotes={canEditNotes} />
+            <FlatCard
+              flat={item}
+              onNotePress={setEditingFlat}
+              onPress={setSelectedFlat}
+              canEditNotes={canEditNotes}
+            />
           )}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
@@ -715,4 +987,109 @@ const styles = StyleSheet.create({
   },
   saveBtnDisabled: { opacity: 0.6 },
   saveBtnText: { ...typography.labelLarge, color: '#fff' },
+
+  // Bill detail breakdown
+  breakdownCard: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    padding: spacing.base,
+    gap: 10,
+  },
+  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  breakdownLabel: { ...typography.bodyMedium, color: colors.textSecondary },
+  breakdownLabelBold: { color: colors.text, fontWeight: '700' },
+  breakdownValue: { ...typography.bodyMedium, color: colors.text, fontWeight: '600' },
+  breakdownValueBold: { ...typography.headingSmall, fontWeight: '700' },
+  breakdownDivider: { height: 1, backgroundColor: colors.border, marginVertical: 2 },
+
+  noteDisplay: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    alignItems: 'flex-start',
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+  },
+
+  adjustToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+  },
+  adjustToggleText: { ...typography.labelLarge, color: colors.primary },
+
+  disabledNote: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+  },
+  disabledNoteText: { ...typography.bodySmall, color: colors.textTertiary, flex: 1, lineHeight: 16 },
+
+  adjustForm: {
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.base,
+  },
+  kindRow: { flexDirection: 'row', gap: spacing.sm },
+  kindBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+  },
+  kindBtnDiscount: { backgroundColor: colors.successLight, borderColor: colors.success },
+  kindBtnSurcharge: { backgroundColor: colors.errorLight, borderColor: colors.error },
+  kindText: { ...typography.labelMedium, color: colors.textSecondary },
+  kindTextDiscount: { color: colors.success, fontWeight: '700' },
+  kindTextSurcharge: { color: colors.error, fontWeight: '700' },
+
+  fieldLabel: { ...typography.labelSmall, color: colors.textSecondary, marginTop: 4 },
+  amountInput: {
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    ...typography.bodyMedium,
+    color: colors.text,
+  },
+  previewText: { ...typography.bodySmall, color: colors.textSecondary },
+  reasonInput: {
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    ...typography.bodyMedium,
+    color: colors.text,
+    minHeight: 72,
+    textAlignVertical: 'top',
+  },
+
+  adjustActions: { flexDirection: 'row', gap: spacing.sm, marginTop: 4 },
+  adjustCancelBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+  },
+  adjustCancelText: { ...typography.labelLarge, color: colors.textSecondary },
+  adjustSubmitBtn: {
+    flex: 2,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+  },
+  adjustSubmitText: { ...typography.labelLarge, color: '#fff' },
 });
