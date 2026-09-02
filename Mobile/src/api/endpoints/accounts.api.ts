@@ -45,3 +45,19 @@ export const accountsApi = {
     return data;
   },
 };
+
+export interface SocietyFund {
+  id: string;
+  name: string;
+  fundType: string;
+  currentBalance: string;
+  targetAmount: string | null;
+  description: string | null;
+}
+
+export const fundsApi = {
+  list: async () => {
+    const { data } = await apiClient.get('/funds');
+    return ((data as any)?.data ?? data) as SocietyFund[];
+  },
+};

@@ -19,7 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import { accountsApi, SocietyAccount } from '@/api/endpoints/accounts.api';
+import { accountsApi, fundsApi, SocietyAccount } from '@/api/endpoints/accounts.api';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -100,8 +100,71 @@ function LedgerModal({ account, onClose }: { account: SocietyAccount; onClose: (
 
 // ── Screen ───────────────────────────────────────────────────────────────────
 
+/** Funds are earmarked pools (corpus, sinking fund) held across accounts. */
+function FundsTab() {
+  const { data, isLoading, refetch, isRefetching } = useQuery({
+    queryKey: ['funds'],
+    queryFn: fundsApi.list,
+  });
+
+  if (isLoading) return <LoadingState message="Loading funds…" />;
+
+  const funds = data ?? [];
+  const total = funds.reduce((s, f) => s + parseFloat(f.currentBalance ?? '0'), 0);
+
+  return (
+    <FlatList
+      data={funds}
+      keyExtractor={(f) => f.id}
+      contentContainerStyle={styles.list}
+      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />}
+      ListHeaderComponent={
+        funds.length > 0 ? (
+          <View style={styles.banner}>
+            <Text style={styles.bannerLabel}>Total Across Funds</Text>
+            <Text style={styles.bannerValue}>{inr(total)}</Text>
+            <Text style={styles.bannerSub}>{funds.length} fund{funds.length === 1 ? '' : 's'}</Text>
+          </View>
+        ) : null
+      }
+      ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+      renderItem={({ item }) => {
+        const target = item.targetAmount ? parseFloat(item.targetAmount) : 0;
+        const current = parseFloat(item.currentBalance ?? '0');
+        const pct = target > 0 ? Math.min((current / target) * 100, 100) : 0;
+        return (
+          <View style={styles.fundCard}>
+            <View style={styles.cardTopRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowTitle}>{item.name}</Text>
+                <Text style={styles.rowMeta}>{item.fundType?.replace(/_/g, ' ')}</Text>
+              </View>
+              <Text style={[styles.rowAmount, { color: colors.primary }]}>{inr(current)}</Text>
+            </View>
+            {target > 0 && (
+              <>
+                <View style={styles.track}>
+                  <View style={[styles.fill, { width: `${pct}%` }]} />
+                </View>
+                <Text style={styles.rowMeta}>
+                  {pct.toFixed(0)}% of {inr(target)} target
+                </Text>
+              </>
+            )}
+          </View>
+        );
+      }}
+      ListEmptyComponent={
+        <EmptyState icon="layers-outline" title="No funds" description="Corpus and sinking funds appear here." />
+      }
+      ListFooterComponent={<View style={{ height: spacing['3xl'] }} />}
+    />
+  );
+}
+
 export default function AccountsScreen() {
   const [selected, setSelected] = useState<SocietyAccount | null>(null);
+  const [tab, setTab] = useState<'Accounts' | 'Funds'>('Accounts');
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['accounts'],
@@ -113,9 +176,23 @@ export default function AccountsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader title="Accounts" showBack />
+      <ScreenHeader title="Accounts & Funds" showBack />
 
-      {isLoading ? (
+      <View style={styles.tabBar}>
+        {(['Accounts', 'Funds'] as const).map((t) => (
+          <TouchableOpacity
+            key={t}
+            style={[styles.tab, tab === t && styles.tabActive]}
+            onPress={() => setTab(t)}
+          >
+            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{t}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {tab === 'Funds' ? (
+        <FundsTab />
+      ) : isLoading ? (
         <LoadingState message="Loading accounts…" />
       ) : isError ? (
         <EmptyState icon="alert-circle-outline" title="Couldn't load accounts" description="Pull down to retry." />
@@ -201,6 +278,26 @@ const styles = StyleSheet.create({
   rowTitle: { ...typography.labelLarge, color: colors.text, fontWeight: '600' },
   rowMeta: { ...typography.bodySmall, color: colors.textTertiary, fontSize: 11, marginTop: 2 },
   rowAmount: { ...typography.labelLarge, fontWeight: '700' },
+
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+    paddingHorizontal: spacing.sm,
+  },
+  tab: { flex: 1, paddingVertical: 11, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabActive: { borderBottomColor: colors.primary },
+  tabText: { ...typography.labelMedium, color: colors.textSecondary },
+  tabTextActive: { color: colors.primary, fontWeight: '700' },
+
+  fundCard: {
+    backgroundColor: colors.surface, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border,
+    padding: spacing.base, gap: spacing.sm,
+  },
+  cardTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  track: { height: 6, borderRadius: 3, backgroundColor: colors.borderLight, overflow: 'hidden' },
+  fill: { height: '100%', borderRadius: 3, backgroundColor: colors.secondary },
 
   modalHeader: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,

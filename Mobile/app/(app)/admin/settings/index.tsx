@@ -52,6 +52,18 @@ export default function SettingsScreen() {
       onPress: () => router.push('/(app)/maintenance-sheet' as any),
     },
     {
+      icon: 'calculator-outline',
+      label: 'Billing Configuration',
+      sublabel: 'Due day, grace period, late fees',
+      onPress: () => router.push('/(app)/admin/settings/billing' as any),
+    },
+    {
+      icon: 'options-outline',
+      label: 'Billing Rules',
+      sublabel: 'How maintenance is calculated',
+      onPress: () => router.push('/(app)/admin/billing-rules/index' as any),
+    },
+    {
       icon: 'bar-chart-outline',
       label: 'Reports',
       sublabel: 'Dues, collection, expenses, balances',

@@ -315,7 +315,7 @@ function AddBillingRuleModal({ onClose }: { onClose: () => void }) {
   const [form, setForm] = useState({
     name: '',
     description: '',
-    calculationType: 'PER_FLAT',
+    calculationType: 'EQUAL_PER_FLAT',
     effectiveFrom: new Date().toISOString().split('T')[0],
     effectiveTo: '',
     priority: '1',
@@ -356,11 +356,17 @@ function AddBillingRuleModal({ onClose }: { onClose: () => void }) {
             label="Calculation Type"
             value={form.calculationType}
             onChange={set('calculationType')}
+            /* These must match the CalculationType enum in schema.prisma exactly —
+               the DTO validates with @IsEnum, so any other value is a 400. */
             options={[
-              { value: 'PER_FLAT', label: 'Per Flat (fixed amount)' },
-              { value: 'PER_SQ_FT', label: 'Per Square Foot' },
-              { value: 'EQUAL_SPLIT', label: 'Equal Split' },
-              { value: 'CUSTOM', label: 'Custom Formula' },
+              { value: 'EQUAL_PER_FLAT', label: 'Equal per flat' },
+              { value: 'AREA_BASED', label: 'Area based (per sq ft)' },
+              { value: 'PER_PERSON', label: 'Per person' },
+              { value: 'WATER_USAGE_BASED', label: 'Water usage based' },
+              { value: 'PERCENTAGE_BASED', label: 'Percentage based' },
+              { value: 'HYBRID', label: 'Hybrid' },
+              { value: 'FIXED_CUSTOM', label: 'Fixed custom' },
+              { value: 'CUSTOM_FORMULA', label: 'Custom formula' },
             ]}
           />
           <div className="grid grid-cols-2 gap-4">
