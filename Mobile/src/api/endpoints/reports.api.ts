@@ -38,6 +38,21 @@ export interface ExpenseSummary {
   count: number;
 }
 
+/**
+ * Unlike expense-summary, this folds SalaryRecord (a separate ledger from
+ * Expense/ExpenseCategory) into the category breakdown as a "Staff
+ * Salaries" row — a single month, not a date range, since SalaryRecord is
+ * keyed by salaryMonth/salaryYear rather than a date.
+ */
+export interface MonthlyOverview {
+  periodYear: number;
+  periodMonth: number;
+  byCategory: Array<{ category: string; total: number }>;
+  expenseTotal: number;
+  salaryTotal: number;
+  total: number;
+}
+
 export interface AccountBalance {
   id: string;
   name: string;
@@ -69,6 +84,13 @@ export const reportsApi = {
       params: { fromDate, toDate },
     });
     return unwrap<ExpenseSummary>(data);
+  },
+
+  monthlyOverview: async (year: number, month: number) => {
+    const { data } = await apiClient.get('/reports/monthly-overview', {
+      params: { year, month },
+    });
+    return unwrap<MonthlyOverview>(data);
   },
 
   accountBalances: async () => {

@@ -96,6 +96,9 @@ export const societiesApi = {
       showExpenses: boolean;
       totalBalance: number | null;
       monthlyExpenses: number | null;
+      // Folds SalaryRecord (a separate ledger from Expense) in as a "Staff
+      // Salaries" row — same shape as the admin monthly-overview report.
+      byCategory: Array<{ category: string; total: number }> | null;
     }>>('/societies/my/financial-summary');
     return data.data;
   },

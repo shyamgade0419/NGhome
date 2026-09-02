@@ -98,7 +98,34 @@ export default function ResidentFinancesScreen() {
                 <Text style={[styles.cardValue, { color: colors.error }]}>
                   {inr(summary?.monthlyExpenses)}
                 </Text>
-                <Text style={styles.cardHint}>Approved and paid expenses, month to date</Text>
+                <Text style={styles.cardHint}>
+                  Approved/paid expenses and processed staff salaries, month to date
+                </Text>
+
+                {(summary?.byCategory?.length ?? 0) > 0 && (
+                  <View style={styles.catList}>
+                    {summary!.byCategory!.map((c) => {
+                      const max = Math.max(...summary!.byCategory!.map((x) => x.total));
+                      return (
+                        <View key={c.category} style={styles.catRow}>
+                          <View style={styles.catTop}>
+                            <Text style={styles.catName}>{c.category}</Text>
+                            <Text style={styles.catAmount}>{inr(c.total)}</Text>
+                          </View>
+                          <View style={styles.catTrack}>
+                            <View
+                              style={[
+                                styles.catFill,
+                                { width: max > 0 ? `${(c.total / max) * 100}%` : '0%' },
+                                c.category === 'Staff Salaries' && { backgroundColor: colors.secondary },
+                              ]}
+                            />
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
               </View>
             )}
 
@@ -149,4 +176,12 @@ const styles = StyleSheet.create({
 
   track: { height: 6, borderRadius: 3, backgroundColor: colors.borderLight, overflow: 'hidden', marginTop: 4 },
   fill: { height: '100%', borderRadius: 3, backgroundColor: colors.secondary },
+
+  catList: { marginTop: spacing.sm, gap: spacing.sm },
+  catRow: { gap: 4 },
+  catTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  catName: { ...typography.bodySmall, color: colors.text, fontWeight: '500' },
+  catAmount: { ...typography.labelMedium, color: colors.text, fontWeight: '700' },
+  catTrack: { height: 5, borderRadius: 3, backgroundColor: colors.borderLight, overflow: 'hidden' },
+  catFill: { height: '100%', borderRadius: 3, backgroundColor: colors.primary },
 });

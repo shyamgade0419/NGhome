@@ -172,18 +172,28 @@ function CollectionTab() {
 }
 
 // ── Expense summary ──────────────────────────────────────────────────────────
+//
+// monthly-overview folds SalaryRecord (a separate ledger from Expense/
+// ExpenseCategory) into the same category breakdown as a "Staff Salaries"
+// row — genuinely holistic, not just Expense rows with a category.
 
 function ExpensesTab() {
   const now = new Date();
-  const from = `${now.getFullYear()}-01-01`;
-  const to = now.toISOString().split('T')[0];
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
-    queryKey: ['report-expenses', from, to],
-    queryFn: () => reportsApi.expenseSummary(from, to),
+    queryKey: ['report-monthly-overview', year, month],
+    queryFn: () => reportsApi.monthlyOverview(year, month),
   });
 
-  if (isLoading) return <LoadingState message="Loading expenses…" />;
+  const step = (dir: -1 | 1) => {
+    let m = month + dir;
+    let y = year;
+    if (m < 1) { m = 12; y -= 1; }
+    if (m > 12) { m = 1; y += 1; }
+    setMonth(m); setYear(y);
+  };
 
   const cats = data?.byCategory ?? [];
   const max = cats.length ? Math.max(...cats.map((c) => c.total)) : 0;
@@ -193,27 +203,50 @@ function ExpensesTab() {
       contentContainerStyle={styles.list}
       refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />}
     >
-      <Banner
-        label={`Expenses since 1 Jan ${now.getFullYear()}`}
-        value={inr(data?.total)}
-        sub={`${data?.count ?? 0} approved or paid expense${data?.count === 1 ? '' : 's'}`}
-      />
-      <View style={{ height: spacing.md }} />
+      {/* Month stepper */}
+      <View style={styles.stepper}>
+        <TouchableOpacity onPress={() => step(-1)} hitSlop={8} style={styles.stepBtn}>
+          <Ionicons name="chevron-back" size={18} color={colors.primary} />
+        </TouchableOpacity>
+        <Text style={styles.stepLabel}>{MONTHS[month]} {year}</Text>
+        <TouchableOpacity onPress={() => step(1)} hitSlop={8} style={styles.stepBtn}>
+          <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+        </TouchableOpacity>
+      </View>
 
-      {cats.length === 0 ? (
-        <EmptyState icon="wallet-outline" title="No expenses" description="Nothing approved or paid in this range." />
+      {isLoading ? (
+        <LoadingState message="Loading expenses…" />
       ) : (
-        cats.map((c) => (
-          <View key={c.category} style={styles.catRow}>
-            <View style={styles.catTop}>
-              <Text style={styles.catName}>{c.category}</Text>
-              <Text style={styles.catAmount}>{inr(c.total)}</Text>
-            </View>
-            <View style={styles.catTrack}>
-              <View style={[styles.catFill, { width: max > 0 ? `${(c.total / max) * 100}%` : '0%' }]} />
-            </View>
-          </View>
-        ))
+        <>
+          <Banner
+            label={`${MONTHS[month]} ${year} Total Spend`}
+            value={inr(data?.total)}
+            sub={`Expenses ${inr(data?.expenseTotal)} · Salaries ${inr(data?.salaryTotal)}`}
+          />
+          <View style={{ height: spacing.md }} />
+
+          {cats.length === 0 ? (
+            <EmptyState icon="wallet-outline" title="No spend recorded" description="Nothing approved, paid, or processed this month." />
+          ) : (
+            cats.map((c) => (
+              <View key={c.category} style={styles.catRow}>
+                <View style={styles.catTop}>
+                  <Text style={styles.catName}>{c.category}</Text>
+                  <Text style={styles.catAmount}>{inr(c.total)}</Text>
+                </View>
+                <View style={styles.catTrack}>
+                  <View
+                    style={[
+                      styles.catFill,
+                      { width: max > 0 ? `${(c.total / max) * 100}%` : '0%' },
+                      c.category === 'Staff Salaries' && { backgroundColor: colors.secondary },
+                    ]}
+                  />
+                </View>
+              </View>
+            ))
+          )}
+        </>
       )}
       <View style={{ height: spacing['3xl'] }} />
     </ScrollView>
