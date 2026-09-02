@@ -58,6 +58,12 @@ export default function SettingsScreen() {
       onPress: () => router.push('/(app)/admin/settings/billing' as any),
     },
     {
+      icon: 'water-outline',
+      label: 'Water Billing Model',
+      sublabel: 'Per-KL, slab-based, fixed + usage rates',
+      onPress: () => router.push('/(app)/admin/water/configs' as any),
+    },
+    {
       icon: 'options-outline',
       label: 'Billing Rules',
       sublabel: 'How maintenance is calculated',

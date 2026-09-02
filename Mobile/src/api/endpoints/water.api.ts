@@ -1,6 +1,62 @@
 import apiClient from '@/api/client';
 import { ApiResponse } from '@/api/types';
 
+/**
+ * SOCIETY_ALLOCATION is deliberately excluded from the manually-created
+ * models below — allocatePeriodCosts() auto-creates and reuses its own
+ * SOCIETY_ALLOCATION config, so exposing it here would just create
+ * confusing duplicate rows. CUSTOM isn't in this list either: nothing in
+ * the billing engine's calculateWaterAmount() switch handles it (falls
+ * through to its `default` case), so it has no real effect today.
+ */
+export type ConfigurableWaterBillingModel =
+  | 'PER_LITRE'
+  | 'PER_KL'
+  | 'FIXED_CHARGE'
+  | 'FIXED_PLUS_USAGE'
+  | 'SLAB_BASED';
+
+export type WaterBillingModel = ConfigurableWaterBillingModel | 'SOCIETY_ALLOCATION' | 'CUSTOM';
+
+export interface WaterSlab {
+  upTo: number;
+  rate: number;
+}
+
+/**
+ * The `config` JSON shape read by WaterService.calculateWaterAmount() —
+ * verified directly against that switch statement, not guessed:
+ *   PER_LITRE        → { ratePerLitre }
+ *   PER_KL           → { ratePerKL }
+ *   FIXED_CHARGE     → { fixedAmount }
+ *   FIXED_PLUS_USAGE → { fixedAmount, ratePerKL, minimumKL }
+ *   SLAB_BASED       → { slabs: [{ upTo, rate }, ...] }
+ */
+export interface WaterConfigPayload {
+  name: string;
+  billingModel: ConfigurableWaterBillingModel;
+  effectiveFrom: string;
+  effectiveTo?: string;
+  config: {
+    ratePerLitre?: number;
+    ratePerKL?: number;
+    fixedAmount?: number;
+    minimumKL?: number;
+    slabs?: WaterSlab[];
+  };
+}
+
+export interface WaterBillingConfig {
+  id: string;
+  name: string;
+  billingModel: WaterBillingModel;
+  isActive: boolean;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  config: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface FlatReading {
   flatId: string;
   openingReading: number;
@@ -77,5 +133,19 @@ export const waterApi = {
       `/water/periods/${periodId}/summary`,
     );
     return data.data;
+  },
+
+  // Config CRUD — the backend only ever exposes create + list (no update or
+  // delete route exists for /water/configs), which actually matches the
+  // effectiveFrom/effectiveTo fields' intent: a rate change is a new config
+  // effective from a date, not an edit of the old one.
+  listConfigs: async (): Promise<WaterBillingConfig[]> => {
+    const { data } = await apiClient.get('/water/configs');
+    return ((data as any)?.data ?? data ?? []) as WaterBillingConfig[];
+  },
+
+  createConfig: async (payload: WaterConfigPayload): Promise<WaterBillingConfig> => {
+    const { data } = await apiClient.post<ApiResponse<WaterBillingConfig>>('/water/configs', payload);
+    return data.data!;
   },
 };
