@@ -76,7 +76,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   right: {
-    width: 40,
+    // minWidth (not a fixed width) keeps icon-only right actions symmetric
+    // with the 40-wide back-button column, but lets a wider rightAction —
+    // e.g. a labeled <Button> like Water Readings' "Save" — size to its
+    // own content instead of being crushed to 40px and wrapping character
+    // by character.
+    minWidth: 40,
     alignItems: 'flex-end',
   },
   backButton: {

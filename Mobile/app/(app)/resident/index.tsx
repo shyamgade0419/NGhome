@@ -184,7 +184,10 @@ export default function ResidentDashboard() {
             onPress={() => router.push('/(app)/maintenance-sheet' as any)}
           >
             <Ionicons name="grid-outline" size={20} color={colors.primary} />
-            <Text style={styles.quickLinkText}>Maintenance{'\n'}Sheet</Text>
+            {/* "Maintenance" is one 11-char word with no space to wrap at —
+                at 4-across it doesn't fit one line and was breaking
+                mid-word onto a 3rd line. "Maint." does, cleanly. */}
+            <Text style={styles.quickLinkText}>Maint.{'\n'}Sheet</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.quickLink}

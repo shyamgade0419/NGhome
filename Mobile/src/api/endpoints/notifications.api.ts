@@ -16,7 +16,18 @@ export interface Notification {
  * this app's flat Notification fields (title, message, isRead) exist at the
  * top level: title/body live under `.notification`, and read state is the
  * `status` enum (PENDING/SENT/FAILED/READ) or a set `readAt`, not a boolean.
- * The service also returns `{ data, total }`, not `{ data, meta }`.
+ *
+ * The service returns `{ data, total }`, not `{ data, meta }` — and that's
+ * exactly why this was still crashing after the previous fix. The global
+ * TransformInterceptor only unwraps a service's return value in place when
+ * it sees BOTH `data` and `meta` keys; `{ data, total }` doesn't match, so
+ * it falls through to its default behavior and wraps the *entire*
+ * `{ data, total }` object as `data` again. The real response body is
+ * therefore `{ success, data: { data: [...], total } }` — one level
+ * deeper than every other list endpoint. Unwrapping only once here (as the
+ * previous version did) leaves `rows` as that inner `{ data, total }`
+ * object rather than the array, and `rows.map(...)` throws — which is
+ * exactly what "Couldn't load notifications" was.
  */
 interface NotificationRecordRow {
   id: string;
@@ -40,12 +51,12 @@ function toNotification(row: NotificationRecordRow): Notification {
 export const notificationsApi = {
   /** Resident: get my notifications (paginated). */
   getMine: async (query?: PaginationQuery): Promise<PaginatedResponse<Notification>> => {
-    const { data } = await apiClient.get<{ data: NotificationRecordRow[]; total: number }>(
+    const { data } = await apiClient.get<{ data: { data: NotificationRecordRow[]; total: number } }>(
       '/notifications/my',
       { params: query },
     );
-    const rows = data?.data ?? [];
-    const total = data?.total ?? rows.length;
+    const rows = data?.data?.data ?? [];
+    const total = data?.data?.total ?? rows.length;
     const limit = query?.limit ?? rows.length ?? 1;
     return {
       success: true,
