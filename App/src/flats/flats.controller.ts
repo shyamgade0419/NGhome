@@ -6,6 +6,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { SystemRole } from '@prisma/client';
 import { FlatsService } from './flats.service';
 import { CreateFlatDto } from './dto/create-flat.dto';
+import { BulkCreateFlatDto } from './dto/bulk-create-flat.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -27,6 +28,14 @@ export class FlatsController {
   @ApiOperation({ summary: 'Create a flat/unit' })
   create(@SocietyId() societyId: string, @Body() dto: CreateFlatDto) {
     return this.flatsService.create(societyId, dto);
+  }
+
+  @Post('bulk')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @ApiOperation({ summary: 'Bulk-create flats (CSV/Excel import) — per-row success/failure, not all-or-nothing' })
+  bulkCreate(@SocietyId() societyId: string, @Body() dto: BulkCreateFlatDto) {
+    return this.flatsService.bulkCreate(societyId, dto.flats);
   }
 
   @Get()

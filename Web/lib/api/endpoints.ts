@@ -207,6 +207,23 @@ export const societyApi = {
     ownershipType?: string;
     parkingSlots?: number;
   }) => api.post('/flats', data),
+  bulkCreateFlats: (flats: Array<{
+    buildingId: string;
+    unitNumber: string;
+    flatCode: string;
+    area?: number;
+    bedrooms?: number;
+    bathrooms?: number;
+    category?: string;
+    status?: string;
+    ownershipType?: string;
+    parkingSlots?: number;
+  }>): Promise<{ data: {
+    createdCount: number;
+    failedCount: number;
+    created: { row: number; flatCode: string }[];
+    failed: { row: number; flatCode?: string; error: string }[];
+  } }> => api.post('/flats/bulk', { flats }),
   updateFlat: (id: string, data: unknown) => api.patch(`/flats/${id}`, data),
   deleteFlat: (id: string) => api.delete(`/flats/${id}`),
 

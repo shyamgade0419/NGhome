@@ -34,6 +34,41 @@ export class FlatsService {
     });
   }
 
+  /**
+   * Bulk import (CSV/Excel on the client). Each row is created through the
+   * same create() path — same building-ownership check, same defaults — so
+   * there's exactly one place that knows how to make a Flat. Deliberately
+   * not one DB transaction: a single bad row (typo'd building, a duplicate
+   * flat code) failing the whole batch is worse for a 60-row import than
+   * reporting which specific rows failed and why, while the good rows go
+   * through.
+   */
+  async bulkCreate(societyId: string, rows: CreateFlatDto[]) {
+    const created: Array<{ row: number; flatCode: string }> = [];
+    const failed: Array<{ row: number; flatCode?: string; error: string }> = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const dto = rows[i];
+      try {
+        const flat = await this.create(societyId, dto);
+        created.push({ row: i + 1, flatCode: flat.flatCode });
+      } catch (err: unknown) {
+        let message = 'Failed to create flat';
+        if (err && typeof err === 'object') {
+          // Prisma unique-constraint violation (societyId, flatCode)
+          if ((err as { code?: string }).code === 'P2002') {
+            message = `Flat code "${dto.flatCode}" already exists`;
+          } else if ('message' in err && typeof (err as { message: unknown }).message === 'string') {
+            message = (err as { message: string }).message;
+          }
+        }
+        failed.push({ row: i + 1, flatCode: dto.flatCode, error: message });
+      }
+    }
+
+    return { createdCount: created.length, failedCount: failed.length, created, failed };
+  }
+
   async findAll(societyId: string, page: number, limit: number, buildingId?: string) {
     const { skip, take } = getPaginationParams({ page, limit });
     const where: Prisma.FlatWhereInput = {

@@ -1,8 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Home, Plus, Building2, X, ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
+import {
+  Home, Plus, Building2, X, ChevronDown, ChevronRight, Pencil, Trash2,
+  Upload, Download, CheckCircle2, AlertCircle,
+} from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { societyApi } from '@/lib/api/endpoints';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
@@ -445,10 +449,306 @@ function EditFlatModal({ flat, buildings, onClose }: { flat: any; buildings: any
   );
 }
 
+/* ─── Bulk Import Modal ──────────────────────────────────────────────────── */
+
+const TEMPLATE_HEADERS = ['Building', 'Unit Number', 'Flat Code', 'Area', 'Bedrooms', 'Bathrooms', 'Category', 'Status', 'Ownership Type', 'Parking Slots'];
+const VALID_STATUSES = ['VACANT', 'ACTIVE', 'UNDER_RENOVATION', 'INACTIVE'];
+
+function normalizeKey(k: string) {
+  return k.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function downloadFlatsTemplate() {
+  const rows = [
+    TEMPLATE_HEADERS,
+    ['Block A', '101', 'A-101', '850', '2', '2', '2BHK', 'ACTIVE', 'OWNED', '1'],
+  ];
+  const csv = rows.map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'ng-home-flats-template.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+interface ParsedFlatRow {
+  rowNum: number;
+  buildingName: string;
+  buildingId: string | null;
+  unitNumber: string;
+  flatCode: string;
+  area: string;
+  bedrooms: string;
+  bathrooms: string;
+  category: string;
+  status: string;
+  ownershipType: string;
+  parkingSlots: string;
+  errors: string[];
+}
+
+function BulkImportModal({ buildings, onClose }: { buildings: any[]; onClose: () => void }) {
+  const qc = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [step, setStep] = useState<'upload' | 'preview' | 'result'>('upload');
+  const [rows, setRows] = useState<ParsedFlatRow[]>([]);
+  const [fileName, setFileName] = useState('');
+  const [result, setResult] = useState<{
+    createdCount: number;
+    failedCount: number;
+    failed: { row: number; flatCode?: string; error: string }[];
+  } | null>(null);
+
+  const buildingLookup = new Map<string, string>();
+  buildings.forEach((b) => {
+    buildingLookup.set(normalizeKey(b.name), b.id);
+    if (b.code) buildingLookup.set(normalizeKey(b.code), b.id);
+  });
+
+  const handleFile = (file: File) => {
+    setFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = e.target?.result;
+        const wb = XLSX.read(data, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const json: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+        const parsed: ParsedFlatRow[] = json.map((raw, i) => {
+          // Tolerant header matching — "Flat Code", "flat_code" and
+          // "FlatCode" all resolve to the same key.
+          const norm: Record<string, any> = {};
+          Object.keys(raw).forEach((k) => { norm[normalizeKey(k)] = raw[k]; });
+
+          const buildingName = String(norm['building'] ?? '').trim();
+          const unitNumber = String(norm['unitnumber'] ?? norm['unit'] ?? '').trim();
+          const flatCode = String(norm['flatcode'] ?? '').trim();
+          const area = String(norm['area'] ?? norm['areasqft'] ?? '').trim();
+          const bedrooms = String(norm['bedrooms'] ?? '').trim();
+          const bathrooms = String(norm['bathrooms'] ?? '').trim();
+          const category = String(norm['category'] ?? '').trim();
+          let status = String(norm['status'] ?? '').trim().toUpperCase();
+          const ownershipType = String(norm['ownershiptype'] ?? '').trim();
+          const parkingSlots = String(norm['parkingslots'] ?? norm['parking'] ?? '').trim();
+
+          const errors: string[] = [];
+          const buildingId = buildingName ? buildingLookup.get(normalizeKey(buildingName)) ?? null : null;
+          if (!buildingName) errors.push('Missing Building');
+          else if (!buildingId) errors.push(`Unknown building "${buildingName}"`);
+          if (!unitNumber) errors.push('Missing Unit Number');
+          if (!flatCode) errors.push('Missing Flat Code');
+          // An unrecognized status is a tolerant default, not a blocking
+          // error — no reason to reject a whole row over a typo'd status.
+          if (status && !VALID_STATUSES.includes(status)) status = 'VACANT';
+
+          return {
+            rowNum: i + 2, // +1 for 0-index, +1 for the header row
+            buildingName, buildingId,
+            unitNumber, flatCode, area, bedrooms, bathrooms, category,
+            status: status || 'VACANT', ownershipType, parkingSlots,
+            errors,
+          };
+        });
+
+        setRows(parsed);
+        setStep('preview');
+      } catch {
+        toast.error("Could not read that file — make sure it's a valid CSV or Excel file.");
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const validRows = rows.filter((r) => r.errors.length === 0);
+  const invalidRows = rows.filter((r) => r.errors.length > 0);
+
+  const importMutation = useMutation({
+    mutationFn: () =>
+      societyApi.bulkCreateFlats(
+        validRows.map((r) => ({
+          buildingId: r.buildingId!,
+          unitNumber: r.unitNumber,
+          flatCode: r.flatCode,
+          area: r.area ? parseFloat(r.area) : undefined,
+          bedrooms: r.bedrooms ? parseInt(r.bedrooms) : undefined,
+          bathrooms: r.bathrooms ? parseInt(r.bathrooms) : undefined,
+          category: r.category || undefined,
+          status: r.status || undefined,
+          ownershipType: r.ownershipType || undefined,
+          parkingSlots: r.parkingSlots ? parseInt(r.parkingSlots) : undefined,
+        })),
+      ),
+    onSuccess: (res) => {
+      setResult(res.data);
+      setStep('result');
+      qc.invalidateQueries({ queryKey: ['flats'] });
+      if (res.data.failedCount === 0) toast.success(`${res.data.createdCount} flats created`);
+      else toast(`${res.data.createdCount} created, ${res.data.failedCount} failed`, { icon: '⚠️' });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Import failed'),
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-slate-900">Bulk Import Flats</h2>
+          <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100">
+            <X size={18} />
+          </button>
+        </div>
+
+        {step === 'upload' && (
+          <div className="space-y-5">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm text-slate-600">
+                Import many flats at once from a spreadsheet — for a 60-flat building instead of
+                adding them one by one. Download the template, fill it in (one row per flat), then upload it below.
+              </p>
+              <button
+                onClick={downloadFlatsTemplate}
+                className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:underline"
+              >
+                <Download size={14} /> Download CSV template
+              </button>
+            </div>
+
+            <div
+              className="rounded-xl border-2 border-dashed border-slate-300 p-8 text-center hover:border-primary-400 transition-colors cursor-pointer"
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const file = e.dataTransfer.files?.[0];
+                if (file) handleFile(file);
+              }}
+            >
+              <Upload size={28} className="mx-auto mb-3 text-slate-400" />
+              <p className="text-sm font-medium text-slate-700">Click to choose a file, or drag one here</p>
+              <p className="mt-1 text-xs text-slate-400">.csv, .xlsx, or .xls</p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFile(file);
+                }}
+              />
+            </div>
+
+            <div className="flex justify-end">
+              <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            </div>
+          </div>
+        )}
+
+        {step === 'preview' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-600">{fileName}</span>
+              <span className="font-medium">
+                <span className="text-green-600">{validRows.length} ready</span>
+                {invalidRows.length > 0 && <span className="text-red-500"> · {invalidRows.length} need fixing</span>}
+              </span>
+            </div>
+
+            <div className="max-h-80 overflow-y-auto rounded-xl border border-slate-200">
+              <Table>
+                <Thead>
+                  <Tr>
+                    <Th>Row</Th>
+                    <Th>Building</Th>
+                    <Th>Unit</Th>
+                    <Th>Flat Code</Th>
+                    <Th>Issue</Th>
+                  </Tr>
+                </Thead>
+                <Tbody>
+                  {rows.map((r) => (
+                    <Tr key={r.rowNum}>
+                      <Td>{r.rowNum}</Td>
+                      <Td>{r.buildingName || '—'}</Td>
+                      <Td>{r.unitNumber || '—'}</Td>
+                      <Td>{r.flatCode || '—'}</Td>
+                      <Td>
+                        {r.errors.length === 0 ? (
+                          <span className="inline-flex items-center gap-1 text-green-600 text-xs font-medium">
+                            <CheckCircle2 size={13} /> Ready
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-red-500 text-xs font-medium">
+                            <AlertCircle size={13} /> {r.errors.join(', ')}
+                          </span>
+                        )}
+                      </Td>
+                    </Tr>
+                  ))}
+                </Tbody>
+              </Table>
+            </div>
+
+            {invalidRows.length > 0 && (
+              <p className="text-xs text-slate-500">
+                Rows that need fixing will be skipped. Fix them in your file and re-upload, or continue
+                with just the {validRows.length} ready row{validRows.length === 1 ? '' : 's'}.
+              </p>
+            )}
+
+            <div className="flex justify-between gap-3">
+              <Button variant="secondary" onClick={() => setStep('upload')}>Back</Button>
+              <Button
+                onClick={() => importMutation.mutate()}
+                loading={importMutation.isPending}
+                disabled={validRows.length === 0}
+              >
+                Import {validRows.length} Flat{validRows.length === 1 ? '' : 's'}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === 'result' && result && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 rounded-xl bg-green-50 border border-green-200 p-4">
+              <CheckCircle2 size={22} className="text-green-600" />
+              <p className="text-sm font-semibold text-green-800">
+                {result.createdCount} flat{result.createdCount === 1 ? '' : 's'} created
+              </p>
+            </div>
+
+            {result.failedCount > 0 && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                <p className="mb-2 text-sm font-semibold text-red-700">{result.failedCount} failed</p>
+                <ul className="space-y-1">
+                  {result.failed.map((f) => (
+                    <li key={f.row} className="text-xs text-red-600">
+                      Row {f.row}{f.flatCode ? ` (${f.flatCode})` : ''}: {f.error}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="flex justify-end">
+              <Button onClick={onClose}>Done</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Main Page ──────────────────────────────────────────────────────────── */
 export default function FlatsPage() {
   const [showAddBuilding, setShowAddBuilding] = useState(false);
   const [showAddFlat, setShowAddFlat] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const [editingBuilding, setEditingBuilding] = useState<any>(null);
   const [editingFlat, setEditingFlat] = useState<any>(null);
   const [expandedBuildings, setExpandedBuildings] = useState<Record<string, boolean>>({});
@@ -486,6 +786,9 @@ export default function FlatsPage() {
       {editingFlat && (
         <EditFlatModal flat={editingFlat} buildings={buildings} onClose={() => setEditingFlat(null)} />
       )}
+      {showBulkImport && buildings.length > 0 && (
+        <BulkImportModal buildings={buildings} onClose={() => setShowBulkImport(false)} />
+      )}
 
       <Header
         title="Flats"
@@ -494,6 +797,19 @@ export default function FlatsPage() {
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={() => setShowAddBuilding(true)}>
               <Building2 size={15} className="mr-1.5" /> Add Building
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                if (buildings.length === 0) {
+                  toast.error('Create a building first before importing flats');
+                } else {
+                  setShowBulkImport(true);
+                }
+              }}
+            >
+              <Upload size={15} className="mr-1.5" /> Import CSV/Excel
             </Button>
             <Button
               size="sm"
