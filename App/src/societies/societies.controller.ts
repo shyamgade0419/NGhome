@@ -91,9 +91,9 @@ export class SocietiesController {
 
   @Get(':id')
   @UseGuards(PlatformAdminGuard)
-  @ApiOperation({ summary: '[Platform Admin] Get society by ID' })
+  @ApiOperation({ summary: '[Platform Admin] Get society by ID, with its admin contacts' })
   async findOne(@Param('id') id: string) {
-    return this.societiesService.findOne(id);
+    return this.societiesService.findOneForPlatform(id);
   }
 
   // ─── Join-code endpoints ────────────────────────────────────────────────────

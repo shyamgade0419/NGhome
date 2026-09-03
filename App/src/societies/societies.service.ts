@@ -51,12 +51,30 @@ export class SocietiesService {
         skip,
         take,
         where: { deletedAt: null },
-        include: { _count: { select: { memberships: true, buildings: true } } },
+        include: {
+          _count: { select: { memberships: true, buildings: true } },
+          // Platform admin needs a real human to call, not just a member
+          // count — this is the whole point of a platform-admin view: who
+          // do we reach out to for this society (billing, support, etc).
+          memberships: {
+            where: { role: 'SOCIETY_ADMIN', status: 'ACTIVE' },
+            select: {
+              user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+            },
+          },
+        },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.society.count({ where: { deletedAt: null } }),
     ]);
-    return { data, meta: buildPaginationMeta(total, page, limit) };
+
+    return {
+      data: data.map(({ memberships, ...society }) => ({
+        ...society,
+        admins: memberships.map((m) => m.user),
+      })),
+      meta: buildPaginationMeta(total, page, limit),
+    };
   }
 
   async findOne(id: string) {
@@ -71,6 +89,23 @@ export class SocietiesService {
     });
     if (!society) throw new NotFoundException('Society not found');
     return society;
+  }
+
+  /**
+   * Platform-admin only — deliberately separate from findOne(), which is
+   * also called by GET /societies/my for any authenticated member. Mixing
+   * the admin-contact list into findOne() would have leaked a society's
+   * admin phone/email to every resident calling that endpoint.
+   */
+  async findOneForPlatform(id: string) {
+    const society = await this.findOne(id);
+    const memberships = await this.prisma.societyMembership.findMany({
+      where: { societyId: id, role: 'SOCIETY_ADMIN', status: 'ACTIVE' },
+      select: {
+        user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+      },
+    });
+    return { ...society, admins: memberships.map((m) => m.user) };
   }
 
   async findOneForMember(id: string, userId: string) {

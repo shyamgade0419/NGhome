@@ -38,6 +38,11 @@ export default function LoginPage() {
       const result = await login(data.identifier, data.password);
       if (result?.requiresSocietySelection) {
         router.replace('/select-society');
+      } else if (result?.isPlatformAdmin) {
+        // A platform admin's token carries no societyId (see auth.service.ts
+        // login()) — every page under (dashboard) calls society-scoped
+        // endpoints and would just error out for this account.
+        router.replace('/platform');
       } else {
         const from = searchParams.get('from') ?? '/';
         router.replace(from);

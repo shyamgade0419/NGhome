@@ -355,3 +355,26 @@ export const accountsApi = {
   getTransactions: (accountId: string, params?: Record<string, unknown>) =>
     api.get(`/accounts/${accountId}/transactions`, { params }),
 };
+
+// Platform admin — society directory. Every route here requires
+// isPlatformAdmin (PlatformAdminGuard), not a society membership.
+export interface PlatformSocietyAdmin {
+  id: string; firstName: string; lastName: string; email: string; phone: string | null;
+}
+export interface PlatformSociety {
+  id: string;
+  name: string;
+  displayName: string | null;
+  city: string | null;
+  state: string | null;
+  isActive: boolean;
+  joinCode: string | null;
+  createdAt: string;
+  _count: { memberships: number; buildings: number };
+  admins: PlatformSocietyAdmin[];
+}
+export const platformApi = {
+  listSocieties: (params?: { page?: number; limit?: number }): Promise<{ data: PaginatedResponse<PlatformSociety> }> =>
+    api.get('/societies', { params }),
+  getSociety: (id: string): Promise<{ data: PlatformSociety }> => api.get(`/societies/${id}`),
+};

@@ -9,7 +9,7 @@ interface AuthState {
   memberships: SocietyMembership[];
   activeMembership: SocietyMembership | null;
   isLoading: boolean;
-  login: (identifier: string, password: string) => Promise<{ requiresSocietySelection?: boolean }>;
+  login: (identifier: string, password: string) => Promise<{ requiresSocietySelection?: boolean; isPlatformAdmin?: boolean }>;
   selectSociety: (societyId: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -48,7 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setUser(result.user);
     setMemberships(result.memberships ?? []);
-    return {};
+    return { isPlatformAdmin: result.user.isPlatformAdmin };
   };
 
   const selectSociety = async (societyId: string) => {
