@@ -23,7 +23,7 @@ export function StatusBadge({ label, variant = 'neutral', size = 'md' }: StatusB
   const config = variantConfig[variant];
   return (
     <View style={[styles.badge, { backgroundColor: config.bg }, size === 'sm' && styles.sm]}>
-      <Text style={[styles.label, { color: config.text }, size === 'sm' && styles.smLabel]}>
+      <Text numberOfLines={1} style={[styles.label, { color: config.text }, size === 'sm' && styles.smLabel]}>
         {label}
       </Text>
     </View>

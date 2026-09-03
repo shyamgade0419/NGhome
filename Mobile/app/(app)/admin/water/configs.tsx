@@ -384,7 +384,7 @@ export default function WaterConfigsScreen() {
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
                 <View style={styles.rowTop}>
-                  <Text style={styles.rowTitle}>{item.name}</Text>
+                  <Text style={styles.rowTitle} numberOfLines={1}>{item.name}</Text>
                   <StatusBadge label={modelLabel(item.billingModel)} variant="info" size="sm" />
                 </View>
                 <Text style={styles.rowRate}>{rateSummary(item)}</Text>

@@ -187,7 +187,7 @@ export default function ResidentDashboard() {
             {/* "Maintenance" is one 11-char word with no space to wrap at —
                 at 4-across it doesn't fit one line and was breaking
                 mid-word onto a 3rd line. "Maint." does, cleanly. */}
-            <Text style={styles.quickLinkText}>Maint.{'\n'}Sheet</Text>
+            <Text style={styles.quickLinkText} numberOfLines={2}>Maint.{'\n'}Sheet</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.quickLink}
@@ -195,7 +195,10 @@ export default function ResidentDashboard() {
             onPress={() => router.push('/(app)/documents' as any)}
           >
             <Ionicons name="folder-open-outline" size={20} color={colors.primary} />
-            <Text style={styles.quickLinkText}>Documents</Text>
+            {/* "Documents" is one 9-char word with no space to wrap at —
+                same risk class as "Maintenance" above, just less obviously
+                so. "Docs" fits with room to spare at 4-across. */}
+            <Text style={styles.quickLinkText} numberOfLines={2}>Docs</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.quickLink}
@@ -203,7 +206,7 @@ export default function ResidentDashboard() {
             onPress={() => router.push('/(app)/resident/finances' as any)}
           >
             <Ionicons name="pie-chart-outline" size={20} color={colors.primary} />
-            <Text style={styles.quickLinkText}>Society{'\n'}Finances</Text>
+            <Text style={styles.quickLinkText} numberOfLines={2}>Society{'\n'}Finances</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.quickLink}
@@ -211,7 +214,7 @@ export default function ResidentDashboard() {
             onPress={() => router.push('/(app)/resident/events' as any)}
           >
             <Ionicons name="sparkles-outline" size={20} color={colors.primary} />
-            <Text style={styles.quickLinkText}>Events</Text>
+            <Text style={styles.quickLinkText} numberOfLines={2}>Events</Text>
           </TouchableOpacity>
         </View>
 

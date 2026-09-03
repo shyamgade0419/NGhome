@@ -476,13 +476,13 @@ export default function DocumentsScreen() {
             style={[styles.tab, tab === 'society' && styles.tabActive]}
             onPress={() => { setTab('society'); setCategory(null); }}
           >
-            <Text style={[styles.tabText, tab === 'society' && styles.tabTextActive]}>Society</Text>
+            <Text numberOfLines={1} style={[styles.tabText, tab === 'society' && styles.tabTextActive]}>Society</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tab, tab === 'flat' && styles.tabActive]}
             onPress={() => { setTab('flat'); setCategory(null); }}
           >
-            <Text style={[styles.tabText, tab === 'flat' && styles.tabTextActive]}>
+            <Text numberOfLines={1} style={[styles.tabText, tab === 'flat' && styles.tabTextActive]}>
               My Flat{flatDocs.length > 0 ? ` (${flatDocs.length})` : ''}
             </Text>
           </TouchableOpacity>

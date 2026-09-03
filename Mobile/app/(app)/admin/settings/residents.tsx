@@ -257,7 +257,7 @@ export default function ManageResidentsScreen() {
 
             {/* Info */}
             <View style={styles.info}>
-              <Text style={styles.name}>{r.displayName}</Text>
+              <Text style={styles.name} numberOfLines={1}>{r.displayName}</Text>
               <Text style={styles.sub} numberOfLines={1}>{r.email}</Text>
               <View style={styles.tagsRow}>
                 <View style={styles.flatTag}>

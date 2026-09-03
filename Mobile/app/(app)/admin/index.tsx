@@ -182,7 +182,7 @@ export default function AdminDashboard() {
               <View style={styles.actionIcon}>
                 <Ionicons name={action.icon} size={24} color={colors.primary} />
               </View>
-              <Text style={styles.actionLabel}>{action.label}</Text>
+              <Text style={styles.actionLabel} numberOfLines={2}>{action.label}</Text>
             </TouchableOpacity>
           ))}
         </View>

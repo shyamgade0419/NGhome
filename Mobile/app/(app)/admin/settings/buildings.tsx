@@ -447,7 +447,7 @@ function BuildingCard({
           <Ionicons name="business" size={20} color={colors.primary} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={cardStyles.title}>{building.name}</Text>
+          <Text style={cardStyles.title} numberOfLines={1}>{building.name}</Text>
           {building.code && <Text style={cardStyles.code}>{building.code}</Text>}
         </View>
         <View style={cardStyles.countBadge}>

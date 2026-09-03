@@ -62,6 +62,9 @@ export function Button({
         <>
           {icon}
           <Text
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
             style={[
               styles.label,
               styles[`${variant}Label` as keyof typeof styles],
