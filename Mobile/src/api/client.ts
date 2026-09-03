@@ -2,7 +2,7 @@ import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosError } from 'ax
 import Constants from 'expo-constants';
 import { tokenService } from '@/auth/token.service';
 
-const API_BASE_URL =
+export const API_BASE_URL =
   Constants.expoConfig?.extra?.apiBaseUrl ?? 'https://nghome-api.novagade.in/api/v1';
 
 let authLogoutCallback: (() => void) | null = null;

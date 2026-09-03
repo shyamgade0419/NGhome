@@ -1,11 +1,17 @@
 /**
- * Documents — shared by admins and residents.
+ * Documents — shared by admins and residents, now with two scopes.
  *
- * The API scopes rows by accessLevel for the calling role, so both roles use
- * the same screen and simply see different sets. Files open in the device
- * browser rather than downloading in-app: the backend stores a fileKey with a
- * pluggable storage provider, and there is no download endpoint to stream from
- * yet, so we surface metadata and let the platform handle the fetch.
+ * "Society" is the original list: the API scopes rows by accessLevel for
+ * the calling role, admin/staff post official documents by pasting a link
+ * (there's still no upload path for that flow — matches web exactly).
+ *
+ * "My Flat" is new: FLAT_PRIVATE documents, a real file upload backed by
+ * the society's SFTP server. Visible to any active resident of that exact
+ * flat (a membership's flatId, not a specific person) and invisible to
+ * everyone else including admin — the backend enforces this, this screen
+ * just has to not assume otherwise. Only shown when the signed-in
+ * membership actually has a flatId, since that's what an upload gets
+ * scoped to; a pure admin with no flat of their own has nothing to put here.
  */
 
 import React, { useState, useMemo } from 'react';
@@ -22,9 +28,12 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { documentsApi, SocietyDocument, DocumentAccessLevel } from '@/api/endpoints/documents.api';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
@@ -42,10 +51,9 @@ const ACCESS_LEVELS: Array<{ value: DocumentAccessLevel; label: string }> = [
 ];
 
 /**
- * There is no upload endpoint anywhere in this product yet — web's own "Add
- * Document" form is plain text fields for the file metadata, presumably
- * referencing a file already hosted elsewhere. This mirrors that exact
- * capability rather than inventing a new upload pipeline unilaterally here.
+ * Admin's paste-a-link flow — no file storage involved, matches web's own
+ * "Add Document" form exactly (plain text fields referencing a file
+ * already hosted elsewhere).
  */
 function AddDocumentModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
@@ -174,6 +182,120 @@ function AddDocumentModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+/**
+ * Resident's real file upload — private to their own flat. accessLevel and
+ * flatId are deliberately not offered here: the backend forces FLAT_PRIVATE
+ * on the caller's own flatId server-side regardless of what's sent, so
+ * there is nothing for this form to get wrong.
+ */
+function UploadFlatDocumentModal({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [category, setCategory] = useState('');
+  const [file, setFile] = useState<{ uri: string; name: string; mimeType?: string | null; size?: number } | null>(null);
+
+  const pickFile = async () => {
+    const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    setFile({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType, size: asset.size ?? undefined });
+    if (!title.trim()) {
+      // Pre-fill a sensible title from the filename, still fully editable.
+      setTitle(asset.name.replace(/\.[^/.]+$/, ''));
+    }
+  };
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      if (!file) throw new Error('Choose a file first.');
+      return documentsApi.upload(file, {
+        title: title.trim(),
+        description: description.trim() || undefined,
+        category: category.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['documents'] });
+      Alert.alert('Uploaded', 'Only you and others on your flat can see this.');
+      onClose();
+    },
+    onError: (e: any) =>
+      Alert.alert('Error', e?.response?.data?.message ?? 'Failed to upload document.'),
+  });
+
+  const canSubmit = !!file && title.trim().length > 0;
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <SafeAreaView style={modal.safe} edges={['top', 'bottom']}>
+        <View style={modal.header}>
+          <Text style={modal.title}>Upload Flat Document</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={12}>
+            <Ionicons name="close" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView contentContainerStyle={modal.content} keyboardShouldPersistTaps="handled">
+            <View style={modal.privacyNote}>
+              <Ionicons name="lock-closed" size={13} color={colors.primary} />
+              <Text style={modal.privacyNoteText}>
+                Private to your flat — visible to residents there, not to admin or any other flat.
+              </Text>
+            </View>
+
+            <Text style={modal.label}>File *</Text>
+            <TouchableOpacity style={modal.filePicker} onPress={pickFile} activeOpacity={0.7}>
+              <Ionicons name="cloud-upload-outline" size={18} color={colors.primary} />
+              <Text style={modal.filePickerText} numberOfLines={1}>
+                {file ? file.name : 'Choose a file — PDF, image, or document'}
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={modal.label}>Title *</Text>
+            <TextInput
+              style={modal.input}
+              value={title}
+              onChangeText={setTitle}
+              placeholder="e.g. Property Tax Receipt 2026"
+              placeholderTextColor={colors.textTertiary}
+            />
+
+            <Text style={modal.label}>Description</Text>
+            <TextInput
+              style={[modal.input, modal.textarea]}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Optional"
+              placeholderTextColor={colors.textTertiary}
+              multiline
+            />
+
+            <Text style={modal.label}>Category</Text>
+            <TextInput
+              style={modal.input}
+              value={category}
+              onChangeText={setCategory}
+              placeholder="e.g. Tax, Insurance, Agreement"
+              placeholderTextColor={colors.textTertiary}
+            />
+
+            <Button
+              label={mutation.isPending ? 'Uploading…' : 'Upload'}
+              onPress={() => mutation.mutate()}
+              loading={mutation.isPending}
+              disabled={!canSubmit}
+              fullWidth
+              size="lg"
+              style={{ marginTop: spacing.md }}
+            />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatSize(bytes: number): string {
@@ -198,43 +320,65 @@ function tintFor(mimeType: string): string {
   return colors.primary;
 }
 
-const ACCESS_LABEL: Record<string, string> = {
-  PUBLIC: 'Everyone',
-  RESIDENTS_ONLY: 'Residents',
-  COMMITTEE_ONLY: 'Committee',
-  ADMIN_ONLY: 'Admins',
-};
-
 // ── Row ──────────────────────────────────────────────────────────────────────
 
-function DocumentRow({ doc }: { doc: SocietyDocument }) {
+function DocumentRow({ doc, onDeleted }: { doc: SocietyDocument; onDeleted?: () => void }) {
   const tint = tintFor(doc.mimeType);
+  const [opening, setOpening] = useState(false);
+  const isUpload = doc.storageProvider === 'sftp';
+  const isPrivate = doc.accessLevel === 'FLAT_PRIVATE';
+
+  const deleteMutation = useMutation({
+    mutationFn: () => documentsApi.remove(doc.id),
+    onSuccess: () => onDeleted?.(),
+    onError: (e: any) => Alert.alert('Error', e?.response?.data?.message ?? 'Failed to delete document.'),
+  });
+
+  const handleOpen = async () => {
+    if (isUpload) {
+      setOpening(true);
+      try {
+        await documentsApi.openFile(doc.id, doc.fileName);
+      } catch (e: any) {
+        Alert.alert('Error', e?.message ?? 'Failed to open document.');
+      } finally {
+        setOpening(false);
+      }
+      return;
+    }
+    // Link-based (admin paste-a-link) document — fileKey is the URL itself.
+    Alert.alert(
+      doc.title,
+      [doc.description, `File: ${doc.fileName}`, doc.category ? `Category: ${doc.category}` : null]
+        .filter(Boolean)
+        .join('\n'),
+      [
+        { text: 'Close', style: 'cancel' },
+        { text: 'Open Link', onPress: () => Linking.openURL(doc.fileKey).catch(() => {
+          Alert.alert('Error', 'This link could not be opened.');
+        }) },
+      ],
+    );
+  };
+
+  const handleDelete = () => {
+    Alert.alert('Delete Document', `Remove "${doc.title}"? This cannot be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteMutation.mutate() },
+    ]);
+  };
 
   return (
-    <TouchableOpacity
-      style={styles.card}
-      activeOpacity={0.8}
-      onPress={() =>
-        Alert.alert(
-          doc.title,
-          [
-            doc.description,
-            `File: ${doc.fileName}`,
-            `Size: ${formatSize(doc.fileSize)}`,
-            doc.category ? `Category: ${doc.category}` : null,
-            `Visible to: ${ACCESS_LABEL[doc.accessLevel] ?? doc.accessLevel}`,
-          ]
-            .filter(Boolean)
-            .join('\n'),
-        )
-      }
-    >
+    <TouchableOpacity style={styles.card} activeOpacity={0.8} onPress={handleOpen} disabled={opening}>
       <View style={[styles.iconWrap, { backgroundColor: tint + '18' }]}>
-        <Ionicons name={iconFor(doc.mimeType)} size={20} color={tint} />
+        {opening ? <ActivityIndicator size="small" color={tint} /> : <Ionicons name={iconFor(doc.mimeType)} size={20} color={tint} />}
       </View>
 
       <View style={styles.cardBody}>
-        <Text style={styles.title} numberOfLines={1}>{doc.title}</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title} numberOfLines={1}>{doc.title}</Text>
+          {isPrivate && <Ionicons name="lock-closed" size={12} color={colors.textTertiary} />}
+        </View>
         {doc.description ? (
           <Text style={styles.desc} numberOfLines={2}>{doc.description}</Text>
         ) : null}
@@ -251,27 +395,44 @@ function DocumentRow({ doc }: { doc: SocietyDocument }) {
             </>
           ) : null}
         </View>
+        {doc.uploadedBy ? (
+          <Text style={styles.uploader}>By {doc.uploadedBy.firstName} {doc.uploadedBy.lastName}</Text>
+        ) : null}
       </View>
 
-      <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+      {isPrivate ? (
+        <TouchableOpacity onPress={handleDelete} hitSlop={8} style={styles.deleteBtn}>
+          <Ionicons name="trash-outline" size={16} color={colors.textTertiary} />
+        </TouchableOpacity>
+      ) : (
+        <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+      )}
     </TouchableOpacity>
   );
 }
 
 // ── Screen ───────────────────────────────────────────────────────────────────
 
+type Tab = 'society' | 'flat';
+
 export default function DocumentsScreen() {
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+  const [tab, setTab] = useState<Tab>('society');
   const { user } = useAuth();
   const isAdmin = user?.currentRole === 'SOCIETY_ADMIN' || user?.currentRole === 'SOCIETY_STAFF';
+  const hasFlat = !!user?.flatId;
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['documents'],
     queryFn: () => documentsApi.list(),
   });
 
-  const docs: SocietyDocument[] = data?.data ?? [];
+  const allDocs: SocietyDocument[] = useMemo(() => data?.data ?? [], [data]);
+  const societyDocs = useMemo(() => allDocs.filter((d) => d.accessLevel !== 'FLAT_PRIVATE'), [allDocs]);
+  const flatDocs = useMemo(() => allDocs.filter((d) => d.accessLevel === 'FLAT_PRIVATE'), [allDocs]);
+  const docs = tab === 'flat' ? flatDocs : societyDocs;
 
   const categories = useMemo(() => {
     const set = new Set(docs.map((d) => d.category).filter(Boolean) as string[]);
@@ -294,7 +455,13 @@ export default function DocumentsScreen() {
         title="Documents"
         showBack
         rightAction={
-          isAdmin ? (
+          tab === 'flat' ? (
+            hasFlat ? (
+              <TouchableOpacity onPress={() => setShowUpload(true)} hitSlop={8}>
+                <Ionicons name="cloud-upload-outline" size={22} color={colors.primary} />
+              </TouchableOpacity>
+            ) : undefined
+          ) : isAdmin ? (
             <TouchableOpacity onPress={() => setShowAdd(true)} hitSlop={8}>
               <Ionicons name="add-circle-outline" size={24} color={colors.primary} />
             </TouchableOpacity>
@@ -302,13 +469,33 @@ export default function DocumentsScreen() {
         }
       />
 
+      {/* Society / My Flat tabs — only worth showing if there's a flat to scope to */}
+      {hasFlat && (
+        <View style={styles.tabBar}>
+          <TouchableOpacity
+            style={[styles.tab, tab === 'society' && styles.tabActive]}
+            onPress={() => { setTab('society'); setCategory(null); }}
+          >
+            <Text style={[styles.tabText, tab === 'society' && styles.tabTextActive]}>Society</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, tab === 'flat' && styles.tabActive]}
+            onPress={() => { setTab('flat'); setCategory(null); }}
+          >
+            <Text style={[styles.tabText, tab === 'flat' && styles.tabTextActive]}>
+              My Flat{flatDocs.length > 0 ? ` (${flatDocs.length})` : ''}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Search */}
       <View style={styles.searchBar}>
         <View style={styles.searchBox}>
           <Ionicons name="search-outline" size={16} color={colors.textTertiary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search documents…"
+            placeholder={tab === 'flat' ? 'Search your flat documents…' : 'Search documents…'}
             placeholderTextColor={colors.textTertiary}
             value={search}
             onChangeText={setSearch}
@@ -357,34 +544,59 @@ export default function DocumentsScreen() {
         <FlatList
           data={filtered}
           keyExtractor={(d) => d.id}
-          renderItem={({ item }) => <DocumentRow doc={item} />}
+          renderItem={({ item }) => <DocumentRow doc={item} onDeleted={refetch} />}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
           refreshControl={
             <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />
           }
           ListEmptyComponent={
-            <EmptyState
-              icon="folder-open-outline"
-              title={search || category ? 'No matching documents' : 'No documents yet'}
-              description={
-                search || category
-                  ? 'Try a different search or category.'
-                  : 'Society bye-laws, circulars and notices will appear here.'
-              }
-            />
+            tab === 'flat' ? (
+              <EmptyState
+                icon="lock-closed-outline"
+                title={search || category ? 'No matching documents' : 'No flat documents yet'}
+                description={
+                  search || category
+                    ? 'Try a different search or category.'
+                    : "Upload your own — tax receipts, agreements, anything you'd like kept with your flat's records. Only residents here can see them."
+                }
+              />
+            ) : (
+              <EmptyState
+                icon="folder-open-outline"
+                title={search || category ? 'No matching documents' : 'No documents yet'}
+                description={
+                  search || category
+                    ? 'Try a different search or category.'
+                    : 'Society bye-laws, circulars and notices will appear here.'
+                }
+              />
+            )
           }
           ListFooterComponent={<View style={{ height: spacing['3xl'] }} />}
         />
       )}
 
       {showAdd && <AddDocumentModal onClose={() => setShowAdd(false)} />}
+      {showUpload && <UploadFlatDocumentModal onClose={() => setShowUpload(false)} />}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
+
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingHorizontal: spacing.sm,
+  },
+  tab: { flex: 1, paddingVertical: 11, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabActive: { borderBottomColor: colors.primary },
+  tabText: { ...typography.labelMedium, color: colors.textSecondary },
+  tabTextActive: { color: colors.primary, fontWeight: '700' },
 
   searchBar: {
     paddingHorizontal: spacing.base,
@@ -440,11 +652,14 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   cardBody: { flex: 1, gap: 2 },
-  title: { ...typography.labelLarge, color: colors.text, fontWeight: '600' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  title: { ...typography.labelLarge, color: colors.text, fontWeight: '600', flexShrink: 1 },
   desc: { ...typography.bodySmall, color: colors.textSecondary, lineHeight: 17 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2, flexWrap: 'wrap' },
   meta: { ...typography.bodySmall, color: colors.textTertiary, fontSize: 11 },
   metaDot: { color: colors.textTertiary, fontSize: 11 },
+  uploader: { ...typography.bodySmall, color: colors.textTertiary, fontSize: 11, marginTop: 1 },
+  deleteBtn: { padding: spacing.xs },
 });
 
 const modal = StyleSheet.create({
@@ -470,4 +685,17 @@ const modal = StyleSheet.create({
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { ...typography.labelMedium, color: colors.textSecondary },
   chipTextActive: { color: '#fff' },
+
+  privacyNote: {
+    flexDirection: 'row', gap: spacing.xs, alignItems: 'center',
+    backgroundColor: colors.primaryLight, borderRadius: radius.md,
+    padding: spacing.sm, marginBottom: spacing.xs,
+  },
+  privacyNoteText: { ...typography.bodySmall, color: colors.primary, flex: 1, lineHeight: 16 },
+  filePicker: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary, borderStyle: 'dashed',
+    borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 13,
+  },
+  filePickerText: { ...typography.bodyMedium, color: colors.text, flex: 1 },
 });
