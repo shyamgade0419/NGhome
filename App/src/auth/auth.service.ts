@@ -749,6 +749,18 @@ export class AuthService {
         });
       }
 
+      // Only the first ACTIVE resident on a flat is primary. This used to be
+      // hardcoded true, so a spouse or tenant joining the same flat after
+      // someone else already had — a case the schema explicitly supports,
+      // one SocietyMembership row per (society, user, flat) — would also
+      // become "primary", leaving the flat with two, and anything that
+      // assumes exactly one (e.g. WhatsApp billing reminders, which query
+      // `isPrimary: true` and take the first match) would pick one
+      // arbitrarily rather than the one actually meant to be the contact.
+      const existingActiveOnFlat = await tx.societyMembership.count({
+        where: { flatId: flat.id, status: 'ACTIVE' },
+      });
+
       // Create RESIDENT membership (ACTIVE — admin can remove if not legitimate)
       const membership = await tx.societyMembership.create({
         data: {
@@ -757,7 +769,7 @@ export class AuthService {
           flatId: flat.id,
           role: SystemRole.RESIDENT,
           status: 'ACTIVE',
-          isPrimary: true,
+          isPrimary: existingActiveOnFlat === 0,
         },
       });
 

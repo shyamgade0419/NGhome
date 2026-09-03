@@ -153,6 +153,33 @@ export class UsersService {
       if (!flat) throw new NotFoundException('Flat not found in this society');
     }
 
+    // No flatId means "change this person's role" (e.g. promoting a
+    // resident to admin from the Roles UI), not "add them to this flat" —
+    // update whichever membership they already have rather than upserting
+    // on flatId: '', which silently created a second, flat-less membership
+    // and left their real one (with their actual flat) untouched. A user
+    // is only "admin AND resident" correctly when it's the SAME membership
+    // row carrying both the role and the flatId — two separate rows for
+    // one person in one society made the login/society-selection flow
+    // list that society twice with no way to tell the rows apart.
+    if (!flatId) {
+      const existing = await this.prisma.societyMembership.findMany({
+        where: { societyId, userId, status: 'ACTIVE' },
+      });
+      if (existing.length === 1) {
+        return this.prisma.societyMembership.update({
+          where: { id: existing[0].id },
+          data: { role, isPrimary },
+        });
+      }
+      if (existing.length > 1) {
+        throw new ConflictException(
+          'This member holds more than one flat membership in this society — specify which flat to update.',
+        );
+      }
+      // No existing membership at all — falls through to create one below, flat-less.
+    }
+
     return this.prisma.societyMembership.upsert({
       where: { societyId_userId_flatId: { societyId, userId, flatId: flatId ?? '' } },
       create: { societyId, userId, flatId, role, isPrimary, status: 'ACTIVE' },
