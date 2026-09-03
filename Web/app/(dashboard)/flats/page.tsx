@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Home, Plus, Building2, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { Home, Plus, Building2, X, ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import { societyApi } from '@/lib/api/endpoints';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
@@ -90,6 +90,106 @@ function AddBuildingModal({ onClose }: { onClose: () => void }) {
           >
             Create Building
           </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Edit Building Modal ────────────────────────────────────────────────── */
+function EditBuildingModal({ building, onClose }: { building: any; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    name: building.name ?? '',
+    code: building.code ?? '',
+    totalFloors: building.totalFloors?.toString() ?? '',
+    description: building.description ?? '',
+  });
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      societyApi.updateBuilding(building.id, {
+        name: form.name.trim(),
+        code: form.code.trim() || undefined,
+        totalFloors: form.totalFloors ? parseInt(form.totalFloors) : undefined,
+        description: form.description.trim() || undefined,
+      }),
+    onSuccess: () => {
+      toast.success('Building updated');
+      qc.invalidateQueries({ queryKey: ['buildings'] });
+      onClose();
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to update building'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => societyApi.deleteBuilding(building.id),
+    onSuccess: () => {
+      toast.success('Building removed');
+      qc.invalidateQueries({ queryKey: ['buildings'] });
+      qc.invalidateQueries({ queryKey: ['flats'] });
+      onClose();
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to remove building'),
+  });
+
+  const handleDelete = () => {
+    if (!confirm(`Remove "${building.name}"? Flats inside it are unaffected but will need reassigning.`)) return;
+    deleteMutation.mutate();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-slate-900">Edit Building</h2>
+          <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <Input
+            label="Building Name *"
+            placeholder="Block A"
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          />
+          <Input
+            label="Code (optional)"
+            placeholder="A"
+            value={form.code}
+            onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+          />
+          <Input
+            label="Total Floors (optional)"
+            type="number"
+            placeholder="10"
+            value={form.totalFloors}
+            onChange={(e) => setForm((f) => ({ ...f, totalFloors: e.target.value }))}
+          />
+          <Input
+            label="Description (optional)"
+            placeholder="Main residential block"
+            value={form.description}
+            onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+          />
+        </div>
+
+        <div className="mt-6 flex items-center justify-between gap-3">
+          <Button variant="danger" onClick={handleDelete} loading={deleteMutation.isPending}>
+            <Trash2 size={15} className="mr-1.5" /> Delete
+          </Button>
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button
+              onClick={() => mutation.mutate()}
+              loading={mutation.isPending}
+              disabled={!form.name.trim()}
+            >
+              Save Changes
+            </Button>
+          </div>
         </div>
       </div>
     </div>
@@ -211,10 +311,146 @@ function AddFlatModal({ buildings, onClose }: { buildings: any[]; onClose: () =>
   );
 }
 
+/* ─── Edit Flat Modal ────────────────────────────────────────────────────── */
+function EditFlatModal({ flat, buildings, onClose }: { flat: any; buildings: any[]; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    buildingId: flat.buildingId ?? buildings[0]?.id ?? '',
+    unitNumber: flat.unitNumber ?? '',
+    flatCode: flat.flatCode ?? '',
+    area: flat.area != null ? String(parseDecimalLike(flat.area)) : '',
+    bedrooms: flat.bedrooms?.toString() ?? '',
+    bathrooms: flat.bathrooms?.toString() ?? '',
+    category: flat.category ?? '',
+    status: flat.status ?? 'VACANT',
+    ownershipType: flat.ownershipType ?? '',
+    parkingSlots: flat.parkingSlots?.toString() ?? '',
+  });
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      societyApi.updateFlat(flat.id, {
+        buildingId: form.buildingId,
+        unitNumber: form.unitNumber.trim(),
+        flatCode: form.flatCode.trim(),
+        area: form.area ? parseFloat(form.area) : undefined,
+        bedrooms: form.bedrooms ? parseInt(form.bedrooms) : undefined,
+        bathrooms: form.bathrooms ? parseInt(form.bathrooms) : undefined,
+        category: form.category.trim() || undefined,
+        status: form.status || undefined,
+        ownershipType: form.ownershipType.trim() || undefined,
+        parkingSlots: form.parkingSlots ? parseInt(form.parkingSlots) : undefined,
+      }),
+    onSuccess: () => {
+      toast.success('Flat updated');
+      qc.invalidateQueries({ queryKey: ['flats'] });
+      onClose();
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to update flat'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => societyApi.deleteFlat(flat.id),
+    onSuccess: () => {
+      toast.success('Flat removed');
+      qc.invalidateQueries({ queryKey: ['flats'] });
+      onClose();
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to remove flat'),
+  });
+
+  const handleDelete = () => {
+    if (!confirm(`Remove flat ${flat.flatCode}? This cannot be undone.`)) return;
+    deleteMutation.mutate();
+  };
+
+  const f = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setForm((prev) => ({ ...prev, [key]: e.target.value }));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-slate-900">Edit Flat</h2>
+          <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Building *</label>
+            <select
+              value={form.buildingId}
+              onChange={f('buildingId')}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            >
+              {buildings.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Unit Number *" placeholder="101" value={form.unitNumber} onChange={f('unitNumber')} />
+            <Input label="Flat Code *" placeholder="A-101" value={form.flatCode} onChange={f('flatCode')} />
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <Input label="Area (sq ft)" type="number" placeholder="850" value={form.area} onChange={f('area')} />
+            <Input label="Bedrooms" type="number" placeholder="2" value={form.bedrooms} onChange={f('bedrooms')} />
+            <Input label="Bathrooms" type="number" placeholder="2" value={form.bathrooms} onChange={f('bathrooms')} />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Category" placeholder="2BHK" value={form.category} onChange={f('category')} />
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Status</label>
+              <select
+                value={form.status}
+                onChange={f('status')}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              >
+                <option value="VACANT">Vacant</option>
+                <option value="ACTIVE">Active</option>
+                <option value="UNDER_RENOVATION">Under Renovation</option>
+                <option value="INACTIVE">Inactive</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Ownership Type" placeholder="OWNED / RENTED" value={form.ownershipType} onChange={f('ownershipType')} />
+            <Input label="Parking Slots" type="number" placeholder="1" value={form.parkingSlots} onChange={f('parkingSlots')} />
+          </div>
+        </div>
+
+        <div className="mt-6 flex items-center justify-between gap-3">
+          <Button variant="danger" onClick={handleDelete} loading={deleteMutation.isPending}>
+            <Trash2 size={15} className="mr-1.5" /> Delete
+          </Button>
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button
+              onClick={() => mutation.mutate()}
+              loading={mutation.isPending}
+              disabled={!form.buildingId || !form.unitNumber.trim() || !form.flatCode.trim()}
+            >
+              Save Changes
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Main Page ──────────────────────────────────────────────────────────── */
 export default function FlatsPage() {
   const [showAddBuilding, setShowAddBuilding] = useState(false);
   const [showAddFlat, setShowAddFlat] = useState(false);
+  const [editingBuilding, setEditingBuilding] = useState<any>(null);
+  const [editingFlat, setEditingFlat] = useState<any>(null);
   const [expandedBuildings, setExpandedBuildings] = useState<Record<string, boolean>>({});
 
   const { data: buildingsData, isLoading: buildingsLoading } = useQuery({
@@ -243,6 +479,12 @@ export default function FlatsPage() {
       {showAddBuilding && <AddBuildingModal onClose={() => setShowAddBuilding(false)} />}
       {showAddFlat && buildings.length > 0 && (
         <AddFlatModal buildings={buildings} onClose={() => setShowAddFlat(false)} />
+      )}
+      {editingBuilding && (
+        <EditBuildingModal building={editingBuilding} onClose={() => setEditingBuilding(null)} />
+      )}
+      {editingFlat && (
+        <EditFlatModal flat={editingFlat} buildings={buildings} onClose={() => setEditingFlat(null)} />
       )}
 
       <Header
@@ -291,11 +533,11 @@ export default function FlatsPage() {
               return (
                 <div key={building.id} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                   {/* Building header */}
-                  <button
-                    className="flex w-full items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors"
-                    onClick={() => toggleBuilding(building.id)}
-                  >
-                    <div className="flex items-center gap-3">
+                  <div className="flex w-full items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors">
+                    <button
+                      className="flex flex-1 items-center gap-3 text-left"
+                      onClick={() => toggleBuilding(building.id)}
+                    >
                       <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-50">
                         <Building2 size={16} className="text-primary-600" />
                       </div>
@@ -307,9 +549,20 @@ export default function FlatsPage() {
                           {building.totalFloors ? ` · ${building.totalFloors} floors` : ''}
                         </p>
                       </div>
+                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setEditingBuilding(building)}
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                        title="Edit building"
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button onClick={() => toggleBuilding(building.id)} className="p-1.5">
+                        {isOpen ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
+                      </button>
                     </div>
-                    {isOpen ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
-                  </button>
+                  </div>
 
                   {/* Flats table */}
                   {isOpen && (
@@ -336,6 +589,7 @@ export default function FlatsPage() {
                               <Th>Bed / Bath</Th>
                               <Th>Parking</Th>
                               <Th>Status</Th>
+                              <Th></Th>
                             </Tr>
                           </Thead>
                           <Tbody>
@@ -353,6 +607,15 @@ export default function FlatsPage() {
                                   <Badge variant={statusVariant[f.status] ?? 'default'}>
                                     {f.status?.replace(/_/g, ' ')}
                                   </Badge>
+                                </Td>
+                                <Td>
+                                  <button
+                                    onClick={() => setEditingFlat(f)}
+                                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                                    title="Edit flat"
+                                  >
+                                    <Pencil size={14} />
+                                  </button>
                                 </Td>
                               </Tr>
                             ))}
