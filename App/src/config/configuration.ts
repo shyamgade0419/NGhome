@@ -24,6 +24,18 @@ export default () => ({
   storage: {
     provider: process.env.STORAGE_PROVIDER ?? 'local',
     localPath: process.env.STORAGE_LOCAL_PATH ?? './uploads',
+    sftp: {
+      host: process.env.SFTP_HOST,
+      port: parseInt(process.env.SFTP_PORT ?? '22', 10),
+      username: process.env.SFTP_USERNAME,
+      password: process.env.SFTP_PASSWORD,
+      // Either password or privateKey — a key is preferred where the
+      // server supports it, but ssh2-sftp-client accepts either.
+      privateKey: process.env.SFTP_PRIVATE_KEY,
+      // Root directory on the remote server documents get written under —
+      // never the server's actual root, so a bad path can't escape it.
+      basePath: process.env.SFTP_BASE_PATH ?? '/ng-home-documents',
+    },
   },
   mail: {
     host: process.env.SMTP_HOST,

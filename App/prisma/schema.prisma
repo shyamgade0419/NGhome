@@ -133,6 +133,10 @@ enum DocumentAccessLevel {
   RESIDENTS_ONLY
   ADMIN_ONLY
   COMMITTEE_ONLY
+  // Visible only to active memberships whose flatId matches the
+  // document's own flatId — not even other admins can see it. Documents
+  // with this level always carry a flatId; see the Document model.
+  FLAT_PRIVATE
 }
 
 enum WaterBillingModel {
@@ -433,6 +437,7 @@ model Flat {
   waterReadings       WaterMeterReading[]
   paymentSubmissions  PaymentSubmission[]
   maintenanceRequests MaintenanceRequest[]
+  documents           Document[]
 
   @@unique([societyId, flatCode])
   @@index([societyId])
@@ -1015,6 +1020,12 @@ model Event {
 model Document {
   id               String              @id @default(uuid())
   societyId        String
+  // Set only for FLAT_PRIVATE documents — which flat this belongs to.
+  // Visibility is keyed on the viewer's own flatId matching this, not on
+  // role, so an admin who also resides at this exact flat (a membership
+  // can carry both a role and a flatId) can still see it like any other
+  // resident there would; nobody else, including other admins, can.
+  flatId           String?
   title            String
   description      String?
   fileName         String
@@ -1032,6 +1043,7 @@ model Document {
   updatedAt        DateTime            @updatedAt
 
   society       Society             @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  flat          Flat?               @relation(fields: [flatId], references: [id], onDelete: Cascade)
   uploadedBy    User                @relation(fields: [uploadedById], references: [id])
   expenses      Expense[]           @relation("ExpenseDocuments")
   payments      PaymentSubmission[] @relation("PaymentDocuments")
@@ -1039,6 +1051,7 @@ model Document {
   meetings      Meeting[]           @relation("MeetingDocuments")
 
   @@index([societyId])
+  @@index([flatId])
   @@map("documents")
 }
 

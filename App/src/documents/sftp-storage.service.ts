@@ -1,0 +1,89 @@
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import SftpClient from 'ssh2-sftp-client';
+
+/**
+ * Thin wrapper around ssh2-sftp-client for the one storage backend this
+ * deployment actually uses — an SFTP server the society already runs,
+ * not a cloud bucket. A fresh connection per operation (rather than one
+ * held open) trades a little latency for never having to reason about a
+ * long-lived connection dying between requests in a multi-instance API.
+ */
+@Injectable()
+export class SftpStorageService {
+  private readonly logger = new Logger(SftpStorageService.name);
+
+  constructor(private readonly configService: ConfigService) {}
+
+  private getConnectOptions() {
+    const host = this.configService.get<string>('storage.sftp.host');
+    const port = this.configService.get<number>('storage.sftp.port');
+    const username = this.configService.get<string>('storage.sftp.username');
+    const password = this.configService.get<string>('storage.sftp.password');
+    const privateKey = this.configService.get<string>('storage.sftp.privateKey');
+
+    if (!host || !username || (!password && !privateKey)) {
+      throw new InternalServerErrorException(
+        'File storage is not configured — set SFTP_HOST, SFTP_USERNAME and SFTP_PASSWORD (or SFTP_PRIVATE_KEY).',
+      );
+    }
+
+    return {
+      host,
+      port,
+      username,
+      ...(privateKey ? { privateKey } : { password }),
+    };
+  }
+
+  getBasePath(): string {
+    return this.configService.get<string>('storage.sftp.basePath') ?? '/ng-home-documents';
+  }
+
+  async upload(buffer: Buffer, remotePath: string): Promise<void> {
+    const sftp = new SftpClient();
+    try {
+      await sftp.connect(this.getConnectOptions());
+      const dir = remotePath.substring(0, remotePath.lastIndexOf('/'));
+      if (dir && !(await sftp.exists(dir))) {
+        await sftp.mkdir(dir, true);
+      }
+      await sftp.put(buffer, remotePath);
+    } catch (err) {
+      this.logger.error(`SFTP upload failed for ${remotePath}: ${err}`);
+      throw new InternalServerErrorException('Failed to store the uploaded file.');
+    } finally {
+      await sftp.end().catch(() => {});
+    }
+  }
+
+  async download(remotePath: string): Promise<Buffer> {
+    const sftp = new SftpClient();
+    try {
+      await sftp.connect(this.getConnectOptions());
+      const data = await sftp.get(remotePath);
+      return Buffer.isBuffer(data) ? data : Buffer.from(data as string);
+    } catch (err) {
+      this.logger.error(`SFTP download failed for ${remotePath}: ${err}`);
+      throw new InternalServerErrorException('Failed to retrieve the file.');
+    } finally {
+      await sftp.end().catch(() => {});
+    }
+  }
+
+  /** Best-effort — a document row shouldn't fail to delete because the
+   *  remote file was already gone or the server was briefly unreachable. */
+  async remove(remotePath: string): Promise<void> {
+    const sftp = new SftpClient();
+    try {
+      await sftp.connect(this.getConnectOptions());
+      if (await sftp.exists(remotePath)) {
+        await sftp.delete(remotePath);
+      }
+    } catch (err) {
+      this.logger.warn(`SFTP delete failed for ${remotePath}: ${err}`);
+    } finally {
+      await sftp.end().catch(() => {});
+    }
+  }
+}

@@ -1,11 +1,15 @@
 /**
  * DEFECT-1: addToSociety flat validation unit tests.
  * DEFECT-8: Society-scoped user operations.
+ * Role-change-created-a-second-membership fix: addToSociety with no flatId
+ * means "change this person's role", not "add them to a flat" — it must
+ * update whichever active membership they already have in this society
+ * rather than upserting a second, flat-less one.
  */
 
 import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, ConflictException } from '@nestjs/common';
 import { SystemRole } from '@prisma/client';
 
 const SOCIETY_ID = 'society-a';
@@ -18,12 +22,16 @@ function makePrisma(overrides: {
   societyFindUnique?: unknown;
   userFindUnique?: unknown;
   flatFindFirst?: unknown;
+  membershipFindMany?: unknown[];
+  membershipUpdate?: unknown;
   membershipUpsert?: unknown;
 } = {}) {
   const defaults = {
     societyFindUnique: 'societyFindUnique' in overrides ? overrides.societyFindUnique : { id: SOCIETY_ID },
     userFindUnique: 'userFindUnique' in overrides ? overrides.userFindUnique : { id: USER_ID },
     flatFindFirst: 'flatFindFirst' in overrides ? overrides.flatFindFirst : { id: FLAT_ID, societyId: SOCIETY_ID },
+    membershipFindMany: overrides.membershipFindMany ?? [],
+    membershipUpdate: overrides.membershipUpdate ?? { id: 'membership-1', updated: true },
     membershipUpsert: overrides.membershipUpsert ?? { id: 'membership-1' },
   };
 
@@ -34,7 +42,11 @@ function makePrisma(overrides: {
       findFirst: jest.fn().mockResolvedValue({ id: USER_ID, memberships: [] }),
     },
     flat: { findFirst: jest.fn().mockResolvedValue(defaults.flatFindFirst) },
-    societyMembership: { upsert: jest.fn().mockResolvedValue(defaults.membershipUpsert) },
+    societyMembership: {
+      findMany: jest.fn().mockResolvedValue(defaults.membershipFindMany),
+      update: jest.fn().mockResolvedValue(defaults.membershipUpdate),
+      upsert: jest.fn().mockResolvedValue(defaults.membershipUpsert),
+    },
   } as unknown as PrismaService;
 }
 
@@ -79,6 +91,60 @@ describe('UsersService — addToSociety flat validation (DEFECT-1)', () => {
       ).resolves.toBeDefined();
       // Flat lookup must NOT have been called
       expect((prisma.flat as any).findFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('role change with no flatId updates the existing membership in place', () => {
+    it('updates the sole existing membership rather than creating a second one', async () => {
+      const prisma = makePrisma({
+        membershipFindMany: [{ id: 'membership-1', flatId: FLAT_ID }],
+      });
+      const service = new UsersService(prisma);
+      await expect(
+        service.addToSociety(SOCIETY_ID, USER_ID, undefined, SystemRole.SOCIETY_ADMIN, false),
+      ).resolves.toBeDefined();
+
+      expect((prisma.societyMembership as any).update).toHaveBeenCalledWith({
+        where: { id: 'membership-1' },
+        data: { role: SystemRole.SOCIETY_ADMIN, isPrimary: false },
+      });
+      // The resident's real flat membership must never be touched via
+      // upsert-on-flatId:'' — that's the bug this replaces.
+      expect((prisma.societyMembership as any).upsert).not.toHaveBeenCalled();
+    });
+
+    it('throws ConflictException when the person holds more than one flat membership in this society', async () => {
+      const prisma = makePrisma({
+        membershipFindMany: [
+          { id: 'membership-1', flatId: FLAT_ID },
+          { id: 'membership-2', flatId: FLAT_B_ID },
+        ],
+      });
+      const service = new UsersService(prisma);
+      await expect(
+        service.addToSociety(SOCIETY_ID, USER_ID, undefined, SystemRole.SOCIETY_ADMIN, false),
+      ).rejects.toThrow(ConflictException);
+      expect((prisma.societyMembership as any).update).not.toHaveBeenCalled();
+      expect((prisma.societyMembership as any).upsert).not.toHaveBeenCalled();
+    });
+
+    it('falls through to create a flat-less membership when the person has none yet', async () => {
+      const prisma = makePrisma({ membershipFindMany: [] });
+      const service = new UsersService(prisma);
+      await expect(
+        service.addToSociety(SOCIETY_ID, USER_ID, undefined, SystemRole.SOCIETY_ADMIN, false),
+      ).resolves.toBeDefined();
+      expect((prisma.societyMembership as any).upsert).toHaveBeenCalled();
+    });
+
+    it('an explicit flatId (adding a second flat) skips the role-change branch entirely', async () => {
+      const prisma = makePrisma({ flatFindFirst: { id: FLAT_ID, societyId: SOCIETY_ID } });
+      const service = new UsersService(prisma);
+      await expect(
+        service.addToSociety(SOCIETY_ID, USER_ID, FLAT_ID, SystemRole.RESIDENT, false),
+      ).resolves.toBeDefined();
+      expect((prisma.societyMembership as any).findMany).not.toHaveBeenCalled();
+      expect((prisma.societyMembership as any).upsert).toHaveBeenCalled();
     });
   });
 
