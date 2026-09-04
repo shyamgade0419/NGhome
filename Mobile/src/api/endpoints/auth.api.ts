@@ -26,8 +26,12 @@ export const authApi = {
     return data.data;
   },
 
-  selectSociety: async (societyId: string) => {
-    const { data } = await apiClient.post<ApiResponse<LoginResponse>>('/auth/select-society', { societyId });
+  // Keyed by the specific membership id, not societyId — a person can hold
+  // more than one active membership in the same society (e.g. a society
+  // admin who is also a resident of their own flat), and societyId alone
+  // can't tell those two apart.
+  selectSociety: async (membershipId: string) => {
+    const { data } = await apiClient.post<ApiResponse<LoginResponse>>('/auth/select-society', { membershipId });
     return data.data;
   },
 

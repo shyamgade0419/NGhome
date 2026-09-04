@@ -22,7 +22,7 @@ interface AuthState {
 interface AuthContextValue extends AuthState {
   /** Returns true if society selection is required after login */
   login: (identifier: string, password: string) => Promise<boolean>;
-  selectSociety: (societyId: string) => Promise<void>;
+  selectSociety: (membershipId: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -166,10 +166,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return false;
   }, []);
 
-  const selectSociety = useCallback(async (societyId: string) => {
-    const result = await authApi.selectSociety(societyId);
+  const selectSociety = useCallback(async (membershipId: string) => {
+    const result = await authApi.selectSociety(membershipId);
     await tokenService.setTokens(result.accessToken, result.refreshToken);
-    const selected = result.memberships.find((m) => m.societyId === societyId) ?? result.memberships[0];
+    // activeMembership is the source of truth for which one is now active
+    // (see LoginResponse) — matching by societyId here would silently pick
+    // the wrong membership whenever the person holds two in this society.
+    const selected =
+      result.activeMembership ??
+      result.memberships.find((m) => m.id === membershipId) ??
+      result.memberships[0];
     if (mounted.current) {
       setState({
         user: {

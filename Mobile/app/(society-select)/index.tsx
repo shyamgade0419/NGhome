@@ -46,11 +46,14 @@ export default function SocietySelectScreen() {
   };
 
   const renderItem = ({ item }: { item: SocietyMembership }) => {
-    const isSelected = selected === item.societyId;
+    // Keyed by membership id, not societyId — two cards can share the same
+    // society (an admin membership and a resident membership on one flat,
+    // both in the same society), and societyId alone can't tell them apart.
+    const isSelected = selected === item.id;
     return (
       <TouchableOpacity
         style={[styles.card, isSelected && styles.cardSelected]}
-        onPress={() => setSelected(item.societyId)}
+        onPress={() => setSelected(item.id)}
         activeOpacity={0.8}
       >
         <View style={styles.cardLeft}>

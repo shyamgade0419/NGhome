@@ -43,6 +43,12 @@ export interface LoginResponse {
   refreshToken: string;
   user: User;
   memberships: SocietyMembership[];
+  // The membership this session is scoped to — set whenever a scoped
+  // session comes back (single-membership login, selectSociety()). Use
+  // this instead of re-matching `memberships` by societyId, which breaks
+  // the moment one person holds two memberships in the same society (a
+  // society admin who's also a resident of their own flat, e.g.).
+  activeMembership?: SocietyMembership;
   requiresSocietySelection?: boolean;
   // Set by joinSociety() when the flat already had an active resident —
   // the new membership is PENDING and needs admin approval before it
