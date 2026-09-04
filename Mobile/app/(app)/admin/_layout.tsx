@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import apiClient from '@/api/client';
 import { colors, typography } from '@/theme';
 
@@ -16,6 +17,15 @@ export default function AdminLayout() {
   });
   const waterEnabled = config?.additionalConfig?.waterBillingEnabled ?? true;
 
+  // Android 15+ (targetSdk 35+, which Play Store now requires) forces
+  // edge-to-edge layout at the OS level — the app draws behind the system
+  // nav bar instead of it reserving its own space. A fixed tabBarStyle
+  // height/paddingBottom (the old values) no longer accounts for that bar,
+  // so the tab icons ended up drawn underneath it. Padding by the real
+  // inset keeps the tab bar clear of whatever nav style the device uses
+  // (gesture pill or 3-button bar) instead of just guessing a fixed value.
+  const insets = useSafeAreaInsets();
+
   return (
     <Tabs
       screenOptions={{
@@ -26,8 +36,9 @@ export default function AdminLayout() {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 64,
-          paddingBottom: 8,
+          height: 56 + insets.bottom,
+          paddingTop: 8,
+          paddingBottom: Math.max(insets.bottom, 8),
         },
         tabBarLabelStyle: {
           ...typography.labelSmall,
