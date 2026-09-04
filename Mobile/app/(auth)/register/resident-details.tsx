@@ -2,7 +2,10 @@
  * Step 2 of resident join flow — personal details + flat selection.
  * Reads join context (joinCode, society, flats) from AsyncStorage,
  * collects name / email / phone / flat / password, then calls
- * POST /auth/join-society. On success, saves tokens and enters the app.
+ * POST /auth/join-society. If the flat is unoccupied, saves tokens and
+ * enters the app immediately. If it already has an active resident, the
+ * membership comes back PENDING — no tokens are stored, and the user is
+ * sent to sign in later once the admin approves.
  */
 import React, { useState, useEffect, useMemo } from 'react';
 import {
@@ -213,12 +216,24 @@ export default function ResidentDetailsScreen() {
         password: form.password,
       });
 
-      await tokenService.setTokens(result.accessToken, result.refreshToken);
       await AsyncStorage.removeItem('join_society');
-      await refreshUser();
 
-      // If membership is PENDING_APPROVAL the app's resident layout will
-      // detect it and show the pending screen automatically.
+      // Someone else is already an active resident on this flat — the
+      // membership was created PENDING, not ACTIVE, and the tokens we got
+      // back carry no society context (they'd just 403 on every screen).
+      // Don't log the person in; send them back to sign in later once an
+      // admin approves.
+      if (result.requiresApproval) {
+        Alert.alert(
+          'Request Submitted',
+          `Flat ${selectedFlat.flatCode} already has a resident registered. Your request has been sent to the society admin for approval — you'll be able to sign in once it's approved.`,
+          [{ text: 'OK', onPress: () => router.replace('/(auth)/login') }],
+        );
+        return;
+      }
+
+      await tokenService.setTokens(result.accessToken, result.refreshToken);
+      await refreshUser();
       router.replace('/(app)');
     } catch (err: any) {
       const msg =

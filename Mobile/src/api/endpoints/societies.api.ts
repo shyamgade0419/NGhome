@@ -248,4 +248,25 @@ export const societiesApi = {
     const { data } = await apiClient.patch<ApiResponse<{ id: string }>>(`/users/${userId}`, payload);
     return data.data;
   },
+
+  /** Join requests onto a flat that already had an active resident — see
+   *  AuthService.joinSociety(). Awaiting admin approve/reject. */
+  getPendingApprovals: async () => {
+    const { data } = await apiClient.get<ApiResponse<Array<{
+      id: string;
+      joinedAt: string;
+      user: { id: string; firstName: string; lastName: string; email: string; phone: string | null };
+      flat: { id: string; flatCode: string; unitNumber: string; building: { name: string } | null } | null;
+    }>>>('/users/society/pending');
+    return data.data ?? [];
+  },
+
+  approvePendingMembership: async (membershipId: string) => {
+    const { data } = await apiClient.post<ApiResponse<{ id: string }>>(`/users/society/pending/${membershipId}/approve`);
+    return data.data;
+  },
+
+  rejectPendingMembership: async (membershipId: string) => {
+    await apiClient.post(`/users/society/pending/${membershipId}/reject`);
+  },
 };

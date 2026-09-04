@@ -44,6 +44,10 @@ export interface LoginResponse {
   user: User;
   memberships: SocietyMembership[];
   requiresSocietySelection?: boolean;
+  // Set by joinSociety() when the flat already had an active resident —
+  // the new membership is PENDING and needs admin approval before it
+  // grants any access. See resident-details.tsx.
+  requiresApproval?: boolean;
 }
 
 export interface AuthenticatedUser extends User {

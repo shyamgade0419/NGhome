@@ -139,6 +139,100 @@ function EditResidentModal({ resident, onClose }: { resident: Resident; onClose:
   );
 }
 
+// ── Pending join approvals ───────────────────────────────────────────────
+// A flat already had an active resident when this person joined via invite
+// code, so AuthService.joinSociety() parked them PENDING instead of
+// granting instant access. Approve (spouse/tenant/co-owner — legitimate)
+// or reject (stranger who guessed/shared the join code).
+function PendingApprovalsSection() {
+  const qc = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin-pending-approvals'],
+    queryFn: () => societiesApi.getPendingApprovals(),
+  });
+
+  const approve = useMutation({
+    mutationFn: (membershipId: string) => societiesApi.approvePendingMembership(membershipId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-pending-approvals'] });
+      qc.invalidateQueries({ queryKey: ['admin-residents'] });
+      Alert.alert('Approved', 'The resident can now sign in.');
+    },
+    onError: (e: any) => Alert.alert('Error', e?.response?.data?.message ?? 'Failed to approve.'),
+  });
+
+  const reject = useMutation({
+    mutationFn: (membershipId: string) => societiesApi.rejectPendingMembership(membershipId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-pending-approvals'] });
+      Alert.alert('Rejected', 'The join request has been rejected.');
+    },
+    onError: (e: any) => Alert.alert('Error', e?.response?.data?.message ?? 'Failed to reject.'),
+  });
+
+  const pending = data ?? [];
+  if (isLoading || pending.length === 0) return null;
+
+  return (
+    <View style={styles.pendingSection}>
+      <View style={styles.pendingHeader}>
+        <Ionicons name="hourglass-outline" size={16} color={colors.warning} />
+        <Text style={styles.pendingHeaderText}>
+          {pending.length} join request{pending.length !== 1 ? 's' : ''} awaiting approval
+        </Text>
+      </View>
+      {pending.map((p) => (
+        <View key={p.id} style={styles.pendingRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.name} numberOfLines={1}>
+              {p.user.firstName} {p.user.lastName}
+            </Text>
+            <Text style={styles.sub} numberOfLines={1}>{p.user.email}</Text>
+            <Text style={styles.pendingFlat}>
+              Wants to join {p.flat?.flatCode ?? 'a flat'} — already occupied
+            </Text>
+          </View>
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.approveBtn]}
+              onPress={() =>
+                Alert.alert(
+                  'Approve Request',
+                  `Give ${p.user.firstName} ${p.user.lastName} resident access to ${p.flat?.flatCode ?? 'this flat'}?`,
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Approve', onPress: () => approve.mutate(p.id) },
+                  ],
+                )
+              }
+              hitSlop={8}
+            >
+              <Ionicons name="checkmark" size={18} color={colors.secondary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.rejectBtn]}
+              onPress={() =>
+                Alert.alert(
+                  'Reject Request',
+                  `Reject ${p.user.firstName} ${p.user.lastName}'s request to join ${p.flat?.flatCode ?? 'this flat'}?`,
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Reject', style: 'destructive', onPress: () => reject.mutate(p.id) },
+                  ],
+                )
+              }
+              hitSlop={8}
+            >
+              <Ionicons name="close" size={18} color={colors.error} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function roleLabel(role: string) {
   return role.replace('SOCIETY_', '').replace(/_/g, ' ');
 }
@@ -239,6 +333,8 @@ export default function ManageResidentsScreen() {
           </TouchableOpacity>
         )}
       </View>
+
+      {canManage && <PendingApprovalsSection />}
 
       <FlatList
         data={filtered}
@@ -366,6 +462,25 @@ const styles = StyleSheet.create({
 
   actions: { flexDirection: 'row', gap: spacing.xs, alignSelf: 'center' },
   actionBtn: { padding: spacing.xs },
+
+  // Pending approvals
+  pendingSection: {
+    backgroundColor: colors.warningLight,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  pendingHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+    paddingHorizontal: spacing.base, paddingTop: spacing.md, paddingBottom: spacing.xs,
+  },
+  pendingHeaderText: { ...typography.labelMedium, color: '#92400E', fontWeight: '700' },
+  pendingRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    paddingHorizontal: spacing.base, paddingVertical: spacing.sm,
+  },
+  pendingFlat: { ...typography.bodySmall, color: '#92400E', marginTop: 2 },
+  approveBtn: { backgroundColor: colors.surface, borderRadius: radius.md },
+  rejectBtn: { backgroundColor: colors.surface, borderRadius: radius.md },
 
   emptyContainer: { flex: 1 },
 
