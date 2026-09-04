@@ -47,7 +47,8 @@
           "color": "#0D2147",
           "sounds": []
         }
-      ]
+      ],
+      "expo-build-properties"
     ],
     "experiments": {
       "typedRoutes": true

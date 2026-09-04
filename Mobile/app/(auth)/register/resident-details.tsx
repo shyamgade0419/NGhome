@@ -4,7 +4,7 @@
  * collects name / email / phone / flat / password, then calls
  * POST /auth/join-society. On success, saves tokens and enters the app.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,9 @@ import {
   Platform,
   Alert,
   TouchableOpacity,
+  Modal,
+  FlatList,
+  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -52,6 +55,115 @@ const schema = z
 
 type FormData = z.infer<typeof schema>;
 
+/**
+ * A real, scrollable, searchable picker — the flat selector used to be a
+ * native Alert.alert() with one button per flat, and Android's AlertDialog
+ * silently caps out at a handful of buttons. A society with more than 2-3
+ * flats (i.e. almost every real one, and definitely any that used the
+ * bulk-import feature meant for 60+ flat buildings) only ever showed the
+ * first few flats and had no way to reach the rest — not a data problem,
+ * the backend already returns every flat; the picker just couldn't show
+ * them.
+ */
+function FlatPickerModal({
+  flats,
+  onSelect,
+  onClose,
+}: {
+  flats: SocietyByCode['flats'];
+  onSelect: (flat: { id: string; flatCode: string }) => void;
+  onClose: () => void;
+}) {
+  const [search, setSearch] = useState('');
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return flats;
+    return flats.filter((f) => f.flatCode.toLowerCase().includes(q));
+  }, [flats, search]);
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <SafeAreaView style={pickerStyles.safe} edges={['top', 'bottom']}>
+        <View style={pickerStyles.header}>
+          <Text style={pickerStyles.title}>Select Your Flat</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={12}>
+            <Ionicons name="close" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={pickerStyles.searchBox}>
+          <Ionicons name="search-outline" size={16} color={colors.textTertiary} />
+          <TextInput
+            style={pickerStyles.searchInput}
+            placeholder={`Search ${flats.length} flats…`}
+            placeholderTextColor={colors.textTertiary}
+            value={search}
+            onChangeText={setSearch}
+            autoCorrect={false}
+            autoCapitalize="none"
+            autoFocus
+          />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch('')} hitSlop={8}>
+              <Ionicons name="close-circle" size={16} color={colors.textTertiary} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <FlatList
+          data={filtered}
+          keyExtractor={(f) => f.id}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={pickerStyles.list}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={pickerStyles.row}
+              activeOpacity={0.7}
+              onPress={() => { onSelect({ id: item.id, flatCode: item.flatCode }); onClose(); }}
+            >
+              <Ionicons name="home-outline" size={18} color={colors.primary} />
+              <Text style={pickerStyles.rowText}>{item.flatCode}</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+            </TouchableOpacity>
+          )}
+          ItemSeparatorComponent={() => <View style={pickerStyles.sep} />}
+          ListEmptyComponent={
+            <View style={pickerStyles.empty}>
+              <Text style={pickerStyles.emptyText}>No flat matches &quot;{search}&quot;</Text>
+            </View>
+          }
+        />
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+const pickerStyles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    padding: spacing.base, borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  title: { ...typography.headingSmall, color: colors.text, fontWeight: '700' },
+  searchBox: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    margin: spacing.base, marginBottom: spacing.sm,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 10,
+  },
+  searchInput: { flex: 1, ...typography.bodyMedium, color: colors.text, padding: 0 },
+  list: { paddingHorizontal: spacing.base, paddingBottom: spacing.xl },
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    paddingVertical: 14,
+  },
+  rowText: { flex: 1, ...typography.bodyMedium, color: colors.text, fontWeight: '600' },
+  sep: { height: 1, backgroundColor: colors.borderLight },
+  empty: { paddingVertical: spacing['3xl'], alignItems: 'center' },
+  emptyText: { ...typography.bodyMedium, color: colors.textTertiary },
+});
+
 export default function ResidentDetailsScreen() {
   const router = useRouter();
   const { refreshUser } = useAuthContext();
@@ -59,6 +171,7 @@ export default function ResidentDetailsScreen() {
   const [society, setSociety] = useState<SocietyByCode | null>(null);
   const [joinCode, setJoinCode] = useState('');
   const [selectedFlat, setSelectedFlat] = useState<{ id: string; flatCode: string } | null>(null);
+  const [showFlatPicker, setShowFlatPicker] = useState(false);
 
   const {
     control,
@@ -80,17 +193,7 @@ export default function ResidentDetailsScreen() {
       Alert.alert('No Flats', 'No flats found for this society. Contact your admin.');
       return;
     }
-    Alert.alert(
-      'Select Your Flat',
-      'Choose the flat you reside in',
-      [
-        ...society.flats.map((f) => ({
-          text: f.flatCode,
-          onPress: () => setSelectedFlat({ id: f.id, flatCode: f.flatCode }),
-        })),
-        { text: 'Cancel', style: 'cancel' as const },
-      ],
-    );
+    setShowFlatPicker(true);
   };
 
   const onSubmit = async (form: FormData) => {
@@ -224,6 +327,14 @@ export default function ResidentDetailsScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {showFlatPicker && society?.flats && (
+        <FlatPickerModal
+          flats={society.flats}
+          onSelect={setSelectedFlat}
+          onClose={() => setShowFlatPicker(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }
