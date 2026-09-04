@@ -8,8 +8,8 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  StatusBar,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useForm, Controller } from 'react-hook-form';
@@ -76,7 +76,14 @@ export default function LoginScreen() {
 
   return (
     <>
-      <StatusBar barStyle="light-content" backgroundColor={BRAND_NAVY} />
+      {/* expo-status-bar, not React Native's own StatusBar — the two
+          manage the native status bar independently, and mixing them
+          (this screen previously used RN's) is a documented source of the
+          icon color getting stuck wrong on later screens once Android's
+          edge-to-edge (forced from targetSdk 35+) makes the status bar an
+          overlay everywhere rather than its own reserved, colorable strip.
+          One control mechanism for the whole app, matching root _layout.tsx. */}
+      <StatusBar style="light" />
       <SafeAreaView style={styles.safe}>
         <KeyboardAvoidingView
           style={styles.flex}
