@@ -70,6 +70,30 @@ function isEmail(value: string): boolean {
   return value.includes('@');
 }
 
+/**
+ * Phone numbers are stored close to exactly as typed at registration —
+ * join-code signup at least constrains the format (digits, optional
+ * leading +), but registerSociety's admin phone has no format validation
+ * at all. Depending on which screen and how someone typed it, the same
+ * person can end up stored as "+919876543210", "9876543210", or
+ * "919876543210". An exact-match login lookup only ever matched the one
+ * literal format actually stored, so phone login worked only by
+ * coincidence. Rather than a single normalized comparison (which Prisma
+ * can't do server-side without a raw query), build the small set of
+ * formats a clean number could plausibly be stored as and match any of
+ * them — no raw SQL, no data migration, works retroactively on whatever
+ * is already in the database as long as it doesn't have punctuation
+ * embedded *inside* the last 10 digits (register-society's unvalidated
+ * field is now constrained the same way join-code always was, so new
+ * signups won't produce that either).
+ */
+function phoneLookupVariants(raw: string): string[] {
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return [raw];
+  const last10 = digits.slice(-10);
+  return [...new Set([raw, digits, last10, `91${last10}`, `+91${last10}`])];
+}
+
 function buildUserDto(user: {
   id: string;
   email: string;
@@ -137,7 +161,7 @@ export class AuthService {
         deletedAt: null,
         ...(isEmail(identifier)
           ? { email: identifier }
-          : { phone: identifier }),
+          : { phone: { in: phoneLookupVariants(identifier) } }),
       },
       include: {
         memberships: {
@@ -728,7 +752,15 @@ export class AuthService {
 
     const email = dto.email.trim().toLowerCase();
 
-    // 3. Guard against duplicate memberships
+    // 3. Guard against a duplicate membership on THIS flat specifically —
+    // not any membership in the society. The schema explicitly supports
+    // one person holding several memberships in the same society
+    // (@@unique is [societyId, userId, flatId], not [societyId, userId]):
+    // a society admin who is also a resident of their own flat, a spouse
+    // and owner both registered on the same flat, and so on. Blocking on
+    // ANY existing membership meant an admin (whose registerSociety()
+    // membership has flatId: null) could never register themselves as a
+    // resident here without doing it under a different email and phone.
     const existingUser = await this.prisma.user.findUnique({
       where: { email },
       include: {
@@ -736,9 +768,9 @@ export class AuthService {
       },
     });
 
-    if (existingUser?.memberships?.length) {
+    if (existingUser?.memberships?.some((m) => m.flatId === dto.flatId)) {
       throw new ConflictException(
-        'An account with this email is already a member of this society. Please log in.',
+        'An account with this email is already registered on this flat. Please log in.',
       );
     }
 

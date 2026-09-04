@@ -1,5 +1,5 @@
 import {
-  IsString, IsEmail, IsNotEmpty, IsOptional, MinLength, MaxLength, ValidateNested,
+  IsString, IsEmail, IsNotEmpty, IsOptional, MinLength, MaxLength, ValidateNested, Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -55,8 +55,12 @@ class AdminInfoDto {
   @IsEmail()
   email: string;
 
+  // Unvalidated before — the account this creates is a login identity
+  // (phone login matches against it), so it needs the same clean,
+  // consistent shape join-code signup already enforces, not "any string".
   @ApiProperty({ example: '+919876543210' })
   @IsString() @IsNotEmpty()
+  @Matches(/^\+?\d{7,15}$/, { message: 'phone must be a valid mobile number (7–15 digits)' })
   phone: string;
 
   @ApiProperty({ minLength: 8 })
