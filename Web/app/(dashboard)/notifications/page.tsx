@@ -23,7 +23,7 @@ function ComposeModal({ onClose }: { onClose: () => void }) {
     mutationFn: () =>
       notificationsApi.send({
         title: form.title.trim(),
-        message: form.message.trim(),
+        body: form.message.trim(),
       }),
     onSuccess: () => {
       toast.success('Notification sent to all members');
@@ -88,7 +88,7 @@ export default function NotificationsPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['notifications-mine'],
-    queryFn: () => notificationsApi.listMine({ limit: 50 }).then((r: any) => r.data ?? r),
+    queryFn: () => notificationsApi.listMine({ limit: 50 }),
   });
 
   const markReadMutation = useMutation({
@@ -97,7 +97,7 @@ export default function NotificationsPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed'),
   });
 
-  const notifications: any[] = Array.isArray(data) ? data : (data?.data ?? []);
+  const notifications = data?.data ?? [];
   const unreadCount = notifications.filter((n) => !n.isRead).length;
 
   return (
@@ -127,7 +127,7 @@ export default function NotificationsPage() {
           />
         ) : (
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-            {notifications.map((n: any, i: number) => (
+            {notifications.map((n, i) => (
               <div
                 key={n.id}
                 className={cn(

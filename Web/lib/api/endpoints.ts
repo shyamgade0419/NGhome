@@ -283,11 +283,57 @@ export const billingReportApi = {
 };
 
 // Notifications
+export interface NotificationRow {
+  id: string;
+  title: string;
+  message: string;
+  isRead: boolean;
+  type: string | null;
+  createdAt: string;
+}
+
+interface NotificationRecordRow {
+  id: string;
+  createdAt: string;
+  status: 'PENDING' | 'SENT' | 'FAILED' | 'READ';
+  readAt: string | null;
+  notification: { id: string; title: string; body: string; type: string } | null;
+}
+
 export const notificationsApi = {
-  listMine: (params?: Record<string, unknown>) => api.get('/notifications/my', { params }),
+  /**
+   * GET /notifications/my's service returns `{ data, total }`, not
+   * `{ data, meta }` — the global TransformInterceptor only unwraps a
+   * service's return value in place when it sees BOTH keys, so this one
+   * falls through to its default and gets wrapped a second time:
+   * `{ success, data: { data: [...], total } }`, one level deeper than
+   * every other list endpoint. Unwrapping once (`res.data.data`) leaves an
+   * object, not the array the page needs — same root cause already found
+   * and fixed on mobile (see Mobile/src/api/endpoints/notifications.api.ts).
+   * Rows also nest title/body/read-state under `.notification`/`.status`
+   * rather than flat `title`/`message`/`isRead` — flatten that here too so
+   * the page can render rows directly.
+   */
+  listMine: async (params?: Record<string, unknown>): Promise<{ data: NotificationRow[] }> => {
+    const res = await api.get<{ data: { data: NotificationRecordRow[]; total: number } }>(
+      '/notifications/my',
+      { params },
+    );
+    const rows = res.data?.data?.data ?? [];
+    return {
+      data: rows.map((row) => ({
+        id: row.id,
+        title: row.notification?.title ?? 'Notification',
+        message: row.notification?.body ?? '',
+        isRead: row.status === 'READ' || row.readAt != null,
+        type: row.notification?.type ?? null,
+        createdAt: row.createdAt,
+      })),
+    };
+  },
   markRead: (id: string) => api.patch(`/notifications/my/${id}/read`, {}),
-  send: (data: { title: string; message: string; type?: string; recipientIds?: string[] }) =>
-    api.post('/notifications', data),
+  send: (data: { title: string; body: string; type?: string }) =>
+    api.post('/notifications', { type: 'GENERAL', ...data }),
 };
 
 // Users (society-scoped)
