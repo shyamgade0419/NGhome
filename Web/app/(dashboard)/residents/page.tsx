@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Users, Phone, MessageSquare, Pencil, AlertCircle, X } from 'lucide-react';
+import { Users, Phone, MessageSquare, Pencil, AlertCircle, X, Hourglass, Check } from 'lucide-react';
 import { societyApi } from '@/lib/api/endpoints';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
@@ -146,6 +146,93 @@ function EditResidentModal({
   );
 }
 
+/* ── Pending join approvals ──────────────────────────────────── */
+// A flat already had an active resident when this person joined via invite
+// code, so AuthService.joinSociety() parked them PENDING instead of
+// granting instant access. Approve (spouse/tenant/co-owner — legitimate)
+// or reject (stranger who guessed/shared the join code).
+function PendingApprovals() {
+  const qc = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['pending-approvals'],
+    queryFn: () => societyApi.pendingApprovals().then((r) => r.data),
+  });
+
+  const approve = useMutation({
+    mutationFn: (membershipId: string) => societyApi.approvePending(membershipId),
+    onSuccess: () => {
+      toast.success('Approved — the resident can now sign in');
+      qc.invalidateQueries({ queryKey: ['pending-approvals'] });
+      qc.invalidateQueries({ queryKey: ['residents'] });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to approve'),
+  });
+
+  const reject = useMutation({
+    mutationFn: (membershipId: string) => societyApi.rejectPending(membershipId),
+    onSuccess: () => {
+      toast.success('Join request rejected');
+      qc.invalidateQueries({ queryKey: ['pending-approvals'] });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to reject'),
+  });
+
+  const pending = data ?? [];
+  if (isLoading || pending.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+        <Hourglass size={16} />
+        {pending.length} join request{pending.length !== 1 ? 's' : ''} awaiting approval
+      </div>
+      <div className="mt-2 divide-y divide-amber-100">
+        {pending.map((p) => (
+          <div key={p.id} className="flex items-center justify-between gap-3 py-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-slate-900">
+                {p.user.firstName} {p.user.lastName} <span className="text-slate-400 font-normal">· {p.user.email}</span>
+              </p>
+              <p className="text-xs text-amber-700">
+                Wants to join {p.flat?.flatCode ?? 'a flat'} — already has an active resident
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-green-700 hover:bg-green-50"
+                loading={approve.isPending && approve.variables === p.id}
+                onClick={() => {
+                  if (confirm(`Give ${p.user.firstName} ${p.user.lastName} resident access to ${p.flat?.flatCode ?? 'this flat'}?`)) {
+                    approve.mutate(p.id);
+                  }
+                }}
+              >
+                <Check size={13} className="mr-1" /> Approve
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-red-600 hover:bg-red-50"
+                loading={reject.isPending && reject.variables === p.id}
+                onClick={() => {
+                  if (confirm(`Reject ${p.user.firstName} ${p.user.lastName}'s request to join ${p.flat?.flatCode ?? 'this flat'}?`)) {
+                    reject.mutate(p.id);
+                  }
+                }}
+              >
+                <X size={13} className="mr-1" /> Reject
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ── Main page ───────────────────────────────────────────────── */
 export default function ResidentsPage() {
   const qc = useQueryClient();
@@ -207,6 +294,8 @@ export default function ResidentsPage() {
         subtitle={residents.length > 0 ? `${residents.length} member${residents.length !== 1 ? 's' : ''}` : undefined}
       />
       <PageContainer className="space-y-4">
+        <PendingApprovals />
+
         {/* Missing phone notice */}
         {missingPhone > 0 && (
           <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">

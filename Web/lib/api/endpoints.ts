@@ -241,6 +241,18 @@ export const societyApi = {
     api.get('/societies/my/join-code'),
   regenerateJoinCode: (): Promise<{ data: { joinCode: string; generatedAt: string } }> =>
     api.patch('/societies/my/regenerate-join-code'),
+
+  // Pending join approvals — a flat already had an active resident when
+  // this person joined via invite code (AuthService.joinSociety), so the
+  // membership is parked PENDING until an admin approves or rejects it.
+  pendingApprovals: (): Promise<{ data: Array<{
+    id: string;
+    joinedAt: string;
+    user: { id: string; firstName: string; lastName: string; email: string; phone: string | null };
+    flat: { id: string; flatCode: string; unitNumber: string; building: { name: string } | null } | null;
+  }> }> => api.get('/users/society/pending'),
+  approvePending: (membershipId: string) => api.post(`/users/society/pending/${membershipId}/approve`),
+  rejectPending: (membershipId: string) => api.post(`/users/society/pending/${membershipId}/reject`),
 };
 
 // Water billing

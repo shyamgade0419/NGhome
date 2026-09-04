@@ -75,10 +75,23 @@ export default function JoinPage() {
           password,
         }),
       });
-      const data = await res.json();
+      const envelope = await res.json();
       if (!res.ok) throw new Error(
-        Array.isArray(data?.message) ? data.message.join(', ') : (data?.message ?? 'Registration failed')
+        Array.isArray(envelope?.message) ? envelope.message.join(', ') : (envelope?.message ?? 'Registration failed')
       );
+
+      // Someone else is already an active resident on this flat — the
+      // membership was created PENDING, not ACTIVE. No session was issued;
+      // send them to sign in later once an admin approves.
+      if (envelope?.data?.requiresApproval) {
+        toast.success(
+          'Request submitted! This flat already has a resident, so the society admin needs to approve your request before you can sign in.',
+          { duration: 6000 },
+        );
+        router.replace('/login');
+        return;
+      }
+
       toast.success('Welcome to ' + society?.name + '! Please sign in.');
       router.replace('/login');
     } catch (err: any) {
