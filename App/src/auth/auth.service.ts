@@ -56,6 +56,14 @@ export interface AuthResponse {
   refreshToken: string;
   user: UserDto;
   memberships: MembershipDto[];
+  /** The membership this session is actually scoped to — set whenever a
+   *  scoped session is issued (direct single-membership login, login with
+   *  a pre-selected society, or selectSociety()). Lets the client know
+   *  exactly which membership is active without re-matching by societyId,
+   *  which breaks the moment one person holds two memberships in the same
+   *  society (see SelectSocietyDto). Absent on the two-step
+   *  requiresSocietySelection response, where nothing is active yet. */
+  activeMembership?: MembershipDto;
   requiresSocietySelection?: boolean;
   /** True when the just-created membership is PENDING and needs admin
    *  approval before it grants access — see joinSociety(). The tokens
@@ -261,8 +269,11 @@ export class AuthService {
     });
     if (!user || !user.isActive) throw new UnauthorizedException('User not found');
 
+    // Looked up by the membership's own id, not societyId — a user can
+    // hold more than one active membership in the same society (see
+    // SelectSocietyDto), and societyId alone can't tell them apart.
     const membership = await this.prisma.societyMembership.findFirst({
-      where: { societyId: dto.societyId, userId, status: 'ACTIVE' },
+      where: { id: dto.membershipId, userId, status: 'ACTIVE' },
       include: {
         society: { select: { id: true, name: true, logoUrl: true, isActive: true } },
         flat: {
@@ -647,6 +658,7 @@ export class AuthService {
       ...tokens,
       user: userDto,
       memberships: allMemberships.map(buildMembershipDto),
+      activeMembership: buildMembershipDto(membership),
     };
   }
 
