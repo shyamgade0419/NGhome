@@ -71,6 +71,39 @@ export class UsersController {
     await this.usersService.removeFromSociety(societyId, userId);
   }
 
+  @Get('society/pending')
+  @UseGuards(TenantGuard, RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @ApiOperation({ summary: 'List join requests awaiting approval (flat already had an active resident)' })
+  async listPending(@SocietyId() societyId: string) {
+    return this.usersService.listPendingMemberships(societyId);
+  }
+
+  @Post('society/pending/:membershipId/approve')
+  @UseGuards(TenantGuard, RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @ApiOperation({ summary: 'Approve a pending join request, granting active resident access' })
+  async approvePending(
+    @SocietyId() societyId: string,
+    @Param('membershipId') membershipId: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.usersService.approveMembership(societyId, membershipId, actor.id);
+  }
+
+  @Post('society/pending/:membershipId/reject')
+  @UseGuards(TenantGuard, RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Reject a pending join request' })
+  async rejectPending(
+    @SocietyId() societyId: string,
+    @Param('membershipId') membershipId: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    await this.usersService.rejectMembership(societyId, membershipId, actor.id);
+  }
+
   @Patch(':id')
   @UseGuards(TenantGuard, RolesGuard)
   @Roles(SystemRole.SOCIETY_ADMIN)

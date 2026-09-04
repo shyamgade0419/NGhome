@@ -57,6 +57,11 @@ export interface AuthResponse {
   user: UserDto;
   memberships: MembershipDto[];
   requiresSocietySelection?: boolean;
+  /** True when the just-created membership is PENDING and needs admin
+   *  approval before it grants access — see joinSociety(). The tokens
+   *  returned alongside this carry no society context, so they let the
+   *  caller log back in later but not into the app right now. */
+  requiresApproval?: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -136,7 +141,7 @@ export class AuthService {
       },
       include: {
         memberships: {
-          where: { status: 'ACTIVE' },
+          where: { status: { in: ['ACTIVE', 'PENDING'] } },
           include: {
             society: { select: { id: true, name: true, logoUrl: true, isActive: true } },
             flat: {
@@ -178,9 +183,17 @@ export class AuthService {
       return { ...tokens, user: userDto, memberships: [] };
     }
 
-    const activeMemberships = user.memberships.filter((m) => m.society.isActive);
+    const activeMemberships = user.memberships.filter(
+      (m) => m.society.isActive && m.status === 'ACTIVE',
+    );
 
     if (activeMemberships.length === 0) {
+      const hasPending = user.memberships.some((m) => m.status === 'PENDING' && m.society.isActive);
+      if (hasPending) {
+        throw new ForbiddenException(
+          'Your request to join is still awaiting admin approval. Please check back later.',
+        );
+      }
       throw new ForbiddenException('No active society membership found');
     }
 
@@ -761,15 +774,24 @@ export class AuthService {
         where: { flatId: flat.id, status: 'ACTIVE' },
       });
 
-      // Create RESIDENT membership (ACTIVE — admin can remove if not legitimate)
+      // The join code is the ONLY gate on this endpoint — anyone who has it
+      // can pick any flat, including one that already belongs to a
+      // different, unrelated resident. A flat's first claimant is trusted
+      // instantly (there's nothing to arbitrate yet); anyone joining a flat
+      // that already has an active resident goes to PENDING instead, so an
+      // admin reviews it (approve — spouse/tenant/co-owner — or reject)
+      // before that person can see the flat's bills or statements.
+      const isFirstClaimant = existingActiveOnFlat === 0;
+
+      // Create RESIDENT membership
       const membership = await tx.societyMembership.create({
         data: {
           societyId: society.id,
           userId: user.id,
           flatId: flat.id,
           role: SystemRole.RESIDENT,
-          status: 'ACTIVE',
-          isPrimary: existingActiveOnFlat === 0,
+          status: isFirstClaimant ? 'ACTIVE' : 'PENDING',
+          isPrimary: isFirstClaimant,
         },
       });
 
@@ -785,13 +807,14 @@ export class AuthService {
             email,
             flatCode: flat.flatCode,
             method: 'join_code',
+            status: membership.status,
           } as Record<string, string>,
           ipAddress,
           userAgent,
         },
       });
 
-      return { user, membership };
+      return { user, membership, isFirstClaimant };
     });
 
     const userDto = buildUserDto(result.user);
@@ -804,21 +827,37 @@ export class AuthService {
       flatId: flat.id,
       flatNumber: flat.unitNumber,
       buildingName: flat.building?.name ?? null,
-      status: 'ACTIVE',
+      status: result.membership.status,
     };
 
-    const payload: JwtPayload = {
-      sub: result.user.id,
-      email: result.user.email,
-      isPlatformAdmin: false,
-      societyId: society.id,
-      role: SystemRole.RESIDENT,
-      membershipId: result.membership.id,
-      flatId: flat.id,
-    };
+    // A PENDING join gets tokens with no society context at all — same
+    // shape as the "multiple societies, none selected yet" case below —
+    // so the caller can still be logged in as a *user* (e.g. to check
+    // status later) but TenantGuard rejects every society-scoped request
+    // until an admin approves and the membership actually becomes ACTIVE.
+    const payload: JwtPayload = result.isFirstClaimant
+      ? {
+          sub: result.user.id,
+          email: result.user.email,
+          isPlatformAdmin: false,
+          societyId: society.id,
+          role: SystemRole.RESIDENT,
+          membershipId: result.membership.id,
+          flatId: flat.id,
+        }
+      : {
+          sub: result.user.id,
+          email: result.user.email,
+          isPlatformAdmin: false,
+        };
 
     const tokens = await this.generateTokens(payload, result.user.id, ipAddress, userAgent);
-    return { ...tokens, user: userDto, memberships: [membershipDto] };
+    return {
+      ...tokens,
+      user: userDto,
+      memberships: [membershipDto],
+      requiresApproval: !result.isFirstClaimant,
+    };
   }
 
   // ─── Join code helpers ──────────────────────────────────────────────────────

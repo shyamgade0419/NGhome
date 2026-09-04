@@ -8,7 +8,7 @@ import * as argon2 from 'argon2';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { SystemRole } from '@prisma/client';
+import { SystemRole, AuditAction } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
 
@@ -191,6 +191,73 @@ export class UsersService {
     await this.prisma.societyMembership.updateMany({
       where: { societyId, userId },
       data: { status: 'INACTIVE', leftAt: new Date() },
+    });
+  }
+
+  // ─── Pending join approvals ──────────────────────────────────────────────
+  // A resident who registers via join code onto a flat that already has an
+  // active resident lands here as PENDING instead of getting instant access
+  // (see AuthService.joinSociety). Nothing else creates PENDING memberships.
+
+  async listPendingMemberships(societyId: string) {
+    return this.prisma.societyMembership.findMany({
+      where: { societyId, status: 'PENDING' },
+      include: {
+        user: { select: USER_SELECT },
+        flat: { select: { id: true, flatCode: true, unitNumber: true, building: { select: { name: true } } } },
+      },
+      orderBy: { joinedAt: 'asc' },
+    });
+  }
+
+  async approveMembership(societyId: string, membershipId: string, actorId: string) {
+    const membership = await this.prisma.societyMembership.findFirst({
+      where: { id: membershipId, societyId, status: 'PENDING' },
+    });
+    if (!membership) throw new NotFoundException('Pending membership not found');
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.societyMembership.update({
+        where: { id: membershipId },
+        data: { status: 'ACTIVE' },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId,
+          societyId,
+          action: AuditAction.USER_MODIFIED,
+          entityType: 'SocietyMembership',
+          entityId: membershipId,
+          newValues: { status: 'ACTIVE', method: 'admin_approval' } as Record<string, string>,
+        },
+      });
+      return result;
+    });
+
+    return updated;
+  }
+
+  async rejectMembership(societyId: string, membershipId: string, actorId: string) {
+    const membership = await this.prisma.societyMembership.findFirst({
+      where: { id: membershipId, societyId, status: 'PENDING' },
+    });
+    if (!membership) throw new NotFoundException('Pending membership not found');
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.societyMembership.update({
+        where: { id: membershipId },
+        data: { status: 'INACTIVE', leftAt: new Date() },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId,
+          societyId,
+          action: AuditAction.USER_MODIFIED,
+          entityType: 'SocietyMembership',
+          entityId: membershipId,
+          newValues: { status: 'INACTIVE', method: 'admin_rejection' } as Record<string, string>,
+        },
+      });
     });
   }
 }

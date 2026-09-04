@@ -181,3 +181,61 @@ describe('UsersService — addToSociety flat validation (DEFECT-1)', () => {
     });
   });
 });
+
+/**
+ * Occupied-flat join approval gate: joinSociety() (auth.service.ts) creates a
+ * PENDING membership when someone joins a flat that already has an active
+ * resident. These methods are the admin's only way to review it.
+ */
+describe('UsersService — pending join approvals', () => {
+  const MEMBERSHIP_ID = 'membership-pending-1';
+  const ACTOR_ID = 'admin-1';
+
+  function makePendingPrisma(pendingMembership: unknown = { id: MEMBERSHIP_ID, societyId: SOCIETY_ID, status: 'PENDING' }) {
+    const membershipUpdate = jest.fn().mockResolvedValue({ id: MEMBERSHIP_ID, status: 'ACTIVE' });
+    const auditLogCreate = jest.fn().mockResolvedValue({});
+    const tx = { societyMembership: { update: membershipUpdate }, auditLog: { create: auditLogCreate } };
+    return {
+      societyMembership: {
+        findFirst: jest.fn().mockResolvedValue(pendingMembership),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      $transaction: jest.fn(async (cb: (tx: unknown) => unknown) => cb(tx)),
+      __tx: tx,
+    } as unknown as PrismaService & { __tx: typeof tx };
+  }
+
+  it('listPendingMemberships scopes strictly to PENDING rows in this society', async () => {
+    const prisma = makePendingPrisma();
+    const service = new UsersService(prisma);
+    await service.listPendingMemberships(SOCIETY_ID);
+    expect((prisma.societyMembership as any).findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { societyId: SOCIETY_ID, status: 'PENDING' } }),
+    );
+  });
+
+  it('approveMembership flips status to ACTIVE and logs an audit entry', async () => {
+    const prisma = makePendingPrisma();
+    const service = new UsersService(prisma);
+    await service.approveMembership(SOCIETY_ID, MEMBERSHIP_ID, ACTOR_ID);
+    expect(prisma.__tx.societyMembership.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: MEMBERSHIP_ID }, data: { status: 'ACTIVE' } }),
+    );
+    expect(prisma.__tx.auditLog.create).toHaveBeenCalled();
+  });
+
+  it('approveMembership throws NotFoundException for a membership outside this society or not PENDING', async () => {
+    const prisma = makePendingPrisma(null);
+    const service = new UsersService(prisma);
+    await expect(service.approveMembership(SOCIETY_ID, MEMBERSHIP_ID, ACTOR_ID)).rejects.toThrow(NotFoundException);
+  });
+
+  it('rejectMembership sets status INACTIVE rather than deleting the row', async () => {
+    const prisma = makePendingPrisma();
+    const service = new UsersService(prisma);
+    await service.rejectMembership(SOCIETY_ID, MEMBERSHIP_ID, ACTOR_ID);
+    expect(prisma.__tx.societyMembership.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: MEMBERSHIP_ID }, data: expect.objectContaining({ status: 'INACTIVE' }) }),
+    );
+  });
+});
