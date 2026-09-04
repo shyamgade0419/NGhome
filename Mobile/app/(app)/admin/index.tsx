@@ -88,9 +88,10 @@ export default function AdminDashboard() {
           <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />
         }
       >
-        {/* Current period banner */}
+        {/* Current period banner — tinted rather than another plain white
+            card so it reads as the "headline" card of the dashboard. */}
         {currentPeriod && (
-          <Card style={styles.periodBanner} padding="md">
+          <Card style={[styles.periodBanner, { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight }]} padding="md">
             <View style={styles.periodRow}>
               <View>
                 <Text style={styles.periodLabel}>Current Billing Period</Text>

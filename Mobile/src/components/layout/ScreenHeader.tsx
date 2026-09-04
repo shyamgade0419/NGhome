@@ -34,7 +34,9 @@ export function ScreenHeader({
       <View style={styles.left}>
         {showBack && (
           <TouchableOpacity onPress={handleBack} style={styles.backButton} hitSlop={8}>
-            <Ionicons name="chevron-back" size={22} color={colors.text} />
+            <View style={styles.backCircle}>
+              <Ionicons name="chevron-back" size={18} color={colors.primary} />
+            </View>
           </TouchableOpacity>
         )}
       </View>
@@ -70,6 +72,14 @@ const styles = StyleSheet.create({
   left: {
     width: 40,
     alignItems: 'flex-start',
+  },
+  backCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   center: {
     flex: 1,

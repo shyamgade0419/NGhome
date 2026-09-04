@@ -32,7 +32,11 @@ export const colors = {
   info: '#3B82F6',
   infoLight: '#DBEAFE',
 
-  background: '#F8FAFC',
+  // A hair cooler/darker than the old #F8FAFC, which sat close enough to
+  // `surface` white that most screens read as flat white-on-white with
+  // color only in the one navy hero card. This keeps things just as
+  // light and clean but gives white cards a visible canvas to sit on.
+  background: '#EEF1F8',
   surface: '#FFFFFF',
   surfaceSecondary: '#F1F5F9',
 

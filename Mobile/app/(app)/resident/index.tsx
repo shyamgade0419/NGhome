@@ -149,22 +149,33 @@ export default function ResidentDashboard() {
           )}
         </View>
 
-        {/* Quick stats */}
+        {/* Quick stats — each box tinted to match its own number (a hint of
+            the color it's about to show you), instead of three identical
+            white boxes that only differ once you read the digits. */}
         {myBill && (
           <View style={styles.statsRow}>
-            <Card style={styles.statBox} padding="md">
+            <Card style={[styles.statBox, { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight }]} padding="md">
               <Text style={styles.statLabel}>Total Bill</Text>
               <Text style={[styles.statValue, { color: colors.primary }]}>
                 {inr(myBill.totalAmount)}
               </Text>
             </Card>
-            <Card style={styles.statBox} padding="md">
+            <Card style={[styles.statBox, { backgroundColor: colors.secondaryLight, borderColor: colors.secondaryLight }]} padding="md">
               <Text style={styles.statLabel}>Paid</Text>
               <Text style={[styles.statValue, { color: colors.secondary }]}>
                 {inr(myBill.paidAmount)}
               </Text>
             </Card>
-            <Card style={styles.statBox} padding="md">
+            <Card
+              style={[
+                styles.statBox,
+                {
+                  backgroundColor: outstanding > 0 ? colors.warningLight : colors.secondaryLight,
+                  borderColor: outstanding > 0 ? colors.warningLight : colors.secondaryLight,
+                },
+              ]}
+              padding="md"
+            >
               <Text style={styles.statLabel}>Due</Text>
               <Text style={[styles.statValue, { color: outstanding > 0 ? colors.warning : colors.secondary }]}>
                 ₹{outstanding.toLocaleString('en-IN')}
@@ -175,7 +186,10 @@ export default function ResidentDashboard() {
 
         {/* Quick links — Maintenance Sheet, Documents and Finances existed
             only inside Profile's menu before, which several residents never
-            found. Surfacing them here directly. */}
+            found. Surfacing them here directly. Each tile gets its own
+            tinted icon chip (instead of the same navy icon on a plain white
+            card four times over) so the row reads as distinct destinations,
+            not four copies of one tile. */}
         <SectionHeader title="Quick Links" />
         <View style={styles.quickLinksRow}>
           <TouchableOpacity
@@ -183,7 +197,9 @@ export default function ResidentDashboard() {
             activeOpacity={0.8}
             onPress={() => router.push('/(app)/maintenance-sheet' as any)}
           >
-            <Ionicons name="grid-outline" size={20} color={colors.primary} />
+            <View style={[styles.quickLinkIcon, { backgroundColor: colors.primaryLight }]}>
+              <Ionicons name="grid-outline" size={20} color={colors.primary} />
+            </View>
             {/* "Maintenance" is one 11-char word with no space to wrap at —
                 at 4-across it doesn't fit one line and was breaking
                 mid-word onto a 3rd line. "Maint." does, cleanly. */}
@@ -194,7 +210,9 @@ export default function ResidentDashboard() {
             activeOpacity={0.8}
             onPress={() => router.push('/(app)/documents' as any)}
           >
-            <Ionicons name="folder-open-outline" size={20} color={colors.primary} />
+            <View style={[styles.quickLinkIcon, { backgroundColor: colors.infoLight }]}>
+              <Ionicons name="folder-open-outline" size={20} color={colors.info} />
+            </View>
             {/* "Documents" is one 9-char word with no space to wrap at —
                 same risk class as "Maintenance" above, just less obviously
                 so. "Docs" fits with room to spare at 4-across. */}
@@ -205,7 +223,9 @@ export default function ResidentDashboard() {
             activeOpacity={0.8}
             onPress={() => router.push('/(app)/resident/finances' as any)}
           >
-            <Ionicons name="pie-chart-outline" size={20} color={colors.primary} />
+            <View style={[styles.quickLinkIcon, { backgroundColor: colors.secondaryLight }]}>
+              <Ionicons name="pie-chart-outline" size={20} color={colors.secondary} />
+            </View>
             <Text style={styles.quickLinkText} numberOfLines={2}>Society{'\n'}Finances</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -213,7 +233,9 @@ export default function ResidentDashboard() {
             activeOpacity={0.8}
             onPress={() => router.push('/(app)/resident/events' as any)}
           >
-            <Ionicons name="sparkles-outline" size={20} color={colors.primary} />
+            <View style={[styles.quickLinkIcon, { backgroundColor: '#EDE9FE' }]}>
+              <Ionicons name="sparkles-outline" size={20} color="#7C3AED" />
+            </View>
             <Text style={styles.quickLinkText} numberOfLines={2}>Events</Text>
           </TouchableOpacity>
         </View>
@@ -230,11 +252,12 @@ export default function ResidentDashboard() {
           </View>
         ) : (
           (announcements?.data ?? []).map((item: Announcement) => (
-            <TouchableOpacity key={item.id} style={styles.announcementCard} activeOpacity={0.8}
-              onPress={() => router.push('/(app)/resident/announcements')}>
-              <View style={styles.announcementLeft}>
-                <View style={[styles.priorityDot, getPriorityStyle(item.priority)]} />
-              </View>
+            <TouchableOpacity
+              key={item.id}
+              style={[styles.announcementCard, { borderLeftColor: getPriorityColor(item.priority) }]}
+              activeOpacity={0.8}
+              onPress={() => router.push('/(app)/resident/announcements')}
+            >
               <View style={styles.announcementBody}>
                 <Text style={styles.announcementTitle} numberOfLines={1}>{item.title}</Text>
                 <Text style={styles.announcementContent} numberOfLines={2}>{item.content}</Text>
@@ -252,12 +275,12 @@ export default function ResidentDashboard() {
   );
 }
 
-function getPriorityStyle(priority: string) {
+function getPriorityColor(priority: string): string {
   switch (priority) {
-    case 'URGENT': return { backgroundColor: colors.error };
-    case 'HIGH': return { backgroundColor: colors.warning };
-    case 'NORMAL': return { backgroundColor: colors.info };
-    default: return { backgroundColor: colors.textTertiary };
+    case 'URGENT': return colors.error;
+    case 'HIGH': return colors.warning;
+    case 'NORMAL': return colors.info;
+    default: return colors.textTertiary;
   }
 }
 
@@ -332,6 +355,10 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border,
     paddingVertical: spacing.md, paddingHorizontal: spacing.xs,
   },
+  quickLinkIcon: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+  },
   quickLinkText: { ...typography.labelSmall, color: colors.text, textAlign: 'center', lineHeight: 14 },
 
   noAnnouncements: { paddingHorizontal: spacing.base, paddingVertical: spacing.xl, alignItems: 'center' },
@@ -346,10 +373,9 @@ const styles = StyleSheet.create({
     padding: spacing.base,
     borderWidth: 1,
     borderColor: colors.border,
+    borderLeftWidth: 4,
     gap: spacing.md,
   },
-  announcementLeft: { paddingTop: 6 },
-  priorityDot: { width: 8, height: 8, borderRadius: 4 },
   announcementBody: { flex: 1, gap: 3 },
   announcementTitle: { ...typography.labelLarge, color: colors.text },
   announcementContent: { ...typography.bodySmall, color: colors.textSecondary, lineHeight: 18 },
