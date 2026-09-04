@@ -25,10 +25,10 @@ export async function POST(req: NextRequest) {
   }
 
   // Backend wraps all responses: { success: true, data: T }
-  const { accessToken, refreshToken, user, requiresSocietySelection, memberships } = envelope.data;
+  const { accessToken, refreshToken, user, requiresSocietySelection, memberships, activeMembership } = envelope.data;
 
   // Multi-society: store temporary tokens and return the membership list.
-  // The client will POST to /api/auth/select-society with the chosen societyId.
+  // The client will POST to /api/auth/select-society with the chosen membershipId.
   if (requiresSocietySelection) {
     const response = NextResponse.json(
       { requiresSocietySelection: true, user, memberships },
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Single society — set full session cookies immediately.
-  const response = NextResponse.json({ user, memberships }, { status: 200 });
+  const response = NextResponse.json({ user, memberships, activeMembership }, { status: 200 });
   response.cookies.set('ng_access', accessToken, { ...COOKIE_OPTS, maxAge: 60 * 15 });
   response.cookies.set('ng_refresh', refreshToken, { ...COOKIE_OPTS, maxAge: 60 * 60 * 24 * 7 });
   response.cookies.set('ng_session', '1', { ...COOKIE_OPTS, maxAge: 60 * 60 * 24 * 7 });

@@ -10,7 +10,7 @@ interface AuthState {
   activeMembership: SocietyMembership | null;
   isLoading: boolean;
   login: (identifier: string, password: string) => Promise<{ requiresSocietySelection?: boolean; isPlatformAdmin?: boolean }>;
-  selectSociety: (societyId: string) => Promise<void>;
+  selectSociety: (membershipId: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -48,13 +48,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setUser(result.user);
     setMemberships(result.memberships ?? []);
+    // Nothing else refreshes this after login (no dashboard layout calls
+    // refreshUser() on mount), so without this, activeMembership stayed
+    // null — and stale/null — until the user happened to hit a page that
+    // does call refreshUser() or reloaded the tab. Anything gating on
+    // activeMembership (e.g. Residents' "can send notifications" check)
+    // would silently misbehave for that whole window.
+    setActiveMembership(result.activeMembership ?? result.memberships?.[0] ?? null);
     return { isPlatformAdmin: result.user.isPlatformAdmin };
   };
 
-  const selectSociety = async (societyId: string) => {
-    const result = await authApi.selectSociety(societyId);
+  const selectSociety = async (membershipId: string) => {
+    const result = await authApi.selectSociety(membershipId);
     setUser(result.user);
     setMemberships(result.memberships ?? []);
+    // activeMembership from the response is the source of truth for which
+    // membership is now active — matching by societyId here would silently
+    // pick the wrong one whenever the person holds two memberships in the
+    // same society.
+    setActiveMembership(
+      result.activeMembership ?? result.memberships?.find((m) => m.id === membershipId) ?? null,
+    );
   };
 
   const logout = async () => {

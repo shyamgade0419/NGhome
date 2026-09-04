@@ -5,6 +5,7 @@ import type { User, SocietyMembership } from '@/lib/types';
 interface LoginResult {
   user: User;
   memberships: SocietyMembership[];
+  activeMembership?: SocietyMembership;
   requiresSocietySelection?: boolean;
 }
 
@@ -20,8 +21,14 @@ export const authApi = {
     return res.data;
   },
 
-  selectSociety: async (societyId: string): Promise<{ user: User; memberships: SocietyMembership[] }> => {
-    const res = await axios.post('/api/auth/select-society', { societyId });
+  // Keyed by the specific membership id, not societyId — a person can hold
+  // more than one active membership in the same society (e.g. a society
+  // admin who is also a resident of their own flat), and societyId alone
+  // can't tell those two apart.
+  selectSociety: async (
+    membershipId: string,
+  ): Promise<{ user: User; memberships: SocietyMembership[]; activeMembership?: SocietyMembership }> => {
+    const res = await axios.post('/api/auth/select-society', { membershipId });
     return res.data;
   },
 

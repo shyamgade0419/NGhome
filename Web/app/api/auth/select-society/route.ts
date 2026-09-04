@@ -32,8 +32,8 @@ export async function POST(req: NextRequest) {
   if (!res.ok) return NextResponse.json(envelope, { status: res.status });
 
   // Backend wraps all responses: { success: true, data: T }
-  const { accessToken: newAccess, refreshToken: newRefresh, user, memberships } = envelope.data;
-  const response = NextResponse.json({ user, memberships }, { status: 200 });
+  const { accessToken: newAccess, refreshToken: newRefresh, user, memberships, activeMembership } = envelope.data;
+  const response = NextResponse.json({ user, memberships, activeMembership }, { status: 200 });
   response.cookies.set('ng_access', newAccess, { ...COOKIE_OPTS, maxAge: 60 * 15 });
   response.cookies.set('ng_refresh', newRefresh, { ...COOKIE_OPTS, maxAge: 60 * 60 * 24 * 7 });
   response.cookies.set('ng_session', '1', { ...COOKIE_OPTS, maxAge: 60 * 60 * 24 * 7 });

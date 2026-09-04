@@ -17,10 +17,10 @@ export default function SelectSocietyPage() {
     }
   }, [isLoading, memberships.length, router]);
 
-  const handleSelect = async (societyId: string) => {
-    setSelecting(societyId);
+  const handleSelect = async (membershipId: string) => {
+    setSelecting(membershipId);
     try {
-      await selectSociety(societyId);
+      await selectSociety(membershipId);
       router.replace('/');
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? 'Failed to select society';
@@ -60,7 +60,7 @@ export default function SelectSocietyPage() {
           {memberships.map((m) => (
             <button
               key={m.id}
-              onClick={() => handleSelect(m.societyId)}
+              onClick={() => handleSelect(m.id)}
               disabled={!!selecting}
               className="w-full rounded-xl border border-slate-200 bg-white p-4 text-left hover:border-primary-400 hover:shadow-sm transition-all disabled:opacity-60"
             >
@@ -73,7 +73,7 @@ export default function SelectSocietyPage() {
                     {m.buildingName ? ` · ${m.buildingName}` : ''}
                   </p>
                 </div>
-                {selecting === m.societyId ? (
+                {selecting === m.id ? (
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-600 border-t-transparent" />
                 ) : (
                   <div className="h-2 w-2 rounded-full bg-green-400" />
