@@ -1,20 +1,26 @@
 import {
   Injectable, NotFoundException, BadRequestException, ForbiddenException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { SftpStorageService } from '../documents/sftp-storage.service';
 import { SubmitPaymentDto } from './dto/submit-payment.dto';
-import { Prisma, PaymentStatus } from '@prisma/client';
+import { DocumentAccessLevel, Prisma, PaymentStatus } from '@prisma/client';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
 
 @Injectable()
 export class PaymentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: SftpStorageService,
+  ) {}
 
   async submit(
     societyId: string,
     userId: string,
     flatId: string,
     dto: SubmitPaymentDto,
+    proofFile?: { originalname: string; size: number; mimetype: string; buffer: Buffer },
   ) {
     const membership = await this.prisma.societyMembership.findFirst({
       where: { societyId, userId, flatId, status: 'ACTIVE' },
@@ -59,6 +65,37 @@ export class PaymentsService {
         ...(autoApprove ? { reviewedAt: new Date(), approvedAt: new Date() } : {}),
       },
     });
+
+    // Attach the proof screenshot/receipt, if one was uploaded — a Document
+    // row (reusing the same SFTP-backed storage flat documents use), linked
+    // via the PaymentDocuments relation. accessLevel: ADMIN_ONLY keeps it
+    // out of the resident's own generic Documents list (this isn't a
+    // society document, it's evidence for one specific payment); visibility
+    // for actually viewing it back is enforced by getProofFile() below —
+    // the submitting resident + admin/accountant, checked directly against
+    // this payment, not by the generic Document accessLevel rules (which
+    // would otherwise hide an ADMIN_ONLY doc from the very resident who
+    // uploaded it).
+    if (proofFile) {
+      const remotePath = `${this.storage.getBasePath()}/${societyId}/payment-proofs/${randomUUID()}-${proofFile.originalname}`;
+      await this.storage.upload(proofFile.buffer, remotePath);
+      await this.prisma.document.create({
+        data: {
+          societyId,
+          uploadedById: userId,
+          title: `Payment proof — ${payment.id}`,
+          fileName: proofFile.originalname,
+          fileKey: remotePath,
+          fileSize: proofFile.size,
+          mimeType: proofFile.mimetype,
+          storageProvider: 'sftp',
+          accessLevel: DocumentAccessLevel.ADMIN_ONLY,
+          linkedEntityType: 'PaymentSubmission',
+          linkedEntityId: payment.id,
+          payments: { connect: { id: payment.id } },
+        },
+      });
+    }
 
     // Auto-confirm: mark the bill as paid without requiring admin intervention
     if (autoApprove && bill) {
@@ -228,6 +265,7 @@ export class PaymentsService {
           flat: { select: { id: true, flatCode: true } },
           user: { select: { id: true, firstName: true, lastName: true } },
           maintenanceBill: { select: { id: true, invoiceNumber: true } },
+          documents: { select: { id: true, fileName: true, mimeType: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),
@@ -243,6 +281,7 @@ export class PaymentsService {
       include: {
         flat: { select: { id: true, flatCode: true } },
         user: { select: { id: true, firstName: true, lastName: true } },
+        documents: { select: { id: true, fileName: true, mimeType: true } },
       },
     });
     if (!payment) throw new NotFoundException('Payment not found');
@@ -258,11 +297,38 @@ export class PaymentsService {
         where: { societyId, userId },
         include: {
           maintenanceBill: { select: { id: true, invoiceNumber: true } },
+          documents: { select: { id: true, fileName: true, mimeType: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.paymentSubmission.count({ where: { societyId, userId } }),
     ]);
     return { data, meta: buildPaginationMeta(total, page, limit) };
+  }
+
+  /**
+   * Not gated by the generic Document accessLevel rules (see submit()) —
+   * this payment's own owner, plus admin/accountant, regardless of the
+   * resident's own flat. Only one proof file is supported per payment
+   * today (the UI only ever attaches one); this returns the most recent
+   * if that ever changes.
+   */
+  async getProofFile(societyId: string, paymentId: string, caller: { id: string; isReviewer: boolean }) {
+    const payment = await this.prisma.paymentSubmission.findFirst({
+      where: { id: paymentId, societyId },
+      include: {
+        documents: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+    });
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (!caller.isReviewer && payment.userId !== caller.id) {
+      throw new ForbiddenException('You can only view proof for your own payment submissions.');
+    }
+
+    const doc = payment.documents[0];
+    if (!doc) throw new NotFoundException('No proof file was attached to this payment');
+
+    const buffer = await this.storage.download(doc.fileKey);
+    return { buffer, fileName: doc.fileName, mimeType: doc.mimeType };
   }
 }
