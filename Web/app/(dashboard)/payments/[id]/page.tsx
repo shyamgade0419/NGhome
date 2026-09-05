@@ -2,7 +2,7 @@
 
 import { useState, use } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, CheckCircle2, XCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, Paperclip } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
@@ -144,6 +144,23 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
             </dl>
           </Card>
         </div>
+
+        {/* Receipt / screenshot — the actual proof to verify against, not
+            just the reference number above. */}
+        {payment.documents && payment.documents.length > 0 && (
+          <Card padding="lg">
+            <CardHeader><CardTitle>Receipt</CardTitle></CardHeader>
+            <a
+              href={`/api/backend-file/payments/${payment.id}/proof`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2.5 rounded-lg border border-primary-200 bg-primary-50 px-4 py-3 text-sm font-medium text-primary-700 hover:bg-primary-100 transition-colors w-fit"
+            >
+              <Paperclip size={16} />
+              {payment.documents[0].fileName}
+            </a>
+          </Card>
+        )}
 
         {/* Actions */}
         {isPending && (

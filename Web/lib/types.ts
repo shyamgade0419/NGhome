@@ -141,6 +141,9 @@ export interface Payment {
   flat?: { id: string; flatCode: string };
   user?: { id: string; firstName: string; lastName: string };
   maintenanceBill?: { id: string; invoiceNumber: string } | null;
+  // Receipt/screenshot attached at submission — served via the dedicated
+  // /api/backend-file/payments/:id/proof route, not the generic JSON proxy.
+  documents?: { id: string; fileName: string; mimeType: string }[];
 }
 
 // Matches backend Expense Prisma model
