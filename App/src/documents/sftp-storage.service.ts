@@ -41,9 +41,16 @@ export class SftpStorageService {
   }
 
   async upload(buffer: Buffer, remotePath: string): Promise<void> {
+    // Read outside the try — this throws its own specific, actionable
+    // message ("set SFTP_HOST, SFTP_USERNAME...") when storage isn't
+    // configured. Evaluating it as sftp.connect()'s argument put that
+    // throw inside the try below, where the catch-all swallowed it and
+    // replaced it with a generic "Failed to store the uploaded file." —
+    // exactly the unconfigured case masking itself as an unrelated error.
+    const options = this.getConnectOptions();
     const sftp = new SftpClient();
     try {
-      await sftp.connect(this.getConnectOptions());
+      await sftp.connect(options);
       const dir = remotePath.substring(0, remotePath.lastIndexOf('/'));
       if (dir && !(await sftp.exists(dir))) {
         await sftp.mkdir(dir, true);
@@ -58,9 +65,10 @@ export class SftpStorageService {
   }
 
   async download(remotePath: string): Promise<Buffer> {
+    const options = this.getConnectOptions();
     const sftp = new SftpClient();
     try {
-      await sftp.connect(this.getConnectOptions());
+      await sftp.connect(options);
       const data = await sftp.get(remotePath);
       return Buffer.isBuffer(data) ? data : Buffer.from(data as string);
     } catch (err) {
@@ -71,8 +79,11 @@ export class SftpStorageService {
     }
   }
 
-  /** Best-effort — a document row shouldn't fail to delete because the
-   *  remote file was already gone or the server was briefly unreachable. */
+  /** Best-effort — a document row shouldn't fail to delete because storage
+   *  isn't configured, the remote file was already gone, or the server was
+   *  briefly unreachable, so getConnectOptions() deliberately stays inside
+   *  the try here (unlike upload/download) — this one method's contract is
+   *  "never throw", and the catch-all below is what honors that. */
   async remove(remotePath: string): Promise<void> {
     const sftp = new SftpClient();
     try {
