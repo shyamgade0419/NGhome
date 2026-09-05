@@ -108,6 +108,9 @@ export interface PaymentSubmission {
   flat?: { id: string; flatCode: string };
   user?: { id: string; firstName: string; lastName: string };
   maintenanceBill?: { id: string; invoiceNumber: string } | null;
+  // Receipt/screenshot attached at submission — GET /payments/:id/proof
+  // streams the actual bytes; this is just presence + display metadata.
+  documents?: { id: string; fileName: string; mimeType: string }[];
 }
 
 // Matches backend Account Prisma model

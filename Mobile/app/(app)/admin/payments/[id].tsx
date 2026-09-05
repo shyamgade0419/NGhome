@@ -163,6 +163,31 @@ export default function PaymentDetailScreen() {
           {payment.notes && <InfoRow label="Notes" value={payment.notes} />}
         </Card>
 
+        {/* Receipt / screenshot — the actual proof to verify against, not
+            just the reference number above. */}
+        {payment.documents && payment.documents.length > 0 && (
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>Receipt</Text>
+            <TouchableOpacity
+              style={styles.receiptRow}
+              onPress={() =>
+                paymentsApi.openProof(payment.id, payment.documents![0].fileName).catch(() =>
+                  Alert.alert('Error', 'Failed to open the receipt.'),
+                )
+              }
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={payment.documents[0].mimeType === 'application/pdf' ? 'document-text' : 'image'}
+                size={20}
+                color={colors.primary}
+              />
+              <Text style={styles.receiptName} numberOfLines={1}>{payment.documents[0].fileName}</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+            </TouchableOpacity>
+          </Card>
+        )}
+
         {/* Credit account info */}
         {canTakeAction && creditAccount && (
           <Card style={styles.section}>
@@ -272,6 +297,14 @@ const styles = StyleSheet.create({
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   infoLabel: { ...typography.bodyMedium, color: colors.textSecondary, flex: 1 },
   infoValue: { ...typography.bodyMedium, color: colors.text, flex: 1.5, textAlign: 'right' },
+
+  receiptRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
+    paddingHorizontal: spacing.md, paddingVertical: 12,
+    backgroundColor: colors.primaryLight,
+  },
+  receiptName: { ...typography.bodyMedium, color: colors.text, flex: 1 },
 
   rejectedCard: { backgroundColor: colors.errorLight, borderColor: '#FECACA' },
   rejectedTitle: { ...typography.labelLarge, color: colors.error },

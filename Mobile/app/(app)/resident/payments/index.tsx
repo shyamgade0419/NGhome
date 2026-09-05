@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, FlatList, RefreshControl, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -37,6 +37,21 @@ export default function ResidentPaymentsScreen() {
 
       {item.referenceNumber && (
         <Text style={styles.ref}>UTR/Ref: {item.referenceNumber}</Text>
+      )}
+
+      {item.documents && item.documents.length > 0 && (
+        <TouchableOpacity
+          style={styles.receiptLink}
+          onPress={() =>
+            paymentsApi.openProof(item.id, item.documents![0].fileName).catch(() =>
+              Alert.alert('Error', 'Failed to open the receipt.'),
+            )
+          }
+          hitSlop={4}
+        >
+          <Ionicons name="attach-outline" size={14} color={colors.primary} />
+          <Text style={styles.receiptLinkText}>View receipt</Text>
+        </TouchableOpacity>
       )}
 
       {item.status === 'REJECTED' && item.reviewNotes && (
@@ -109,6 +124,8 @@ const styles = StyleSheet.create({
   amount: { ...typography.headingMedium, color: colors.text },
   date: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },
   ref: { ...typography.bodySmall, color: colors.textSecondary, fontFamily: 'monospace' },
+  receiptLink: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start' },
+  receiptLinkText: { ...typography.labelMedium, color: colors.primary },
   rejectedNote: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, backgroundColor: colors.errorLight, padding: spacing.sm, borderRadius: radius.sm },
   rejectedText: { ...typography.bodySmall, color: colors.error, flex: 1 },
 });

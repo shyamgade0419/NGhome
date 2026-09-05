@@ -11,6 +11,7 @@ import {
   Linking,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
+import * as DocumentPicker from 'expo-document-picker';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -29,13 +30,15 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { colors, spacing, typography, radius } from '@/theme';
 import { toNum, inr } from '@/utils/format';
 
+// NEFT and RTGS used to also be listed as their own buttons, redundant
+// with "Bank Transfer / NEFT / RTGS" above (still a valid backend
+// PaymentMethod each, for whatever's already stored under them — just not
+// worth offering as separate choices here).
 const PAYMENT_METHODS = [
   { value: 'UPI', label: 'UPI' },
   { value: 'BANK_TRANSFER', label: 'Bank Transfer / NEFT / RTGS' },
   { value: 'CHEQUE', label: 'Cheque' },
   { value: 'CASH', label: 'Cash' },
-  { value: 'NEFT', label: 'NEFT' },
-  { value: 'RTGS', label: 'RTGS' },
   { value: 'OTHER', label: 'Other' },
 ] as const;
 
@@ -57,6 +60,17 @@ export default function SubmitPaymentScreen() {
   const queryClient = useQueryClient();
   const [selectedMethod, setSelectedMethod] = useState<string>('UPI');
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [proofFile, setProofFile] = useState<{ uri: string; name: string; mimeType?: string | null } | null>(null);
+
+  const pickProof = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['image/*', 'application/pdf'],
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    setProofFile({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType });
+  };
 
   const { data: activePeriod } = useQuery({
     queryKey: ['active-period'],
@@ -121,6 +135,7 @@ export default function SubmitPaymentScreen() {
       paymentMethod: data.paymentMethod,
       referenceNumber: data.referenceNumber,
       notes: data.notes,
+      proof: proofFile ?? undefined,
     });
   };
 
@@ -315,6 +330,28 @@ export default function SubmitPaymentScreen() {
               )}
             />
 
+            {/* Receipt / screenshot — the actual proof admin verifies
+                against, not just a reference number they have to trust. */}
+            <Text style={styles.fieldLabel}>Receipt / Screenshot (Optional)</Text>
+            {proofFile ? (
+              <View style={styles.proofPicked}>
+                <Ionicons
+                  name={proofFile.mimeType === 'application/pdf' ? 'document-text' : 'image'}
+                  size={20}
+                  color={colors.primary}
+                />
+                <Text style={styles.proofPickedName} numberOfLines={1}>{proofFile.name}</Text>
+                <TouchableOpacity onPress={() => setProofFile(null)} hitSlop={8}>
+                  <Ionicons name="close-circle" size={20} color={colors.textTertiary} />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.proofPicker} onPress={pickProof} activeOpacity={0.7}>
+                <Ionicons name="camera-outline" size={20} color={colors.primary} />
+                <Text style={styles.proofPickerText}>Attach a photo or PDF of your receipt</Text>
+              </TouchableOpacity>
+            )}
+
             <View style={styles.disclaimer}>
               <Ionicons name="information-circle-outline" size={16} color={colors.info} />
               <Text style={styles.disclaimerText}>
@@ -408,6 +445,32 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   disclaimerText: { ...typography.bodySmall, color: colors.info, flex: 1, lineHeight: 18 },
+
+  proofPicker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    borderStyle: 'dashed',
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 13,
+    backgroundColor: colors.surface,
+  },
+  proofPickerText: { ...typography.bodyMedium, color: colors.text, flex: 1 },
+  proofPicked: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    backgroundColor: colors.primaryLight,
+  },
+  proofPickedName: { ...typography.bodyMedium, color: colors.text, flex: 1 },
 
   upiCard: {
     flexDirection: 'row',
