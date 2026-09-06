@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   AnnouncementAudience, NotificationChannel, NotificationStatus, SystemRole, Prisma,
 } from '@prisma/client';
+import { PushService } from './push.service';
 
 export interface SendNotificationDto {
   title: string;
@@ -15,12 +16,18 @@ export interface SendNotificationDto {
 
 /**
  * Notification abstraction layer.
- * Stores notification records in DB; actual delivery (push/email/SMS)
- * is plugged in via external providers in a future phase.
+ * Stores notification records in DB (the in-app inbox) and, since both
+ * previously only meant "wrote a database row nobody's phone ever
+ * reacted to", also fans out to PushService for real push delivery — a
+ * phone alert when the app isn't open, not just something waiting in the
+ * list next time it's opened.
  */
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pushService: PushService,
+  ) {}
 
   async send(societyId: string, dto: SendNotificationDto) {
     const audience = dto.audience ?? AnnouncementAudience.ALL_RESIDENTS;
@@ -56,6 +63,11 @@ export class NotificationsService {
         })),
       });
     }
+
+    // Fire-and-forget-ish (PushService swallows its own errors) — a slow
+    // or failed push send must never turn a successfully saved
+    // notification into a failed API response.
+    void this.pushService.sendToUsers(recipientUserIds, dto.title, dto.body, { type: dto.type });
 
     return notification;
   }

@@ -251,6 +251,7 @@ model User {
   submittedRequests    MaintenanceRequest[] @relation("RequestSubmitter")
   assignedRequests     MaintenanceRequest[] @relation("RequestAssignee")
   createdEvents        Event[]
+  pushTokens           PushToken[]
 
   @@map("users")
 }
@@ -276,6 +277,28 @@ model RefreshToken {
   @@index([userId])
   @@index([tokenHash])
   @@map("refresh_tokens")
+}
+
+// One row per device the app is (or was) installed on — a user can have
+// several (phone + tablet, or a reinstall that got a fresh token before
+// the old one expired). `token` is the whole identity of a device
+// registration: unique globally, so re-registering the same device (app
+// restart, re-login, reinstall reusing the same Expo push token) upserts
+// onto the existing row and re-points it at whoever's currently logged in,
+// rather than accumulating stale duplicates pointed at a previous user of
+// a shared/handed-down device.
+model PushToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  platform  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_tokens")
 }
 
 model PasswordResetToken {
