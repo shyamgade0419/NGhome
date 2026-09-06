@@ -35,6 +35,12 @@ export class NotificationsController {
     return this.notificationsService.findMyNotifications(user.id, +page, +limit);
   }
 
+  @Get('my/unread-count')
+  @ApiOperation({ summary: 'Count of unread notifications — powers the bell-icon badge' })
+  unreadCount(@CurrentUser() user: AuthenticatedUser) {
+    return this.notificationsService.getUnreadCount(user.id);
+  }
+
   @Patch('my/:id/read')
   @ApiOperation({ summary: 'Mark notification as read' })
   markRead(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {

@@ -117,4 +117,16 @@ export class NotificationsService {
       data: { status: 'READ', readAt: new Date() },
     });
   }
+
+  /** Powers the bell-icon badge — there was previously no way to know
+   *  unread notifications existed without opening the list. Matches
+   *  toNotification()'s own read/unread rule on the client (status READ
+   *  or a set readAt), checked directly rather than fetching every row
+   *  just to count them. */
+  async getUnreadCount(userId: string) {
+    const count = await this.prisma.notificationRecord.count({
+      where: { userId, status: { not: 'READ' }, readAt: null },
+    });
+    return { count };
+  }
 }
