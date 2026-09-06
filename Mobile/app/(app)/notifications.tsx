@@ -40,6 +40,9 @@ function ComposeModal({ onClose }: { onClose: () => void }) {
     mutationFn: () => notificationsApi.send({ title: title.trim(), body: body.trim() }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['resident-notifications'] });
+      // The sender is also a recipient now (see the backend fan-out fix) —
+      // their own bell badge should reflect the new notification too.
+      qc.invalidateQueries({ queryKey: ['notifications-unread-count'] });
       Alert.alert('Sent', 'Notification sent to all society members.');
       onClose();
     },
@@ -112,7 +115,10 @@ function NotifRow({ item }: { item: Notification }) {
 
   const markRead = useMutation({
     mutationFn: () => notificationsApi.markRead(item.id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['resident-notifications'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['resident-notifications'] });
+      qc.invalidateQueries({ queryKey: ['notifications-unread-count'] });
+    },
   });
 
   const handlePress = () => {
@@ -163,7 +169,10 @@ export default function ResidentNotificationsScreen() {
       const unread = (data?.data ?? []).filter((n) => !n.isRead);
       await Promise.all(unread.map((n) => notificationsApi.markRead(n.id)));
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['resident-notifications'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['resident-notifications'] });
+      qc.invalidateQueries({ queryKey: ['notifications-unread-count'] });
+    },
   });
 
   const notifications: Notification[] = data?.data ?? [];

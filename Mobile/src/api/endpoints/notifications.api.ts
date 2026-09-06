@@ -75,6 +75,13 @@ export const notificationsApi = {
     await apiClient.patch(`/notifications/my/${id}/read`, {});
   },
 
+  /** Powers the bell-icon badge — previously nothing indicated unread
+   *  notifications existed without opening the list. */
+  getUnreadCount: async (): Promise<number> => {
+    const { data } = await apiClient.get<{ data: { count: number } }>('/notifications/my/unread-count');
+    return data?.data?.count ?? 0;
+  },
+
   /**
    * Admin: send a notification to society members.
    * type/audience/channels are unused today but required (or defaulted

@@ -17,6 +17,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Card, SectionHeader } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { NotificationBell } from '@/components/ui/NotificationBell';
 import { colors, spacing, typography, radius } from '@/theme';
 import { Announcement } from '@/types/society.types';
 import { toNum, inr } from '@/utils/format';
@@ -73,9 +74,7 @@ export default function ResidentDashboard() {
           </Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => router.push('/(app)/notifications' as any)} hitSlop={8}>
-            <Ionicons name="notifications-outline" size={24} color={colors.text} />
-          </TouchableOpacity>
+          <NotificationBell onPress={() => router.push('/(app)/notifications' as any)} size={24} color={colors.text} />
           <TouchableOpacity onPress={() => router.push('/(app)/resident/profile')} hitSlop={8}>
             <View style={styles.avatarCircle}>
               <Text style={styles.avatarText}>

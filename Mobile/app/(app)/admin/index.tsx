@@ -17,6 +17,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Card, StatCard, SectionHeader } from '@/components/ui/Card';
 import { StatusBadge, billingStatusVariant } from '@/components/ui/StatusBadge';
+import { NotificationBell } from '@/components/ui/NotificationBell';
 import { colors, spacing, typography, radius } from '@/theme';
 import { inrCompact } from '@/utils/format';
 
@@ -65,9 +66,7 @@ export default function AdminDashboard() {
           </Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => router.push('/(app)/notifications' as any)} hitSlop={8}>
-            <Ionicons name="notifications-outline" size={22} color={colors.textSecondary} />
-          </TouchableOpacity>
+          <NotificationBell onPress={() => router.push('/(app)/notifications' as any)} />
           <TouchableOpacity onPress={() => router.push('/(app)/admin/settings' as any)} hitSlop={8}>
             <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
