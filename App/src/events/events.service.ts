@@ -1,7 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma, EventStatus } from '@prisma/client';
+import { Prisma, EventStatus, ExpenseStatus, TransactionType, AuditAction } from '@prisma/client';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
+
+const LINKED_ENTITY_TYPE = 'EVENT';
 
 export interface CreateEventDto {
   title: string;
@@ -46,7 +48,7 @@ export class EventsService {
       ...(forResident ? { isVisibleToResidents: true } : {}),
     };
 
-    const [data, total] = await Promise.all([
+    const [events, total] = await Promise.all([
       this.prisma.event.findMany({
         skip,
         take,
@@ -57,6 +59,7 @@ export class EventsService {
       this.prisma.event.count({ where }),
     ]);
 
+    const data = await this.withRecordedFlag(societyId, events);
     return { data, meta: buildPaginationMeta(total, page, limit) };
   }
 
@@ -70,7 +73,26 @@ export class EventsService {
       include: { fund: { select: FUND_SELECT }, createdBy: { select: CREATOR_SELECT } },
     });
     if (!event) throw new NotFoundException('Event not found');
-    return event;
+    const [withFlag] = await this.withRecordedFlag(societyId, [event]);
+    return withFlag;
+  }
+
+  /** Single batched query rather than one lookup per event — whether each
+   *  event's cost has already been turned into a real Expense
+   *  (see recordExpense), so the client can show "Recorded" vs. offer the
+   *  action, without a separate round-trip per event. */
+  private async withRecordedFlag<T extends { id: string }>(societyId: string, events: T[]) {
+    if (events.length === 0) return events.map((e) => ({ ...e, expenseRecorded: false }));
+    const recorded = await this.prisma.expense.findMany({
+      where: {
+        societyId,
+        linkedEntityType: LINKED_ENTITY_TYPE,
+        linkedEntityId: { in: events.map((e) => e.id) },
+      },
+      select: { linkedEntityId: true },
+    });
+    const recordedIds = new Set(recorded.map((r) => r.linkedEntityId));
+    return events.map((e) => ({ ...e, expenseRecorded: recordedIds.has(e.id) }));
   }
 
   async update(societyId: string, id: string, dto: Partial<CreateEventDto>) {
@@ -95,5 +117,118 @@ export class EventsService {
   async remove(societyId: string, id: string) {
     await this.findOne(societyId, id);
     await this.prisma.event.delete({ where: { id } });
+  }
+
+  /**
+   * Turns an event's actualCost from a planning note into a real ledger
+   * entry — an Expense (so it shows up in expense-by-category and the
+   * monthly overview) plus a Fund-debiting Transaction (so the fund
+   * balance actually reflects the spend). Until this is called, linking a
+   * Fund to an event is deliberately informational only — see the create/
+   * update DTOs and the mobile form's own copy ("doesn't move any money").
+   *
+   * Explicit action, not automatic on every save of actualCost: an admin
+   * often enters a rough actualCost before the real invoice is in hand,
+   * and auto-creating financial records (and debiting a fund) every time
+   * that estimate is edited would be exactly the kind of surprising money
+   * movement this codebase avoids elsewhere (see PaymentsService.approve's
+   * atomic status-gated update, same instinct).
+   *
+   * Idempotent via linkedEntityType/Id, the same generic pattern
+   * Document/Transaction already use: calling this twice for the same
+   * event throws rather than silently double-booking the expense and
+   * double-debiting the fund. Correcting a recorded amount means editing
+   * the Expense directly in Accounts, same as any other expense.
+   */
+  async recordExpense(societyId: string, id: string, actorId: string) {
+    const event = await this.findOne(societyId, id);
+
+    if (event.actualCost == null) {
+      throw new BadRequestException('Set an actual cost on this event before recording it as an expense.');
+    }
+    if (!event.fundId) {
+      throw new BadRequestException('Link a fund to this event before recording it as an expense.');
+    }
+
+    const existing = await this.prisma.expense.findFirst({
+      where: { societyId, linkedEntityType: LINKED_ENTITY_TYPE, linkedEntityId: id },
+    });
+    if (existing) {
+      throw new ConflictException(
+        'This event\'s cost has already been recorded as an expense. Edit it directly in Accounts to correct the amount.',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const fund = await tx.fund.findFirst({ where: { id: event.fundId!, societyId } });
+      if (!fund) throw new NotFoundException('Linked fund not found');
+
+      // Same find-or-create-by-unique-name pattern as any other lazily
+      // provisioned per-society lookup table in this codebase — no
+      // "Events" category needs to exist ahead of time.
+      const category = await tx.expenseCategory.upsert({
+        where: { societyId_name: { societyId, name: 'Events' } },
+        create: { societyId, name: 'Events', description: 'Society events and planned activities' },
+        update: {},
+      });
+
+      const amount = event.actualCost as Prisma.Decimal;
+
+      const expense = await tx.expense.create({
+        data: {
+          societyId,
+          categoryId: category.id,
+          accountId: fund.accountId,
+          description: `Event: ${event.title}`,
+          amount,
+          expenseDate: event.eventDate,
+          status: ExpenseStatus.APPROVED,
+          createdById: actorId,
+          approvedById: actorId,
+          approvedAt: new Date(),
+          linkedEntityType: LINKED_ENTITY_TYPE,
+          linkedEntityId: id,
+        },
+      });
+
+      const updatedFund = await tx.fund.update({
+        where: { id: fund.id },
+        data: { currentBalance: { decrement: amount } },
+      });
+
+      await tx.transaction.create({
+        data: {
+          societyId,
+          fundId: fund.id,
+          accountId: fund.accountId,
+          transactionType: TransactionType.DEBIT,
+          amount,
+          transactionDate: new Date(),
+          description: `Event: ${event.title}`,
+          linkedEntityType: LINKED_ENTITY_TYPE,
+          linkedEntityId: id,
+          balanceAfter: updatedFund.currentBalance,
+          createdById: actorId,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          societyId,
+          actorId,
+          action: AuditAction.EXPENSE_CREATED,
+          entityType: 'Expense',
+          entityId: expense.id,
+          newValues: {
+            source: 'event',
+            eventId: id,
+            fundId: fund.id,
+            amount: amount.toString(),
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      return expense;
+    });
   }
 }

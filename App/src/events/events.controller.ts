@@ -73,4 +73,16 @@ export class EventsController {
   async remove(@SocietyId() societyId: string, @Param('id') id: string) {
     await this.eventsService.remove(societyId, id);
   }
+
+  @Post(':id/record-expense')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
+  @ApiOperation({ summary: 'Record this event\'s actual cost as a real Expense, debiting its linked fund' })
+  recordExpense(
+    @SocietyId() societyId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.eventsService.recordExpense(societyId, id, user.id);
+  }
 }

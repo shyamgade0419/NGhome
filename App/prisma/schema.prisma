@@ -766,6 +766,12 @@ model Expense {
   approvedById    String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+  // Same generic pattern Document/Transaction already use — set for an
+  // Expense generated from Event.recordExpense() ("EVENT" / event.id), so
+  // that action is idempotent (one Expense per event, not one per click)
+  // without needing a bespoke Event.expenseId column.
+  linkedEntityType String?
+  linkedEntityId   String?
 
   society    Society          @relation(fields: [societyId], references: [id], onDelete: Cascade)
   category   ExpenseCategory? @relation(fields: [categoryId], references: [id])
@@ -775,6 +781,7 @@ model Expense {
   documents  Document[]       @relation("ExpenseDocuments")
 
   @@index([societyId])
+  @@index([linkedEntityType, linkedEntityId])
   @@index([expenseDate])
   @@map("expenses")
 }
