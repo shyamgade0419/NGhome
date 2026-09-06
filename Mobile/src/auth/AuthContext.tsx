@@ -9,6 +9,7 @@ import React, {
 import { authApi } from '@/api/endpoints/auth.api';
 import { tokenService } from '@/auth/token.service';
 import { setAuthLogoutCallback } from '@/api/client';
+import { registerForPushNotificationsAsync, unregisterPushNotifications } from '@/notifications/push';
 import { AuthenticatedUser, SocietyMembership } from '@/types/auth.types';
 
 interface AuthState {
@@ -53,6 +54,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // best-effort — clear local state regardless
     } finally {
+      // Before clearing tokens — unregisterPushToken needs to still be
+      // authenticated to call the API.
+      await unregisterPushNotifications();
       await tokenService.clearTokens();
       if (mounted.current) {
         setState({
@@ -102,6 +106,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             pendingMemberships: [],
           });
         }
+        // Fire-and-forget — registers this device on every app open where
+        // a session already exists, not just fresh logins, so a token
+        // that expired on Expo's side (or never got registered on an
+        // older build) gets a fresh one without needing to log out first.
+        void registerForPushNotificationsAsync();
       } catch {
         await tokenService.clearTokens();
         if (mounted.current) {
@@ -163,6 +172,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         pendingMemberships: [],
       });
     }
+    void registerForPushNotificationsAsync();
     return false;
   }, []);
 
@@ -193,6 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         pendingMemberships: [],
       });
     }
+    void registerForPushNotificationsAsync();
   }, []);
 
   const refreshUser = useCallback(async () => {

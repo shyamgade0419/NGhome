@@ -91,4 +91,15 @@ export const notificationsApi = {
   send: async (payload: { title: string; body: string; type?: string }): Promise<void> => {
     await apiClient.post('/notifications', { type: 'GENERAL', ...payload });
   },
+
+  /** Registers this device for real push delivery — see src/notifications/push.ts. */
+  registerPushToken: async (token: string, platform: string): Promise<void> => {
+    await apiClient.post('/notifications/push-token', { token, platform });
+  },
+
+  /** Called on logout so this device stops receiving pushes for whoever
+   *  signed out of it. */
+  unregisterPushToken: async (token: string): Promise<void> => {
+    await apiClient.delete('/notifications/push-token', { data: { token } });
+  },
 };

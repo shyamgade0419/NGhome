@@ -5,6 +5,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Notifications from 'expo-notifications';
 import { AuthProvider } from '@/auth/AuthContext';
 import { BackHandler, Platform, StyleSheet } from 'react-native';
 
@@ -47,6 +48,20 @@ export default function RootLayout() {
         return true;
       }
       return false; // nothing left to go back to — let Android exit the app as normal
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Tapping a push notification (app backgrounded or fully closed) should
+  // land on the notification the person actually tapped, not just
+  // whatever screen happened to be open before. expo-router's navigation
+  // isn't necessarily mounted yet the instant this fires on a cold start,
+  // so this only ever pushes forward from wherever restoreSession/login
+  // eventually lands — never a hard replace that could fight the auth
+  // redirect logic in (app)/_layout.tsx.
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener(() => {
+      router.push('/(app)/notifications' as any);
     });
     return () => sub.remove();
   }, []);
