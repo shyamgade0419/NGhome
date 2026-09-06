@@ -19,6 +19,9 @@ export interface SocietyEvent {
   createdBy?: { id: string; firstName: string; lastName: string };
   createdAt: string;
   updatedAt: string;
+  // Whether actualCost has already been turned into a real Expense —
+  // linking a fund alone never moves money, see recordExpense().
+  expenseRecorded?: boolean;
 }
 
 export interface EventPayload {
@@ -57,5 +60,11 @@ export const eventsApi = {
 
   remove: async (id: string): Promise<void> => {
     await apiClient.delete(`/events/${id}`);
+  },
+
+  /** Turns actualCost into a real Expense, debiting the linked fund. */
+  recordExpense: async (id: string) => {
+    const { data } = await apiClient.post<ApiResponse<{ id: string }>>(`/events/${id}/record-expense`);
+    return data.data;
   },
 };

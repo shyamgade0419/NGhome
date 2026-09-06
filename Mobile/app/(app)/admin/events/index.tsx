@@ -4,8 +4,13 @@
  * One model covers two things: real society events (Diwali, AGM) and
  * admin-planned upcoming activities with a known or estimated cost (AMC
  * servicing, water tank cleaning) — same shape either way, a title, a date,
- * and an optional cost. Linking a Fund is informational only (it doesn't
- * move money); any real spend still goes through Expenses.
+ * and an optional cost. Linking a Fund while planning is informational
+ * only — estimating a cost against a fund doesn't move any money. Once the
+ * actual cost is known, "Record Actual Cost as Expense" in the detail view
+ * is the explicit action that turns it into a real Expense and debits the
+ * linked fund (see EventsService.recordExpense on the backend) — a
+ * deliberate two-step split so editing a rough estimate never silently
+ * touches the ledger.
  */
 
 import React, { useState } from 'react';
@@ -260,6 +265,22 @@ function EventDetailModal({
     onError: (e: any) => Alert.alert('Error', e?.response?.data?.message ?? 'Failed to delete event.'),
   });
 
+  // Linking a fund above is informational only — it never moves money by
+  // itself (see the form's own copy). This is the explicit action that
+  // actually records the spend: a real Expense (shows up in reports) plus
+  // a debit against the fund's balance.
+  const recordExpense = useMutation({
+    mutationFn: () => eventsApi.recordExpense(event.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['events'] });
+      Alert.alert('Recorded', 'Added as an expense and debited from the linked fund.');
+      onClose();
+    },
+    onError: (e: any) => Alert.alert('Error', e?.response?.data?.message ?? 'Failed to record expense.'),
+  });
+
+  const canRecordExpense = canWrite && !!event.actualCost && !!event.fundId && !event.expenseRecorded;
+
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.safe} edges={['top']}>
@@ -309,6 +330,31 @@ function EventDetailModal({
               <Ionicons name="shield-checkmark-outline" size={15} color={colors.textSecondary} />
               <Text style={styles.infoText}>Linked to {event.fund.name}</Text>
             </View>
+          ) : null}
+
+          {event.expenseRecorded ? (
+            <View style={styles.recordedRow}>
+              <Ionicons name="checkmark-circle" size={16} color={colors.secondary} />
+              <Text style={styles.recordedText}>Recorded as an expense — the fund balance reflects this spend.</Text>
+            </View>
+          ) : canRecordExpense ? (
+            <Button
+              label={recordExpense.isPending ? 'Recording…' : 'Record Actual Cost as Expense'}
+              onPress={() =>
+                Alert.alert(
+                  'Record as Expense',
+                  `Add ${inr(event.actualCost!)} as an expense and debit it from ${event.fund?.name}? This can't be undone here — correct it in Accounts afterward if needed.`,
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Record', onPress: () => recordExpense.mutate() },
+                  ],
+                )
+              }
+              loading={recordExpense.isPending}
+              variant="outline"
+              fullWidth
+              style={{ marginTop: spacing.xs }}
+            />
           ) : null}
 
           <View style={styles.infoRow}>
@@ -504,6 +550,12 @@ const styles = StyleSheet.create({
 
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   infoText: { ...typography.bodyMedium, color: colors.textSecondary },
+  recordedRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.secondaryLight, borderRadius: radius.md,
+    padding: spacing.sm,
+  },
+  recordedText: { ...typography.bodySmall, color: colors.secondary, flex: 1 },
 
   block: { gap: 4 },
   blockLabel: {
