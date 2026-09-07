@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Receipt, Download, ChevronDown, ChevronUp, CheckCircle2, Clock, AlertCircle, Copy, Check, Smartphone, ExternalLink } from 'lucide-react';
+import { Receipt, Download, ChevronDown, ChevronUp, CheckCircle2, Clock, AlertCircle, Copy, Check, Smartphone, ExternalLink, Paperclip, X } from 'lucide-react';
 import { billingApi, societyApi } from '@/lib/api/endpoints';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Header } from '@/components/layout/Header';
@@ -34,6 +34,7 @@ function UpiPayCard({
   const [utr, setUtr] = useState('');
   const [copied, setCopied] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [receipt, setReceipt] = useState<File | null>(null);
   const pending = parseDecimalLike(bill.pendingAmount);
 
   const upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(societyName)}&am=${pending}&tn=${encodeURIComponent(`Invoice ${bill.invoiceNumber}`)}&cu=INR`;
@@ -49,22 +50,29 @@ function UpiPayCard({
     if (!bill?.id || !bill?.billingPeriodId) { toast.error('Bill information missing. Please refresh and try again.'); return; }
     setSubmitting(true);
     try {
-      const res = await fetch('/api/backend/payments/submit', {
+      // Was POSTing to /api/backend/payments/submit — the backend route is
+      // POST /payments, no /submit suffix, so this always 404'd through
+      // the generic proxy. Also switched to the dedicated multipart route
+      // (like the payment-proof download route) so a receipt can be
+      // attached — the generic proxy can't carry a file's binary body.
+      const form = new FormData();
+      form.append('maintenanceBillId', bill.id);
+      form.append('billingPeriodId', bill.billingPeriodId);
+      form.append('amount', String(pending));
+      form.append('paymentDate', new Date().toISOString().split('T')[0]);
+      form.append('paymentMethod', 'UPI');
+      form.append('utrNumber', utr.trim());
+      if (receipt) form.append('proof', receipt);
+
+      const res = await fetch('/api/backend-file/payments', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          maintenanceBillId: bill.id,
-          billingPeriodId: bill.billingPeriodId,
-          amount: pending,
-          paymentDate: new Date().toISOString().split('T')[0],
-          paymentMethod: 'UPI',
-          utrNumber: utr.trim(),
-        }),
+        body: form,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? 'Payment submission failed');
 
-      if (data.autoApproved) {
+      const payment = data.data ?? data;
+      if (payment.autoApproved) {
         toast.success('✅ Payment confirmed! Bill marked as paid.');
       } else {
         toast.success('Payment submitted! Admin will verify shortly.');
@@ -130,6 +138,33 @@ function UpiPayCard({
           placeholder="e.g. 426101234567"
           className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 placeholder:text-slate-300"
         />
+
+        {/* Receipt / screenshot — optional, the actual proof admin
+            verifies against instead of just trusting the UTR text. */}
+        <label className="text-xs font-medium text-slate-600 block">
+          Receipt / Screenshot (optional)
+        </label>
+        {receipt ? (
+          <div className="flex items-center gap-2 rounded-lg border border-primary-200 bg-white px-3 py-2">
+            <Paperclip size={14} className="text-primary-600 flex-shrink-0" />
+            <span className="flex-1 truncate text-xs text-slate-700">{receipt.name}</span>
+            <button onClick={() => setReceipt(null)} className="text-slate-400 hover:text-slate-600 flex-shrink-0">
+              <X size={14} />
+            </button>
+          </div>
+        ) : (
+          <label className="flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-primary-300 bg-white px-3 py-2.5 text-xs font-medium text-slate-600 hover:bg-primary-50 cursor-pointer transition-colors">
+            <Paperclip size={14} className="text-primary-600" />
+            Attach a photo or PDF of your receipt
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={(e) => setReceipt(e.target.files?.[0] ?? null)}
+            />
+          </label>
+        )}
+
         <button
           onClick={submitPayment}
           disabled={submitting || !utr.trim()}
