@@ -8,7 +8,11 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: '/',
     display: 'standalone',
     background_color: '#f8fafc',
-    theme_color: '#2563eb',
+    // Matches the actual brand navy used everywhere else (login screen,
+    // app icon, mobile splash screen) — this file previously had a
+    // generic blue with no relationship to the brand, same class of
+    // mismatch the mobile app's colors.ts once had before it was fixed.
+    theme_color: '#0D2147',
     orientation: 'portrait-primary',
     categories: ['utilities', 'productivity'],
     icons: [
@@ -16,7 +20,7 @@ export default function manifest(): MetadataRoute.Manifest {
         src: '/icon-192.png',
         sizes: '192x192',
         type: 'image/png',
-        purpose: 'maskable',
+        purpose: 'any',
       },
       {
         src: '/icon-512.png',
