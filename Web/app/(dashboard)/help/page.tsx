@@ -7,7 +7,7 @@ import {
   Droplets, Wallet, Users, Settings, Wrench, Megaphone,
   CheckCircle2, AlertCircle, Smartphone, MessageCircle,
   Pencil, Printer, IndianRupee, TrendingUp, Building2,
-  UserPlus, Shield, BarChart3, ChevronRight,
+  UserPlus, Shield, BarChart3, ChevronRight, FolderOpen, Bell,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Header } from '@/components/layout/Header';
@@ -347,6 +347,7 @@ const ARTICLES: Article[] = [
     steps: [
       { text: 'Go to Payments. Use the status filter to see "Pending" submissions.' },
       { text: 'Click a payment to open details — you\'ll see the UTR, amount, method, and linked bill.' },
+      { text: 'If the resident attached a receipt from the mobile app, a "Receipt" link appears — click it to open the actual screenshot or PDF they submitted.', tip: 'Attaching a receipt is currently a mobile-only feature — residents submitting from the web app can\'t attach one yet.' },
       { text: 'To approve: select the bank account to credit, then click "Approve". The bill\'s paid/pending amounts update automatically.', tip: 'If auto-confirm is enabled in Settings, UPI payments with UTR are approved instantly without this step.' },
       { text: 'To reject: click "Reject" and enter a reason. The resident can resubmit with a corrected UTR.' },
       { text: 'Approved payments create a Credit transaction in the linked bank account — visible in Accounts.' },
@@ -381,6 +382,7 @@ const ARTICLES: Article[] = [
     steps: [
       { text: 'Go to Residents to see all active society members.' },
       { text: 'To invite a new resident: go to their flat, click "Assign Resident", and share the invite code. The resident uses this code on the Register page.' },
+      { text: 'A flat\'s first resident joins instantly. Anyone joining a flat that already has an active resident (a spouse, tenant, or co-owner) shows up in a "Pending Approvals" panel at the top of this page instead — click ✓ to approve or ✕ to reject.', tip: 'They can\'t sign in at all while pending, so review these promptly.' },
       { text: 'Click a resident\'s name to view and edit their details — phone number, email, and flat assignment.' },
       { text: 'To remove a resident: click the three-dot menu → Remove from Society. Their billing history is preserved.', tip: 'A flat must have at most one active resident for billing to work correctly.' },
       { text: 'The phone number stored here is used for the WhatsApp reminder button on the Maintenance Sheet.' },
@@ -449,6 +451,36 @@ const ARTICLES: Article[] = [
       { text: 'Announcements are listed newest first. Click one to read the full message.' },
       { text: '(Admin) Click "New Announcement" to post a notice to all residents — maintenance shutdowns, events, AGM dates, etc.' },
       { text: 'Important announcements are pinned at the top by admin.' },
+    ],
+  },
+  {
+    id: 'documents',
+    title: 'Documents',
+    subtitle: 'View official society notices, bye-laws, and circulars',
+    icon: FolderOpen,
+    color: 'text-cyan-700',
+    bg: 'bg-cyan-50',
+    roles: ['resident', 'admin'],
+    steps: [
+      { text: 'Go to Documents to see files posted by the society admin.' },
+      { text: 'Click "View / Download" on any document to open it.' },
+      { text: '(Admin) Click "Add Document" to register a new one — give it a title, an access level (Public, Residents Only, or Admin Only), and a link to where the file is hosted.' },
+      { text: 'Residents can also privately upload their own flat documents (tax receipts, agreements) from the mobile app — those never appear here, only to that flat.', tip: 'Uploading a real file (not just a link) and viewing a flat\'s private documents are currently mobile-only.' },
+    ],
+  },
+  {
+    id: 'notifications',
+    title: 'Notifications',
+    subtitle: 'Send an announcement to everyone, or catch up on what you\'ve missed',
+    icon: Bell,
+    color: 'text-yellow-700',
+    bg: 'bg-yellow-50',
+    roles: ['resident', 'admin'],
+    steps: [
+      { text: 'Go to Notifications to see everything sent to you, newest first.' },
+      { text: 'Click the checkmark on any unread item to mark it read.' },
+      { text: '(Admin/Staff) Click "Compose" in the top-right, write a title and message, and send it to every member of the society at once.' },
+      { text: 'On the mobile app, this also sends a real phone notification — not just something waiting in this list.', tip: 'Push notifications are mobile-only; the web app doesn\'t show a phone-style alert.' },
     ],
   },
 ];
