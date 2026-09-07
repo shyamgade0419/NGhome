@@ -96,6 +96,7 @@ export default function ResidentLayout() {
       <Tabs.Screen name="bills/[id]" options={{ href: null }} />
       <Tabs.Screen name="finances" options={{ href: null }} />
       <Tabs.Screen name="events/index" options={{ href: null }} />
+      <Tabs.Screen name="meetings" options={{ href: null }} />
     </Tabs>
   );
 }

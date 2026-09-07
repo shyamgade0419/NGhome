@@ -128,6 +128,11 @@ export default function ResidentProfileScreen() {
               onPress: () => router.push('/(app)/resident/events' as any),
             },
             {
+              icon: 'calendar-outline' as const,
+              label: 'Meetings',
+              onPress: () => router.push('/(app)/resident/meetings' as any),
+            },
+            {
               icon: 'help-circle-outline' as const,
               label: 'Help Center',
               onPress: () => router.push('/(app)/help' as any),
