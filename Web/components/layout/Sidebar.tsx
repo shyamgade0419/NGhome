@@ -26,6 +26,7 @@ import {
   Wrench,
   LayoutList,
   HelpCircle,
+  PiggyBank,
 } from 'lucide-react';
 import { cn, initials } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -59,6 +60,8 @@ const RESIDENT_NAV = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/billing/my', icon: FileText, label: 'My Bills' },
   { href: '/billing/statement', icon: LayoutList, label: 'Maintenance Sheet' },
+  { href: '/finances', icon: PiggyBank, label: 'Society Finances' },
+  { href: '/meetings', icon: CalendarDays, label: 'Meetings' },
   { href: '/community', icon: Megaphone, label: 'Community' },
   { href: '/helpdesk', icon: Wrench, label: 'Helpdesk' },
   { href: '/documents', icon: FolderOpen, label: 'Documents' },

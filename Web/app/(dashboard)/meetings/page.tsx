@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
-import { formatDate } from '@/lib/utils';
+import { formatDate, cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
 
 function AddMeetingModal({ onClose }: { onClose: () => void }) {
@@ -133,9 +133,25 @@ function AddMinutesModal({ meetingId, onClose }: { meetingId: string; onClose: (
 }
 
 function MeetingCard({ meeting, admin }: { meeting: any; admin: boolean }) {
+  const qc = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const [showMinutes, setShowMinutes] = useState(false);
-  const hasMinutes = !!meeting.minutes?.length;
+  // Meeting.minutes is a one-to-one relation (MeetingMinutes?, unique on
+  // meetingId) — a single object or null, never an array. `.length` on an
+  // object is always undefined, so hasMinutes was always false: "Add
+  // Minutes" showed even when minutes already existed, and the .map()
+  // below that would render them never ran, so nobody — admin or
+  // resident — could ever actually read a meeting's minutes here.
+  const hasMinutes = !!meeting.minutes;
+
+  const publish = useMutation({
+    mutationFn: () => meetingsApi.publish(meeting.id),
+    onSuccess: () => {
+      toast.success('Residents can now read these minutes');
+      qc.invalidateQueries({ queryKey: ['meetings'] });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to publish'),
+  });
 
   return (
     <>
@@ -152,12 +168,25 @@ function MeetingCard({ meeting, admin }: { meeting: any; admin: boolean }) {
               {meeting.attendeeCount > 0 && (
                 <p className="mt-0.5 text-xs text-slate-400">{meeting.attendeeCount} attendees</p>
               )}
+              {admin && (
+                <span className={cn(
+                  'mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium',
+                  meeting.isPublished ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700',
+                )}>
+                  {meeting.isPublished ? 'Published to residents' : hasMinutes ? 'Minutes due to be published' : 'Scheduled'}
+                </span>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {admin && !hasMinutes && (
+            {admin && (
               <Button size="sm" variant="secondary" onClick={() => setShowMinutes(true)}>
-                <FileText size={13} className="mr-1" /> Add Minutes
+                <FileText size={13} className="mr-1" /> {hasMinutes ? 'Edit Minutes' : 'Add Minutes'}
+              </Button>
+            )}
+            {admin && hasMinutes && !meeting.isPublished && (
+              <Button size="sm" onClick={() => publish.mutate()} disabled={publish.isPending}>
+                {publish.isPending ? 'Publishing…' : 'Publish'}
               </Button>
             )}
             {(meeting.agenda || hasMinutes) && (
@@ -179,13 +208,13 @@ function MeetingCard({ meeting, admin }: { meeting: any; admin: boolean }) {
                 <p className="text-sm text-slate-700 whitespace-pre-line">{meeting.agenda}</p>
               </div>
             )}
-            {hasMinutes && meeting.minutes.map((m: any) => (
-              <div key={m.id}>
+            {hasMinutes && (
+              <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">Minutes</p>
-                {m.summary && <p className="text-sm font-medium text-slate-800 mb-1">{m.summary}</p>}
-                <p className="text-sm text-slate-700 whitespace-pre-line">{m.content}</p>
+                {meeting.minutes.summary && <p className="text-sm font-medium text-slate-800 mb-1">{meeting.minutes.summary}</p>}
+                <p className="text-sm text-slate-700 whitespace-pre-line">{meeting.minutes.content}</p>
               </div>
-            ))}
+            )}
           </div>
         )}
       </Card>

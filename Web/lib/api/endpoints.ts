@@ -242,6 +242,18 @@ export const societyApi = {
   regenerateJoinCode: (): Promise<{ data: { joinCode: string; generatedAt: string } }> =>
     api.patch('/societies/my/regenerate-join-code'),
 
+  // Resident-facing financial transparency — every figure gated
+  // server-side by its own show*ToResidents flag, so this is safe to call
+  // regardless of what the admin has actually turned on; matches the
+  // mobile Society Finances screen.
+  getFinancialSummary: (): Promise<{ data: {
+    showBalances: boolean;
+    showExpenses: boolean;
+    totalBalance: number | null;
+    monthlyExpenses: number | null;
+    byCategory: Array<{ category: string; total: number }> | null;
+  } }> => api.get('/societies/my/financial-summary'),
+
   // Pending join approvals — a flat already had an active resident when
   // this person joined via invite code (AuthService.joinSociety), so the
   // membership is parked PENDING until an admin approves or rejects it.
@@ -369,6 +381,10 @@ export const meetingsApi = {
   get: (id: string) => api.get(`/meetings/${id}`),
   addMinutes: (id: string, data: { content: string; summary?: string }) =>
     api.post(`/meetings/${id}/minutes`, data),
+  // Missing entirely before — minutes stayed unpublished forever, so no
+  // resident could ever see them regardless of the publishMeetingMinutes
+  // setting, since Meeting.isPublished never got set from this UI.
+  publish: (id: string) => api.post(`/meetings/${id}/publish`, {}),
 };
 
 // Documents
