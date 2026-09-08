@@ -1,4 +1,6 @@
-import * as FileSystem from 'expo-file-system';
+// See documents.api.ts — legacy import kept deliberately for the HTTP status
+// check in openProof below, which the new class API doesn't expose.
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import apiClient, { API_BASE_URL } from '@/api/client';
 import { tokenService } from '@/auth/token.service';

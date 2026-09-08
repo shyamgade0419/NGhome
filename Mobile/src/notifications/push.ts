@@ -16,9 +16,13 @@ const STORAGE_KEY = 'ng_push_token';
 // Foreground behavior — without this, a push that arrives while the app is
 // already open does nothing visible at all (expo-notifications' default
 // is to NOT show a banner/play a sound in the foreground).
+// SDK 54 note: the old shouldShowAlert was split into shouldShowBanner (the
+// heads-up alert) and shouldShowList (the entry kept in the notification
+// centre). We want both — same visible behavior as before the split.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
