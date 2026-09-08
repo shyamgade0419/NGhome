@@ -48,7 +48,8 @@
           "color": "#0D2147",
           "sounds": []
         }
-      ]
+      ],
+      "./plugins/withReleaseSigning"
     ],
     "experiments": {
       "typedRoutes": true
