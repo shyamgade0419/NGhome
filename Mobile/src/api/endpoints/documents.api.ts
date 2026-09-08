@@ -1,4 +1,9 @@
-import * as FileSystem from 'expo-file-system';
+// SDK 54 replaced expo-file-system's function API with a File/Directory class
+// API. The legacy import is still supported and is used deliberately here: the
+// new downloadFileAsync resolves to a File with no HTTP status, and its
+// behavior on a non-200 response isn't documented — we rely on that status
+// check below to avoid handing the user an error page as their document.
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import apiClient, { API_BASE_URL } from '@/api/client';
 import { tokenService } from '@/auth/token.service';

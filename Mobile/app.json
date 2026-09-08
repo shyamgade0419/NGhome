@@ -47,15 +47,6 @@
           "color": "#0D2147",
           "sounds": []
         }
-      ],
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "compileSdkVersion": 36,
-            "targetSdkVersion": 36
-          }
-        }
       ]
     ],
     "experiments": {
