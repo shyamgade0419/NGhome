@@ -941,7 +941,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     overflow: 'hidden',
   },
-  flatCardPaid: { borderColor: '#BBF7D0' },
+  flatCardPaid: { borderColor: colors.secondaryLight },
   stripe: { width: 4, flexShrink: 0 },
   flatCardBody: { flex: 1, padding: spacing.md, gap: spacing.sm },
 

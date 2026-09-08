@@ -15,8 +15,8 @@
   body {
     font-family: 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
-    background-color: #F8FAFC;
-    color: #0F172A;
+    background-color: #FAF6EE;
+    color: #2B2620;
   }
 
   input[type='number']::-webkit-inner-spin-button,
@@ -29,7 +29,7 @@
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: #CBD5E1 transparent;
+    scrollbar-color: #D6C9B0 transparent;
   }
 
   .scrollbar-thin::-webkit-scrollbar {
@@ -41,7 +41,7 @@
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: #CBD5E1;
+    background-color: #D6C9B0;
     border-radius: 2px;
   }
 }

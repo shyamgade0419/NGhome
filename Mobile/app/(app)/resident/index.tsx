@@ -232,8 +232,8 @@ export default function ResidentDashboard() {
             activeOpacity={0.8}
             onPress={() => router.push('/(app)/resident/events' as any)}
           >
-            <View style={[styles.quickLinkIcon, { backgroundColor: '#EDE9FE' }]}>
-              <Ionicons name="sparkles-outline" size={20} color="#7C3AED" />
+            <View style={[styles.quickLinkIcon, { backgroundColor: colors.accentLight }]}>
+              <Ionicons name="sparkles-outline" size={20} color={colors.accent} />
             </View>
             <Text style={styles.quickLinkText} numberOfLines={2}>Events</Text>
           </TouchableOpacity>

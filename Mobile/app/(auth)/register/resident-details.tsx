@@ -397,11 +397,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.sm,
-    backgroundColor: '#F0FDF4',
+    backgroundColor: colors.secondaryLight,
     borderRadius: radius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#BBF7D0',
+    borderColor: colors.secondaryLight,
   },
   whatsappNoteText: {
     flex: 1,

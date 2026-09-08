@@ -275,8 +275,8 @@ const cardStyles = StyleSheet.create({
     borderColor: colors.border,
   },
   actionShare: {
-    backgroundColor: '#F0FDF4',
-    borderColor: '#BBF7D0',
+    backgroundColor: colors.secondaryLight,
+    borderColor: colors.secondaryLight,
   },
   actionLabel: {
     ...typography.labelMedium,

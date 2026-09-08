@@ -93,8 +93,8 @@ export default function PaymentDetailScreen() {
       <ScreenHeader title="Payment Review" showBack />
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 }}>
         <Ionicons name="card-outline" size={48} color={colors.textDisabled} />
-        <Text style={{ fontSize: 16, fontWeight: '600', color: '#334155' }}>Payment not found</Text>
-        <Text style={{ fontSize: 14, color: '#64748B', textAlign: 'center' }}>This payment may have been removed or already processed.</Text>
+        <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text }}>Payment not found</Text>
+        <Text style={{ fontSize: 14, color: colors.textSecondary, textAlign: 'center' }}>This payment may have been removed or already processed.</Text>
         <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 8, backgroundColor: colors.primary, borderRadius: 10, paddingHorizontal: 24, paddingVertical: 12 }}>
           <Text style={{ color: '#fff', fontWeight: '600' }}>Go Back</Text>
         </TouchableOpacity>
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
   section: { gap: spacing.md },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { ...typography.headingSmall, color: colors.text },
-  waContactBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F0FDF4', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: '#BBF7D0' },
+  waContactBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.secondaryLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: colors.secondaryLight },
   waContactText: { ...typography.labelSmall, color: '#16A34A', fontWeight: '600' },
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   infoLabel: { ...typography.bodyMedium, color: colors.textSecondary, flex: 1 },

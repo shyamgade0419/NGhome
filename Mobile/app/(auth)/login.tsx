@@ -278,7 +278,7 @@ const styles = StyleSheet.create({
   },
   subheading: {
     fontSize: 14,
-    color: '#64748B',
+    color: colors.textSecondary,
     marginTop: 4,
     marginBottom: 24,
   },
@@ -305,7 +305,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 14,
-    color: '#64748B',
+    color: colors.textSecondary,
   },
   footerLink: {
     fontSize: 14,
@@ -322,11 +322,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: 'rgba(13,33,71,0.15)',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.surfaceSecondary,
   },
   joinText: {
     fontSize: 13,
-    color: '#64748B',
+    color: colors.textSecondary,
   },
   joinLink: {
     fontSize: 13,
