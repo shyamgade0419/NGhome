@@ -1,18 +1,47 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { Landmark } from 'lucide-react';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Landmark, Plus } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { accountsApi } from '@/lib/api/endpoints';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { Card } from '@/components/ui/Card';
 import { Table, Thead, Tbody, Tr, Th, Td } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
+import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatCurrency } from '@/lib/utils';
 
+const createFundSchema = z.object({
+  name: z.string().min(1, 'Required'),
+  description: z.string().optional(),
+  openingBalance: z.coerce.number().min(0).optional(),
+  isVisibleToResidents: z.coerce.boolean().optional(),
+});
+type CreateFundForm = z.infer<typeof createFundSchema>;
+
+const contributeSchema = z.object({
+  amount: z.coerce.number().positive('Enter an amount greater than zero'),
+  description: z.string().optional(),
+  // '' means "don't credit any bank account" — see the note in the modal.
+  accountId: z.string().optional(),
+});
+type ContributeForm = z.infer<typeof contributeSchema>;
+
 export default function AccountsPage() {
+  const qc = useQueryClient();
+  const [showNewFund, setShowNewFund] = useState(false);
+  const [contributeTo, setContributeTo] = useState<any | null>(null);
+
   const { data: accountsData, isLoading: loadingAccounts } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => accountsApi.listAccounts({ limit: 100 }).then((r: any) => r.data),
@@ -25,6 +54,37 @@ export default function AccountsPage() {
 
   const accounts: any[] = accountsData?.data ?? [];
   const funds: any[] = fundsData?.data ?? [];
+
+  const createFundForm = useForm<CreateFundForm>({ resolver: zodResolver(createFundSchema) });
+  const contributeForm = useForm<ContributeForm>({ resolver: zodResolver(contributeSchema) });
+
+  const createFund = useMutation({
+    mutationFn: (d: CreateFundForm) => accountsApi.createFund(d),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['funds'] });
+      toast.success('Fund created');
+      setShowNewFund(false);
+      createFundForm.reset();
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to create fund'),
+  });
+
+  const contribute = useMutation({
+    mutationFn: (d: ContributeForm) =>
+      accountsApi.contributeToFund(contributeTo.id, {
+        amount: d.amount,
+        description: d.description || undefined,
+        accountId: d.accountId || undefined,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['funds'] });
+      qc.invalidateQueries({ queryKey: ['accounts'] });
+      toast.success('Added to fund');
+      setContributeTo(null);
+      contributeForm.reset();
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to add to fund'),
+  });
 
   const totalBalance = accounts.reduce(
     (sum: number, a: any) => sum + Number(a.currentBalance ?? 0),
@@ -107,9 +167,14 @@ export default function AccountsPage() {
         )}
 
         {/* Funds table */}
-        <h2 className="mb-3 text-sm font-semibold text-slate-700 uppercase tracking-wide">
-          Reserve Funds
-        </h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">
+            Reserve Funds
+          </h2>
+          <Button size="sm" onClick={() => setShowNewFund(true)}>
+            <Plus size={14} /> New Fund
+          </Button>
+        </div>
         {funds.length === 0 ? (
           <p className="text-sm text-slate-500">No reserve funds configured.</p>
         ) : (
@@ -122,6 +187,7 @@ export default function AccountsPage() {
                   <Th className="text-right">Opening Balance</Th>
                   <Th className="text-right">Current Balance</Th>
                   <Th>Visible to Residents</Th>
+                  <Th className="text-right">Actions</Th>
                 </Tr>
               </Thead>
               <Tbody>
@@ -136,6 +202,11 @@ export default function AccountsPage() {
                         {f.isVisibleToResidents ? 'Yes' : 'No'}
                       </Badge>
                     </Td>
+                    <Td className="text-right">
+                      <Button size="sm" variant="outline" onClick={() => setContributeTo(f)}>
+                        Add Money
+                      </Button>
+                    </Td>
                   </Tr>
                 ))}
               </Tbody>
@@ -143,6 +214,107 @@ export default function AccountsPage() {
           </div>
         )}
       </PageContainer>
+
+      {/* Create fund */}
+      <Modal
+        open={showNewFund}
+        onClose={() => { setShowNewFund(false); createFundForm.reset(); }}
+        title="Create Fund"
+      >
+        <form
+          onSubmit={createFundForm.handleSubmit((d) => createFund.mutate(d))}
+          className="space-y-4"
+        >
+          <Input
+            label="Fund Name"
+            placeholder="Corpus Fund"
+            error={createFundForm.formState.errors.name?.message}
+            {...createFundForm.register('name')}
+          />
+          <Input
+            label="Description"
+            placeholder="What this fund is for"
+            {...createFundForm.register('description')}
+          />
+          <Input
+            label="Opening Balance (₹)"
+            type="number"
+            step="0.01"
+            placeholder="0"
+            error={createFundForm.formState.errors.openingBalance?.message}
+            {...createFundForm.register('openingBalance')}
+          />
+          <p className="-mt-2 text-xs text-slate-500">
+            What the fund already holds today. Later additions go through Add Money, so they
+            leave a ledger entry.
+          </p>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" {...createFundForm.register('isVisibleToResidents')} />
+            Show this fund and its balance to residents
+          </label>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => { setShowNewFund(false); createFundForm.reset(); }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" loading={createFund.isPending}>Create Fund</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Add money to fund */}
+      <Modal
+        open={!!contributeTo}
+        onClose={() => { setContributeTo(null); contributeForm.reset(); }}
+        title={contributeTo ? `Add Money — ${contributeTo.name}` : 'Add Money'}
+      >
+        <form
+          onSubmit={contributeForm.handleSubmit((d) => contribute.mutate(d))}
+          className="space-y-4"
+        >
+          <Input
+            label="Amount (₹)"
+            type="number"
+            step="0.01"
+            error={contributeForm.formState.errors.amount?.message}
+            {...contributeForm.register('amount')}
+          />
+          <Input
+            label="What is this?"
+            placeholder="e.g. Corpus collection Q3"
+            {...contributeForm.register('description')}
+          />
+          <Select
+            label="Also credit a bank account"
+            options={[
+              { value: '', label: 'No — money is already in the accounts' },
+              ...accounts.map((a: any) => ({ value: a.id, label: a.name })),
+            ]}
+            {...contributeForm.register('accountId')}
+          />
+          {/* A fund is an earmark inside an account, not a second pot of money.
+              Crediting an account for a payment that was already approved would
+              count the same rupee twice, so this defaults to "no". */}
+          <p className="-mt-2 text-xs text-slate-500">
+            Pick an account only if this money is arriving now and was never recorded as a
+            payment — a cash collection, say. If it came in through the app, leave this as
+            &ldquo;No&rdquo; or it will be counted twice.
+          </p>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => { setContributeTo(null); contributeForm.reset(); }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" loading={contribute.isPending}>Add to Fund</Button>
+          </div>
+        </form>
+      </Modal>
     </>
   );
 }

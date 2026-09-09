@@ -61,4 +61,27 @@ export const fundsApi = {
     const { data } = await apiClient.get('/funds');
     return ((data as any)?.data ?? data) as SocietyFund[];
   },
+
+  create: async (payload: {
+    name: string;
+    description?: string;
+    accountId?: string;
+    openingBalance?: number;
+    isVisibleToResidents?: boolean;
+  }) => {
+    const { data } = await apiClient.post('/funds', payload);
+    return ((data as any)?.data ?? data) as SocietyFund;
+  },
+
+  /** Adds money to a fund. `accountId` is optional and deliberately so —
+   *  see the backend DTO: passing it also credits that bank account, which
+   *  is right for money arriving now but double-counts money that already
+   *  came in through the payments flow. */
+  contribute: async (
+    id: string,
+    payload: { amount: number; description?: string; contributionDate?: string; accountId?: string },
+  ) => {
+    const { data } = await apiClient.post(`/funds/${id}/contribute`, payload);
+    return ((data as any)?.data ?? data) as SocietyFund;
+  },
 };

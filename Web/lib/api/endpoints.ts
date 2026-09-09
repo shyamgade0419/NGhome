@@ -426,6 +426,14 @@ export const accountsApi = {
   listAccounts: (params?: Record<string, unknown>) => api.get('/accounts', { params }),
   getAccount: (id: string) => api.get(`/accounts/${id}`),
   listFunds: (params?: Record<string, unknown>) => api.get('/funds', { params }),
+  createFund: (data: unknown) => api.post('/funds', data),
+  /** Adds money to a fund. Passing `accountId` also credits that bank
+   *  account — correct for money arriving now, but double-counts anything
+   *  already recorded through the payments flow. */
+  contributeToFund: (
+    id: string,
+    data: { amount: number; description?: string; contributionDate?: string; accountId?: string },
+  ) => api.post(`/funds/${id}/contribute`, data),
   getTransactions: (accountId: string, params?: Record<string, unknown>) =>
     api.get(`/accounts/${accountId}/transactions`, { params }),
 };

@@ -77,3 +77,144 @@ describe('FundsService — findOne resident visibility (DEFECT-7)', () => {
     });
   });
 });
+
+/**
+ * contribute() — the only path that can ever increase a fund balance.
+ * Before it existed, currentBalance was set once at creation and otherwise
+ * only decremented, so a corpus fund could never be topped up.
+ */
+
+import { Prisma } from '@prisma/client';
+
+const ACCOUNT_ID = 'account-1';
+const ACTOR_ID = 'actor-1';
+
+function makeContributePrisma(opts: { fund?: any; account?: any } = {}) {
+  // `in` rather than ?? so an explicit { fund: null } means "no such fund"
+  // instead of silently falling back to the default one.
+  const fund = 'fund' in opts
+    ? opts.fund
+    : {
+        id: FUND_ID,
+        societyId: SOCIETY_ID,
+        name: 'Corpus Fund',
+        isActive: true,
+        isVisibleToResidents: true,
+        currentBalance: new Prisma.Decimal(1000),
+      };
+  const tx = {
+    fund: {
+      update: jest.fn().mockResolvedValue({ ...fund, currentBalance: new Prisma.Decimal(1500) }),
+    },
+    account: {
+      findFirst: jest.fn().mockResolvedValue(
+        'account' in opts ? opts.account : { id: ACCOUNT_ID, societyId: SOCIETY_ID },
+      ),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    transaction: { create: jest.fn().mockResolvedValue({}) },
+    auditLog: { create: jest.fn().mockResolvedValue({}) },
+  };
+  const prisma = {
+    fund: { findFirst: jest.fn().mockResolvedValue(fund) },
+    $transaction: jest.fn(async (cb: any) => cb(tx)),
+  } as unknown as PrismaService;
+  return { prisma, tx };
+}
+
+describe('FundsService — contribute', () => {
+  it('increments the fund balance atomically rather than writing a computed value', async () => {
+    const { prisma, tx } = makeContributePrisma();
+    await new FundsService(prisma).contribute(SOCIETY_ID, FUND_ID, { amount: 500 }, ACTOR_ID);
+
+    expect(tx.fund.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: FUND_ID },
+        data: { currentBalance: { increment: expect.anything() } },
+      }),
+    );
+  });
+
+  it('does NOT touch any bank account when accountId is omitted', async () => {
+    const { prisma, tx } = makeContributePrisma();
+    await new FundsService(prisma).contribute(SOCIETY_ID, FUND_ID, { amount: 500 }, ACTOR_ID);
+
+    // The money is already banked; crediting an account here would count it twice.
+    expect(tx.account.update).not.toHaveBeenCalled();
+    const [txArg] = tx.transaction.create.mock.calls[0];
+    expect(txArg.data.accountId).toBeNull();
+  });
+
+  it('credits the named bank account when accountId is given', async () => {
+    const { prisma, tx } = makeContributePrisma();
+    await new FundsService(prisma).contribute(
+      SOCIETY_ID,
+      FUND_ID,
+      { amount: 500, accountId: ACCOUNT_ID },
+      ACTOR_ID,
+    );
+
+    expect(tx.account.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: ACCOUNT_ID },
+        data: { currentBalance: { increment: expect.anything() } },
+      }),
+    );
+    const [txArg] = tx.transaction.create.mock.calls[0];
+    expect(txArg.data.accountId).toBe(ACCOUNT_ID);
+  });
+
+  it('rejects an account belonging to another society', async () => {
+    const { prisma, tx } = makeContributePrisma({ account: null });
+    await expect(
+      new FundsService(prisma).contribute(
+        SOCIETY_ID,
+        FUND_ID,
+        { amount: 500, accountId: 'someone-elses-account' },
+        ACTOR_ID,
+      ),
+    ).rejects.toThrow(NotFoundException);
+    expect(tx.account.update).not.toHaveBeenCalled();
+  });
+
+  it('records a CREDIT transaction carrying the resulting balance', async () => {
+    const { prisma, tx } = makeContributePrisma();
+    await new FundsService(prisma).contribute(
+      SOCIETY_ID,
+      FUND_ID,
+      { amount: 500, description: 'Corpus collection Q3' },
+      ACTOR_ID,
+    );
+
+    const [txArg] = tx.transaction.create.mock.calls[0];
+    expect(txArg.data).toMatchObject({
+      societyId: SOCIETY_ID,
+      fundId: FUND_ID,
+      transactionType: 'CREDIT',
+      description: 'Corpus collection Q3',
+      linkedEntityType: 'FUND_CONTRIBUTION',
+      createdById: ACTOR_ID,
+    });
+    expect(txArg.data.balanceAfter.toString()).toBe('1500');
+  });
+
+  it('writes an audit log with the before and after balances', async () => {
+    const { prisma, tx } = makeContributePrisma();
+    await new FundsService(prisma).contribute(SOCIETY_ID, FUND_ID, { amount: 500 }, ACTOR_ID);
+
+    const [auditArg] = tx.auditLog.create.mock.calls[0];
+    expect(auditArg.data).toMatchObject({ action: 'FUND_TRANSACTION', entityId: FUND_ID });
+    expect(auditArg.data.newValues).toMatchObject({
+      type: 'CONTRIBUTION',
+      balanceBefore: '1000',
+      balanceAfter: '1500',
+    });
+  });
+
+  it('refuses a fund from another society', async () => {
+    const { prisma } = makeContributePrisma({ fund: null });
+    await expect(
+      new FundsService(prisma).contribute(SOCIETY_ID, FUND_ID, { amount: 500 }, ACTOR_ID),
+    ).rejects.toThrow(NotFoundException);
+  });
+});

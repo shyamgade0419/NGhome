@@ -2,6 +2,7 @@ import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@ne
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
 import { FundsService, CreateFundDto } from './funds.service';
+import { ContributeFundDto } from './dto/contribute-fund.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -40,6 +41,19 @@ export class FundsController {
     @Param('id') id: string,
   ) {
     return this.fundsService.findOne(societyId, id, user.currentRole === 'RESIDENT');
+  }
+
+  @Post(':id/contribute')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
+  @ApiOperation({ summary: 'Add money to a fund (corpus contribution, transfer of surplus)' })
+  contribute(
+    @SocietyId() societyId: string,
+    @Param('id') id: string,
+    @Body() dto: ContributeFundDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.fundsService.contribute(societyId, id, dto, user.id);
   }
 
   @Patch(':id')
