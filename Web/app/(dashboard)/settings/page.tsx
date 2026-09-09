@@ -255,7 +255,10 @@ function BillingConfigSection({ admin }: { admin: boolean }) {
       <SectionDivider title="Transparency" icon={<Shield size={14} />} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {[
-          { key: 'paymentVerificationRequired', label: 'Require payment verification', desc: 'Admin must approve each payment before it is accepted' },
+          // Turning this off closes bills on an unverified, self-typed UTR —
+          // removing the only check on the money path. The description says so
+          // rather than framing it as review overhead.
+          { key: 'paymentVerificationRequired', label: 'Require payment verification', desc: 'Recommended. Off closes a bill as soon as a resident types any transaction ID — nothing checks it against your bank' },
           { key: 'allowPaymentProofUpload', label: 'Allow payment proof uploads', desc: 'Residents can upload screenshots with their payment' },
           // A "Show corpus balance to residents" switch used to sit here and was
           // read by nothing — an admin turning it off believed corpus was hidden

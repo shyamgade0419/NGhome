@@ -48,7 +48,7 @@ const ARTICLES: Article[] = [
       'After paying, enter your UTR / transaction ID in the "Transaction ID" field.',
       'Tap "Submit Payment" — you\'ll get a confirmation once verified by admin.',
     ],
-    tip: 'If auto-approval is enabled, your bill will be marked paid as soon as you submit with a UTR.',
+    tip: 'Your bill is normally marked paid once an admin has checked the payment against the society\'s bank records. Some societies switch that check off, in which case it closes as soon as you submit.',
   },
   {
     id: 'attach-receipt',
@@ -152,7 +152,7 @@ const ARTICLES: Article[] = [
       'Tap "Approve Payment" and confirm — the bill is marked paid automatically.',
       'To reject, tap "Reject Payment" and enter the reason (shown to the resident).',
     ],
-    tip: 'Turn on Auto-approve in Settings → Society → UPI & Payments to skip manual verification for UPI payments with a UTR.',
+    tip: 'Approving is what puts the money into an account balance — until you approve, the payment is recorded but your accounts do not reflect it. Auto-approve exists in Settings, but it closes bills on an unverified transaction ID, so most societies are better off approving manually.',
   },
   {
     id: 'water',

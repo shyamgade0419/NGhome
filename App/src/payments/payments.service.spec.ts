@@ -76,6 +76,10 @@ describe('PaymentsService.submit — proof attachment', () => {
       societyMembership: { findFirst: jest.fn().mockResolvedValue({ id: 'm1' }) },
       maintenanceBill: { findFirst: jest.fn() },
       societyConfiguration: { findUnique: jest.fn().mockResolvedValue({ paymentVerificationRequired: true }) },
+      // submit() checks the society's accounts to decide whether auto-approve
+      // can land the money anywhere. These cases require verification, so the
+      // list is never used — it just has to exist.
+      account: { findMany: jest.fn().mockResolvedValue([]) },
       paymentSubmission: { create: jest.fn().mockResolvedValue(payment) },
       document: { create: jest.fn().mockResolvedValue({ id: 'doc-1' }) },
     } as unknown as PrismaService;
@@ -121,5 +125,142 @@ describe('PaymentsService.submit — proof attachment', () => {
 
     expect((storage.upload as jest.Mock)).not.toHaveBeenCalled();
     expect((prisma.document as any).create).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Auto-approve had to land the money somewhere.
+ *
+ * With paymentVerificationRequired off, submit() marked the payment APPROVED
+ * and updated the bill but credited no account and wrote no Transaction —
+ * only approve() did that. Bills read as paid while the money existed in no
+ * balance and no ledger, and nothing surfaced the drift.
+ */
+
+import { Prisma } from '@prisma/client';
+
+const FLAT_ID = 'flat-1';
+const BILL_ID = 'bill-1';
+
+function makeSubmitServices(opts: { accounts: { id: string }[]; verificationRequired?: boolean }) {
+  const bill = {
+    id: BILL_ID,
+    societyId: SOCIETY_ID,
+    flatId: FLAT_ID,
+    isPaid: false,
+    totalAmount: new Prisma.Decimal(2500),
+    paidAmount: new Prisma.Decimal(0),
+    pendingAmount: new Prisma.Decimal(2500),
+  };
+
+  const tx = {
+    account: {
+      update: jest.fn().mockResolvedValue({ id: 'account-1', currentBalance: new Prisma.Decimal(2500) }),
+    },
+    transaction: { create: jest.fn().mockResolvedValue({}) },
+    maintenanceBill: {
+      update: jest
+        .fn()
+        .mockResolvedValue({ ...bill, paidAmount: new Prisma.Decimal(2500), totalAmount: new Prisma.Decimal(2500) }),
+    },
+  };
+
+  const prisma = {
+    societyMembership: { findFirst: jest.fn().mockResolvedValue({ id: 'm1' }) },
+    maintenanceBill: { findFirst: jest.fn().mockResolvedValue(bill) },
+    societyConfiguration: {
+      findUnique: jest
+        .fn()
+        .mockResolvedValue({ paymentVerificationRequired: opts.verificationRequired ?? false }),
+    },
+    account: { findMany: jest.fn().mockResolvedValue(opts.accounts) },
+    paymentSubmission: {
+      create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: PAYMENT_ID, ...data })),
+    },
+    $transaction: jest.fn(async (cb: any) => cb(tx)),
+  } as unknown as PrismaService;
+
+  const storage = {} as unknown as SftpStorageService;
+  return { service: new PaymentsService(prisma, storage), prisma, tx };
+}
+
+const submitDto = {
+  maintenanceBillId: BILL_ID,
+  amount: 2500,
+  paymentDate: '2026-09-09',
+  paymentMethod: 'UPI' as any,
+  utrNumber: '426117890123',
+};
+
+describe('PaymentsService — auto-approve lands the money', () => {
+  it('credits the account and writes a CREDIT transaction when exactly one account exists', async () => {
+    const { service, tx } = makeSubmitServices({ accounts: [{ id: 'account-1' }] });
+    const result: any = await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
+
+    expect(result.autoApproved).toBe(true);
+    expect(tx.account.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'account-1' },
+        data: { currentBalance: { increment: expect.anything() } },
+      }),
+    );
+    const [txArg] = tx.transaction.create.mock.calls[0];
+    expect(txArg.data).toMatchObject({
+      accountId: 'account-1',
+      transactionType: 'CREDIT',
+      linkedEntityType: 'PaymentSubmission',
+    });
+  });
+
+  it('stays PENDING rather than stranding the money when several accounts exist', async () => {
+    // Guessing which account would put real money in the wrong ledger and go
+    // unnoticed; an admin picking one is the lesser cost.
+    const { service, tx } = makeSubmitServices({
+      accounts: [{ id: 'account-1' }, { id: 'account-2' }],
+    });
+    const result: any = await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
+
+    expect(result.autoApproved).toBeUndefined();
+    expect(result.status).toBe('PENDING');
+    expect(tx.account.update).not.toHaveBeenCalled();
+    expect(tx.transaction.create).not.toHaveBeenCalled();
+  });
+
+  it('stays PENDING when the society has no account at all', async () => {
+    const { service, tx } = makeSubmitServices({ accounts: [] });
+    const result: any = await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
+
+    expect(result.status).toBe('PENDING');
+    expect(tx.account.update).not.toHaveBeenCalled();
+  });
+
+  it('stays PENDING when the society requires verification, even with one account', async () => {
+    const { service, tx } = makeSubmitServices({
+      accounts: [{ id: 'account-1' }],
+      verificationRequired: true,
+    });
+    const result: any = await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
+
+    expect(result.status).toBe('PENDING');
+    expect(tx.account.update).not.toHaveBeenCalled();
+  });
+
+  it('stays PENDING without a UTR', async () => {
+    const { service, tx } = makeSubmitServices({ accounts: [{ id: 'account-1' }] });
+    const result: any = await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, {
+      ...submitDto,
+      utrNumber: undefined,
+    });
+
+    expect(result.status).toBe('PENDING');
+    expect(tx.account.update).not.toHaveBeenCalled();
+  });
+
+  it('increments the bill atomically rather than writing a computed total', async () => {
+    const { service, tx } = makeSubmitServices({ accounts: [{ id: 'account-1' }] });
+    await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
+
+    const [billArg] = tx.maintenanceBill.update.mock.calls[0];
+    expect(billArg.data).toEqual({ paidAmount: { increment: expect.anything() } });
   });
 });

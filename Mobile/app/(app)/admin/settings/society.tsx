@@ -501,8 +501,14 @@ export default function SocietySettingsScreen() {
           <View style={styles.toggleRow}>
             <View style={styles.toggleText}>
               <Text style={styles.toggleLabel}>Auto-approve UPI payments</Text>
+              {/* The old copy said this approves payments "without admin
+                  review", which reads as a convenience. Nothing checks the
+                  UTR against anything, so what it really removes is the only
+                  check that exists — worth saying, not implying. */}
               <Text style={styles.toggleSub}>
-                When ON, payments submitted with a UTR are approved instantly without admin review.
+                Closes a bill as soon as a resident types any transaction ID. Nothing verifies that
+                ID against your bank, so a typo clears a bill as easily as a real payment. Needs
+                exactly one account set up; with more, payments still wait for you.
               </Text>
             </View>
             <Switch

@@ -41,10 +41,35 @@ export class PaymentsService {
       where: { societyId },
       select: { paymentVerificationRequired: true },
     });
+
+    /**
+     * Auto-approve has to land the money somewhere. It previously marked the
+     * payment APPROVED and updated the bill without crediting any account or
+     * writing a Transaction — only approve() does that — so with verification
+     * switched off, bills read as paid while the money existed in no balance
+     * and no ledger. The society's books drifted from the bank silently, and
+     * nothing surfaced it.
+     *
+     * The account is only chosen when there is exactly one active account, so
+     * the choice is never a guess. With several, putting real money in the
+     * wrong ledger would go unnoticed for months, which is worse than asking
+     * for a click — so the payment simply stays PENDING for manual approval,
+     * where the admin picks the account as usual. Same when there are none.
+     *
+     * Failing back to PENDING is the point: the worst case becomes "an admin
+     * approves it", which is what they would have done anyway.
+     */
+    const accounts = await this.prisma.account.findMany({
+      where: { societyId, isActive: true },
+      select: { id: true },
+    });
+    const soleAccountId = accounts.length === 1 ? accounts[0].id : null;
+
     const autoApprove =
       config?.paymentVerificationRequired === false &&
       !!dto.utrNumber &&
-      !!bill;
+      !!bill &&
+      !!soleAccountId;
 
     const payment = await this.prisma.paymentSubmission.create({
       data: {
@@ -97,18 +122,51 @@ export class PaymentsService {
       });
     }
 
-    // Auto-confirm: mark the bill as paid without requiring admin intervention
-    if (autoApprove && bill) {
-      const paidAmt = bill.paidAmount.toNumber() + dto.amount;
-      const pendingAmt = Math.max(0, bill.pendingAmount.toNumber() - dto.amount);
-      await this.prisma.maintenanceBill.update({
-        where: { id: bill.id },
-        data: {
-          paidAmount: new Prisma.Decimal(paidAmt),
-          pendingAmount: new Prisma.Decimal(pendingAmt),
-          isPaid: pendingAmt === 0,
-        },
+    // Auto-confirm: settle the bill without waiting for an admin. Everything
+    // approve() does, minus the human — crucially including the account credit
+    // and the Transaction, so the money actually lands somewhere.
+    if (autoApprove && bill && soleAccountId) {
+      const amount = new Prisma.Decimal(dto.amount);
+
+      await this.prisma.$transaction(async (tx) => {
+        const updatedAccount = await tx.account.update({
+          where: { id: soleAccountId },
+          data: { currentBalance: { increment: amount } },
+        });
+
+        await tx.transaction.create({
+          data: {
+            societyId,
+            accountId: soleAccountId,
+            transactionType: 'CREDIT',
+            amount,
+            transactionDate: new Date(dto.paymentDate),
+            description: `Payment received (auto-approved)${dto.utrNumber ? ` — UTR ${dto.utrNumber}` : ''}`,
+            linkedEntityType: 'PaymentSubmission',
+            linkedEntityId: payment.id,
+            balanceAfter: updatedAccount.currentBalance,
+            createdById: userId,
+          },
+        });
+
+        // Atomic increment rather than the read-modify-write this used to do:
+        // two payments landing together would otherwise each write a total
+        // computed from the same stale starting figure, losing one of them.
+        const updatedBill = await tx.maintenanceBill.update({
+          where: { id: bill.id },
+          data: { paidAmount: { increment: amount } },
+        });
+
+        const pending = updatedBill.totalAmount.minus(updatedBill.paidAmount);
+        await tx.maintenanceBill.update({
+          where: { id: bill.id },
+          data: {
+            pendingAmount: pending.lessThan(0) ? new Prisma.Decimal(0) : pending,
+            isPaid: pending.lessThanOrEqualTo(0),
+          },
+        });
       });
+
       return { ...payment, autoApproved: true };
     }
 
