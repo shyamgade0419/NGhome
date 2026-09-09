@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/api/client';
+import { accountsApi } from '@/api/endpoints/accounts.api';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -217,6 +218,8 @@ export default function ExpensesScreen() {
   // Android-compatible reject modal (replaces Alert.prompt which is iOS-only)
   const [rejectingExpense, setRejectingExpense] = useState<Expense | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [payingExpense, setPayingExpense] = useState<Expense | null>(null);
+  const [payAccountId, setPayAccountId] = useState<string | null>(null);
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['expenses', filter],
@@ -247,6 +250,21 @@ export default function ExpensesScreen() {
     },
     onError: (e: any) =>
       Alert.alert('Error', e?.response?.data?.message ?? 'Failed to reject.'),
+  });
+
+  const { data: accounts } = useQuery({ queryKey: ['accounts'], queryFn: accountsApi.list });
+
+  const markPaidMutation = useMutation({
+    mutationFn: ({ id, accountId }: { id: string; accountId: string }) =>
+      apiClient.post(`/expenses/${id}/mark-paid`, { accountId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['expenses'] });
+      qc.invalidateQueries({ queryKey: ['accounts'] });
+      setPayingExpense(null);
+      Alert.alert('Marked Paid', 'The account balance has been updated.');
+    },
+    onError: (e: any) =>
+      Alert.alert('Error', e?.response?.data?.message ?? 'Failed to mark paid.'),
   });
 
   const handleApprove = (item: Expense) => {
@@ -314,6 +332,21 @@ export default function ExpensesScreen() {
           >
             <Ionicons name="close-circle-outline" size={15} color={colors.error} />
             <Text style={[styles.actionText, { color: colors.error }]}>Reject</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Approving commits the expense but moves no money — marking it paid is
+          the only thing that debits an account. Without this the balance kept
+          showing spent money as still available. */}
+      {item.status === 'APPROVED' && (
+        <View style={styles.actions}>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.approveBtn]}
+            onPress={() => setPayingExpense(item)}
+          >
+            <Ionicons name="cash-outline" size={15} color={colors.success} />
+            <Text style={[styles.actionText, { color: colors.success }]}>Mark Paid</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -429,9 +462,99 @@ export default function ExpensesScreen() {
           </KeyboardAvoidingView>
         </View>
       </Modal>
+
+      {/* Which account the money actually leaves. Reuses the rejection modal's
+          shape rather than a full page sheet — it's one choice and a confirm. */}
+      <Modal
+        visible={!!payingExpense}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setPayingExpense(null)}
+      >
+        <View style={rejectModal.overlay}>
+          <View style={rejectModal.card}>
+            <View style={rejectModal.header}>
+              <Text style={rejectModal.title}>Mark Paid</Text>
+              <TouchableOpacity onPress={() => setPayingExpense(null)} hitSlop={8}>
+                <Ionicons name="close" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            {payingExpense && (
+              <Text style={rejectModal.desc}>
+                {payingExpense.description} · {inr(payingExpense.amount)}
+              </Text>
+            )}
+            <Text style={payModal.label}>Pay from account</Text>
+            <ScrollView style={payModal.accountList}>
+              {(accounts ?? []).map((a) => (
+                <TouchableOpacity
+                  key={a.id}
+                  style={[payModal.accountRow, payAccountId === a.id && payModal.accountRowActive]}
+                  onPress={() => setPayAccountId(a.id)}
+                >
+                  <Ionicons
+                    name={payAccountId === a.id ? 'radio-button-on' : 'radio-button-off'}
+                    size={18}
+                    color={payAccountId === a.id ? colors.primary : colors.textTertiary}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={payModal.accountName}>{a.name}</Text>
+                    <Text style={payModal.accountBal}>{inr(a.currentBalance)}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <Text style={payModal.hint}>
+              Deducts this amount from the account and records it in that account&apos;s ledger.
+            </Text>
+            <View style={rejectModal.actions}>
+              <TouchableOpacity style={rejectModal.cancelBtn} onPress={() => setPayingExpense(null)}>
+                <Text style={rejectModal.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  payModal.confirmBtn,
+                  (markPaidMutation.isPending || !payAccountId) && { opacity: 0.6 },
+                ]}
+                onPress={() =>
+                  payingExpense &&
+                  payAccountId &&
+                  markPaidMutation.mutate({ id: payingExpense.id, accountId: payAccountId })
+                }
+                disabled={markPaidMutation.isPending || !payAccountId}
+              >
+                <Text style={payModal.confirmText}>
+                  {markPaidMutation.isPending ? 'Saving…' : 'Mark Paid'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
+
+const payModal = StyleSheet.create({
+  label: { ...typography.labelMedium, color: colors.textSecondary, marginTop: spacing.md, marginBottom: 6 },
+  accountList: { maxHeight: 200 },
+  accountRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    paddingVertical: 10, paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+    marginBottom: 6,
+  },
+  accountRowActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
+  accountName: { ...typography.bodyMedium, color: colors.text },
+  accountBal: { ...typography.bodySmall, color: colors.textSecondary },
+  hint: { ...typography.bodySmall, color: colors.textTertiary, marginTop: spacing.sm },
+  confirmBtn: {
+    flex: 1, paddingVertical: 11, borderRadius: radius.md,
+    backgroundColor: colors.primary, alignItems: 'center',
+  },
+  confirmText: { ...typography.labelLarge, color: colors.textInverse },
+});
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },

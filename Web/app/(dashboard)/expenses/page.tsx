@@ -7,7 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Plus, Wallet } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { expensesApi } from '@/lib/api/endpoints';
+import { expensesApi, accountsApi } from '@/lib/api/endpoints';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { Button } from '@/components/ui/Button';
@@ -21,6 +21,7 @@ import { Modal } from '@/components/ui/Modal';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { formatCurrency, formatDate, EXPENSE_CATEGORIES } from '@/lib/utils';
+import type { Expense } from '@/lib/types';
 
 const expenseSchema = z.object({
   description: z.string().min(1, 'Description required'),
@@ -84,6 +85,31 @@ export default function ExpensesPage() {
       qc.invalidateQueries({ queryKey: ['expenses'] });
     },
     onError: () => toast.error('Failed to approve'),
+  });
+
+  // Approving an expense does not move any money — mark-paid is the only thing
+  // that debits an account, and it had no UI on either client, so bank balances
+  // only ever went up. Payments credited them and salaries debited them, but
+  // every other expense left the balance untouched.
+  const [payingExpense, setPayingExpense] = useState<Expense | null>(null);
+  const [payAccountId, setPayAccountId] = useState('');
+
+  const { data: accountsData } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => accountsApi.listAccounts({ limit: 100 }).then((r: any) => r.data),
+  });
+  const accounts: any[] = accountsData?.data ?? [];
+
+  const markPaidMutation = useMutation({
+    mutationFn: () => expensesApi.markPaid(payingExpense!.id, payAccountId),
+    onSuccess: () => {
+      toast.success('Expense marked paid — account balance updated');
+      qc.invalidateQueries({ queryKey: ['expenses'] });
+      qc.invalidateQueries({ queryKey: ['accounts'] });
+      setPayingExpense(null);
+      setPayAccountId('');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to mark paid'),
   });
 
   return (
@@ -159,6 +185,15 @@ export default function ExpensesPage() {
                           Approve
                         </Button>
                       )}
+                      {e.status === 'APPROVED' && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => { setPayingExpense(e); setPayAccountId(accounts[0]?.id ?? ''); }}
+                        >
+                          Mark Paid
+                        </Button>
+                      )}
                     </Td>
                   </Tr>
                 ))}
@@ -177,6 +212,53 @@ export default function ExpensesPage() {
           </div>
         )}
       </PageContainer>
+
+      <Modal
+        open={!!payingExpense}
+        onClose={() => { setPayingExpense(null); setPayAccountId(''); }}
+        title="Mark Expense Paid"
+      >
+        {payingExpense && (
+          <div className="space-y-4">
+            <div className="rounded-lg bg-slate-50 px-4 py-3">
+              <p className="text-sm font-medium text-slate-900">{payingExpense.description}</p>
+              <p className="mt-0.5 text-lg font-bold text-slate-900">
+                {formatCurrency(payingExpense.amount)}
+              </p>
+            </div>
+            <Select
+              label="Pay from account"
+              options={accounts.map((a: any) => ({
+                value: a.id,
+                label: `${a.name} — ${formatCurrency(a.currentBalance)}`,
+              }))}
+              value={payAccountId}
+              onChange={(ev) => setPayAccountId(ev.target.value)}
+            />
+            <p className="-mt-2 text-xs text-slate-500">
+              This deducts the amount from the selected account&rsquo;s balance and records it in
+              that account&rsquo;s ledger. Approving an expense on its own doesn&rsquo;t move any
+              money.
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => { setPayingExpense(null); setPayAccountId(''); }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => markPaidMutation.mutate()}
+                loading={markPaidMutation.isPending}
+                disabled={!payAccountId}
+              >
+                Mark Paid
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal open={showModal} onClose={() => { setShowModal(false); reset(); }} title="Log Expense">
         <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-4">
