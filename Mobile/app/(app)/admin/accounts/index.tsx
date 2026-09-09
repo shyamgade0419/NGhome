@@ -113,7 +113,10 @@ function NewFundModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [openingBalance, setOpeningBalance] = useState('');
-  const [isVisibleToResidents, setIsVisibleToResidents] = useState(true);
+  // Defaults to off: this is the only control over whether residents see this
+  // fund, so exposure should be a deliberate act rather than something that
+  // happens because a default was left alone.
+  const [isVisibleToResidents, setIsVisibleToResidents] = useState(false);
 
   const mutation = useMutation({
     mutationFn: () =>

@@ -179,8 +179,8 @@ export const societyApi = {
     financialYearStartMonth?: number; gracePeriodDays?: number;
     lateFeeType?: string; lateFeeValue?: number; lateFeeMaxAmount?: number;
     invoicePrefix?: string; paymentVerificationRequired?: boolean;
-    allowPaymentProofUpload?: boolean; showCorpusToResidents?: boolean;
-    showFundBalancesToResidents?: boolean; showExpensesToResidents?: boolean;
+    allowPaymentProofUpload?: boolean;
+    showAccountBalancesToResidents?: boolean; showExpensesToResidents?: boolean;
     publishStatementToResidents?: boolean; publishMeetingMinutes?: boolean;
     upiId?: string;
   }) => api.patch('/societies/my/config', data),

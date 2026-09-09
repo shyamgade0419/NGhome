@@ -248,6 +248,10 @@ export default function AccountsPage() {
             What the fund already holds today. Later additions go through Add Money, so they
             leave a ledger entry.
           </p>
+          {/* Unchecked by default: this is the only control over whether
+              residents see this fund, so exposure should be a deliberate act
+              rather than something that happens because a default was left
+              alone. */}
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" {...createFundForm.register('isVisibleToResidents')} />
             Show this fund and its balance to residents

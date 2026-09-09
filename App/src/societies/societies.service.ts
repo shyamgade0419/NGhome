@@ -187,19 +187,27 @@ export class SocietiesService {
   }
 
   /**
-   * Resident-safe financial transparency summary. showCorpusToResidents,
-   * showFundBalancesToResidents and showExpensesToResidents have existed on
+   * Resident-safe financial transparency summary. These flags had existed on
    * SocietyConfiguration since it was added, but nothing anywhere in the API
    * ever read them — there was no endpoint a resident could call for this
    * data at all (accounts/reports are SOCIETY_ADMIN/ACCOUNTANT-only). This is
    * the first thing that actually enforces them, server-side, so a resident
    * can never see more than the admin has switched on regardless of what the
    * client requests.
+   *
+   * Note what `showAccountBalancesToResidents` covers: the total bank
+   * balance, and nothing else. Which *funds* a resident sees is decided
+   * per-fund by Fund.isVisibleToResidents, in FundsService.findAll. Keeping
+   * those separate is deliberate — a society may want the corpus public and
+   * a legal-dispute fund private — but it does mean this flag must never be
+   * described to admins as controlling fund balances. It previously was, and
+   * a third flag (showCorpusToResidents) claimed to control corpus while
+   * being read by nothing at all; both are fixed as of this change.
    */
   async getResidentFinancialSummary(societyId: string) {
     const config = await this.prisma.societyConfiguration.findUnique({ where: { societyId } });
 
-    const showBalances = config?.showFundBalancesToResidents ?? false;
+    const showBalances = config?.showAccountBalancesToResidents ?? false;
     const showExpenses = config?.showExpensesToResidents ?? false;
 
     const now = new Date();

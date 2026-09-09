@@ -381,8 +381,9 @@ model SocietyConfiguration {
   invoiceCurrentNumber        Int              @default(1)
   paymentVerificationRequired Boolean          @default(true)
   allowPaymentProofUpload     Boolean          @default(true)
-  showCorpusToResidents       Boolean          @default(false)
-  showFundBalancesToResidents Boolean          @default(false)
+  // Gates the total bank-account balance on the resident finances screen. Fund
+  // visibility is per-fund (Fund.isVisibleToResidents), deliberately not this.
+  showAccountBalancesToResidents Boolean       @default(false)
   showExpensesToResidents     Boolean          @default(false)
   publishStatementToResidents Boolean          @default(true)
   publishMeetingMinutes       Boolean          @default(true)

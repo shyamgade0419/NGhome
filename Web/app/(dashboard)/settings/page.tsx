@@ -145,8 +145,7 @@ function BillingConfigSection({ admin }: { admin: boolean }) {
         invoicePrefix: data.invoicePrefix ?? '',
         paymentVerificationRequired: data.paymentVerificationRequired ?? false,
         allowPaymentProofUpload: data.allowPaymentProofUpload ?? true,
-        showCorpusToResidents: data.showCorpusToResidents ?? false,
-        showFundBalancesToResidents: data.showFundBalancesToResidents ?? false,
+        showAccountBalancesToResidents: data.showAccountBalancesToResidents ?? false,
         showExpensesToResidents: data.showExpensesToResidents ?? false,
         publishStatementToResidents: data.publishStatementToResidents ?? false,
         publishMeetingMinutes: data.publishMeetingMinutes ?? false,
@@ -169,8 +168,7 @@ function BillingConfigSection({ admin }: { admin: boolean }) {
         invoicePrefix: form.invoicePrefix || undefined,
         paymentVerificationRequired: form.paymentVerificationRequired,
         allowPaymentProofUpload: form.allowPaymentProofUpload,
-        showCorpusToResidents: form.showCorpusToResidents,
-        showFundBalancesToResidents: form.showFundBalancesToResidents,
+        showAccountBalancesToResidents: form.showAccountBalancesToResidents,
         showExpensesToResidents: form.showExpensesToResidents,
         publishStatementToResidents: form.publishStatementToResidents,
         publishMeetingMinutes: form.publishMeetingMinutes,
@@ -259,8 +257,16 @@ function BillingConfigSection({ admin }: { admin: boolean }) {
         {[
           { key: 'paymentVerificationRequired', label: 'Require payment verification', desc: 'Admin must approve each payment before it is accepted' },
           { key: 'allowPaymentProofUpload', label: 'Allow payment proof uploads', desc: 'Residents can upload screenshots with their payment' },
-          { key: 'showCorpusToResidents', label: 'Show corpus balance to residents' },
-          { key: 'showFundBalancesToResidents', label: 'Show fund balances to residents' },
+          // A "Show corpus balance to residents" switch used to sit here and was
+          // read by nothing — an admin turning it off believed corpus was hidden
+          // while residents could still see it. Funds are shown or hidden one at
+          // a time on the fund itself (Accounts & Funds), which is now the only
+          // place that choice is offered.
+          {
+            key: 'showAccountBalancesToResidents',
+            label: 'Show total bank balance to residents',
+            desc: 'Each fund is shown or hidden separately, under Accounts & Funds',
+          },
           { key: 'showExpensesToResidents', label: 'Show expenses to residents' },
           { key: 'publishStatementToResidents', label: 'Publish monthly statement to residents' },
           { key: 'publishMeetingMinutes', label: 'Publish meeting minutes' },

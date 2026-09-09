@@ -78,8 +78,7 @@ const toggleStyles = StyleSheet.create({
 
 // ── Main screen ────────────────────────────────────────────────────
 type Config = {
-  showCorpusToResidents: boolean;
-  showFundBalancesToResidents: boolean;
+  showAccountBalancesToResidents: boolean;
   showExpensesToResidents: boolean;
   publishStatementToResidents: boolean;
   publishMeetingMinutes: boolean;
@@ -87,8 +86,7 @@ type Config = {
 };
 
 const DEFAULTS: Config = {
-  showCorpusToResidents: false,
-  showFundBalancesToResidents: false,
+  showAccountBalancesToResidents: false,
   showExpensesToResidents: false,
   publishStatementToResidents: false,
   publishMeetingMinutes: false,
@@ -108,8 +106,7 @@ export default function NotificationSettingsScreen() {
   useEffect(() => {
     if (data) {
       setForm({
-        showCorpusToResidents: data.showCorpusToResidents ?? false,
-        showFundBalancesToResidents: data.showFundBalancesToResidents ?? false,
+        showAccountBalancesToResidents: data.showAccountBalancesToResidents ?? false,
         showExpensesToResidents: data.showExpensesToResidents ?? false,
         publishStatementToResidents: data.publishStatementToResidents ?? false,
         publishMeetingMinutes: data.publishMeetingMinutes ?? false,
@@ -146,17 +143,16 @@ export default function NotificationSettingsScreen() {
             title="Resident Visibility"
             sub="What financial information residents can see in the app"
           />
+          {/* There was a "Show corpus balance" switch above this one that was
+              read by nothing — an admin turning it off believed corpus was
+              hidden while residents could still see it. Corpus and every other
+              fund are shown or hidden one at a time, on the fund itself, so
+              that is the only place the choice is now offered. */}
           <ToggleRow
-            label="Show corpus balance"
-            sublabel="Residents can see the corpus fund amount"
-            value={form.showCorpusToResidents}
-            onChange={set('showCorpusToResidents')}
-          />
-          <ToggleRow
-            label="Show account balances"
-            sublabel="Residents can see fund and bank balances"
-            value={form.showFundBalancesToResidents}
-            onChange={set('showFundBalancesToResidents')}
+            label="Show total bank balance"
+            sublabel="Residents can see the society's combined account balance. Each fund is shown or hidden separately, under Accounts & Funds."
+            value={form.showAccountBalancesToResidents}
+            onChange={set('showAccountBalancesToResidents')}
           />
           <ToggleRow
             label="Show expense records"

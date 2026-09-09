@@ -67,15 +67,14 @@ export class UpdateSocietyConfigDto {
   @IsBoolean()
   allowPaymentProofUpload?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description:
+      'Show the total bank-account balance to residents. Fund balances are NOT governed by ' +
+      'this — each fund carries its own isVisibleToResidents.',
+  })
   @IsOptional()
   @IsBoolean()
-  showCorpusToResidents?: boolean;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  showFundBalancesToResidents?: boolean;
+  showAccountBalancesToResidents?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()
