@@ -23,7 +23,7 @@
         "backgroundColor": "#0D2147"
       },
       "package": "in.novagade.nghome",
-      "versionCode": 11,
+      "versionCode": 12,
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE"
