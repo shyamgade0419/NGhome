@@ -122,7 +122,22 @@ export class SalariesService {
       const account = await tx.account.findFirst({ where: { id: record.accountId!, societyId } });
       if (!account) throw new NotFoundException('Account not found');
 
-      const newBalance = account.currentBalance.toNumber() - record.netSalary.toNumber();
+      /**
+       * Atomic decrement, not a computed absolute. This previously read
+       * currentBalance, subtracted in JavaScript, and wrote the result back —
+       * so two salaries paid at the same moment both started from the same
+       * figure and the second write erased the first, losing a debit
+       * entirely. Being inside a transaction does not prevent that at
+       * Postgres's default isolation; only the atomic operation does.
+       *
+       * It also keeps the arithmetic in Decimal. The old path went through
+       * .toNumber() on both sides, which is float maths on money in a
+       * codebase that uses Decimal everywhere else precisely to avoid it.
+       */
+      const updatedAccount = await tx.account.update({
+        where: { id: record.accountId! },
+        data: { currentBalance: { decrement: record.netSalary } },
+      });
 
       await tx.transaction.create({
         data: {
@@ -134,14 +149,11 @@ export class SalariesService {
           description: `Salary: Employee ${record.employeeId} (${record.salaryMonth}/${record.salaryYear})`,
           linkedEntityType: 'SALARY',
           linkedEntityId: salaryRecordId,
-          balanceAfter: new Prisma.Decimal(newBalance),
+          // The post-decrement balance, so the ledger line matches what the
+          // account actually holds after this payment.
+          balanceAfter: updatedAccount.currentBalance,
           createdById: actorId,
         },
-      });
-
-      await tx.account.update({
-        where: { id: record.accountId! },
-        data: { currentBalance: new Prisma.Decimal(newBalance) },
       });
 
       return tx.salaryRecord.update({

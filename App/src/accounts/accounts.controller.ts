@@ -2,6 +2,7 @@ import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@ne
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SystemRole, AccountType } from '@prisma/client';
 import { AccountsService, CreateAccountDto } from './accounts.service';
+import { UpdateAccountDto } from './dto/create-account.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -38,7 +39,7 @@ export class AccountsController {
   @Patch(':id')
   @Roles(SystemRole.SOCIETY_ADMIN)
   @ApiOperation({ summary: 'Update account details' })
-  update(@SocietyId() societyId: string, @Param('id') id: string, @Body() dto: Partial<CreateAccountDto>) {
+  update(@SocietyId() societyId: string, @Param('id') id: string, @Body() dto: UpdateAccountDto) {
     return this.accountsService.update(societyId, id, dto);
   }
 

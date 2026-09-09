@@ -3,27 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, ExpenseStatus } from '@prisma/client';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
 
-export interface CreateExpenseDto {
-  categoryId?: string;
-  /**
-   * Category by name, which is what both clients actually send — they offer a
-   * fixed list ("MAINTENANCE", "UTILITIES", …) and have no category IDs to
-   * hand. Only `categoryId` was read before, so every expense logged from
-   * either app was stored uncategorised and the picker did nothing: the list
-   * showed "—" and the resident expense breakdown reported everything as
-   * "Uncategorized". Resolved to a real category below.
-   */
-  category?: string;
-  accountId?: string;
-  vendorPayee?: string;
-  description: string;
-  amount: number;
-  expenseDate: string;
-  invoiceNumber?: string;
-  referenceNumber?: string;
-  isRecurring?: boolean;
-  notes?: string;
-}
+import { CreateExpenseDto } from './dto/create-expense.dto';
+export { CreateExpenseDto } from './dto/create-expense.dto';
 
 @Injectable()
 export class ExpensesService {

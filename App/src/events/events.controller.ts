@@ -5,6 +5,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
 import { EventsService, CreateEventDto } from './events.service';
+import { UpdateEventDto } from './dto/create-event.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -60,7 +61,7 @@ export class EventsController {
   update(
     @SocietyId() societyId: string,
     @Param('id') id: string,
-    @Body() dto: Partial<CreateEventDto>,
+    @Body() dto: UpdateEventDto,
   ) {
     return this.eventsService.update(societyId, id, dto);
   }

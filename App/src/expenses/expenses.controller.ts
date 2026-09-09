@@ -4,6 +4,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SystemRole, ExpenseStatus } from '@prisma/client';
 import { ExpensesService, CreateExpenseDto } from './expenses.service';
+import { UpdateExpenseDto } from './dto/create-expense.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -71,7 +72,7 @@ export class ExpensesController {
   update(
     @SocietyId() societyId: string,
     @Param('id') id: string,
-    @Body() dto: Partial<CreateExpenseDto>,
+    @Body() dto: UpdateExpenseDto,
   ) {
     return this.expensesService.update(societyId, id, dto);
   }

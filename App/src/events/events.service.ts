@@ -5,16 +5,8 @@ import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagina
 
 const LINKED_ENTITY_TYPE = 'EVENT';
 
-export interface CreateEventDto {
-  title: string;
-  description?: string;
-  eventDate: string;
-  fundId?: string;
-  estimatedCost?: number;
-  actualCost?: number;
-  status?: EventStatus;
-  isVisibleToResidents?: boolean;
-}
+import { CreateEventDto } from './dto/create-event.dto';
+export { CreateEventDto } from './dto/create-event.dto';
 
 const FUND_SELECT = { id: true, name: true } satisfies Prisma.FundSelect;
 const CREATOR_SELECT = { id: true, firstName: true, lastName: true } satisfies Prisma.UserSelect;

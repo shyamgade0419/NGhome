@@ -233,15 +233,15 @@ export class PaymentsService {
           where: { id: payment.maintenanceBillId },
           data: { paidAmount: { increment: payment.amount } },
         });
-        const newPending = Math.max(
-          0,
-          updatedBill.totalAmount.toNumber() - updatedBill.paidAmount.toNumber(),
-        );
+        // Decimal, not float. `newPending === 0` on a float subtraction can
+        // land on 1e-13 for a bill with paise, leaving a fully paid bill
+        // marked unpaid with no way for the resident to clear it.
+        const pending = updatedBill.totalAmount.minus(updatedBill.paidAmount);
         await tx.maintenanceBill.update({
           where: { id: payment.maintenanceBillId },
           data: {
-            pendingAmount: new Prisma.Decimal(newPending),
-            isPaid: newPending === 0,
+            pendingAmount: pending.lessThan(0) ? new Prisma.Decimal(0) : pending,
+            isPaid: pending.lessThanOrEqualTo(0),
           },
         });
       }

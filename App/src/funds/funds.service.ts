@@ -3,13 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, TransactionType, AuditAction } from '@prisma/client';
 import { ContributeFundDto } from './dto/contribute-fund.dto';
 
-export interface CreateFundDto {
-  name: string;
-  description?: string;
-  accountId?: string;
-  openingBalance?: number;
-  isVisibleToResidents?: boolean;
-}
+import { CreateFundDto } from './dto/create-fund.dto';
+export { CreateFundDto } from './dto/create-fund.dto';
 
 @Injectable()
 export class FundsService {

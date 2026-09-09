@@ -2,15 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, AccountType } from '@prisma/client';
 
-export interface CreateAccountDto {
-  name: string;
-  accountType: AccountType;
-  bankName?: string;
-  accountNumberMasked?: string;
-  ifscCode?: string;
-  openingBalance?: number;
-  description?: string;
-}
+import { CreateAccountDto } from './dto/create-account.dto';
+export { CreateAccountDto } from './dto/create-account.dto';
 
 @Injectable()
 export class AccountsService {

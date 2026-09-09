@@ -545,15 +545,29 @@ export class BillingService {
       throw new ForbiddenException('Cannot adjust bills in CLOSED, PUBLISHED, or PAID periods');
     }
 
-    const newTotal = bill.totalAmount.toNumber() + adjustment;
-    return this.prisma.maintenanceBill.update({
-      where: { id: billId },
-      data: {
-        adjustments: { increment: adjustment },
-        totalAmount: new Prisma.Decimal(newTotal),
-        pendingAmount: new Prisma.Decimal(Math.max(0, newTotal - bill.paidAmount.toNumber())),
-        notes: note,
-      },
+    // Increment rather than writing a total computed from the figure read
+    // above: two adjustments applied to the same bill together would each
+    // start from the same stale total and the second would erase the first.
+    // pendingAmount is then derived from the post-increment values, so it
+    // cannot disagree with the total it was calculated from.
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.maintenanceBill.update({
+        where: { id: billId },
+        data: {
+          adjustments: { increment: adjustment },
+          totalAmount: { increment: adjustment },
+          notes: note,
+        },
+      });
+
+      const pending = updated.totalAmount.minus(updated.paidAmount);
+      return tx.maintenanceBill.update({
+        where: { id: billId },
+        data: {
+          pendingAmount: pending.lessThan(0) ? new Prisma.Decimal(0) : pending,
+          isPaid: pending.lessThanOrEqualTo(0),
+        },
+      });
     });
   }
 }
