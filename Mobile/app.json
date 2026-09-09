@@ -2,7 +2,7 @@
   "expo": {
     "name": "NG Home",
     "slug": "nghome",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "nghome",
@@ -23,7 +23,7 @@
         "backgroundColor": "#0D2147"
       },
       "package": "in.novagade.nghome",
-      "versionCode": 9,
+      "versionCode": 10,
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE"
