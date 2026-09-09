@@ -279,6 +279,16 @@ function EventDetailModal({
     onError: (e: any) => Alert.alert('Error', e?.response?.data?.message ?? 'Failed to record expense.'),
   });
 
+  const unrecordExpense = useMutation({
+    mutationFn: () => eventsApi.unrecordExpense(event.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['events'] });
+      Alert.alert('Undone', 'The expense was removed and the money returned to the fund.');
+      onClose();
+    },
+    onError: (e: any) => Alert.alert('Error', e?.response?.data?.message ?? 'Failed to undo.'),
+  });
+
   const canRecordExpense = canWrite && !!event.actualCost && !!event.fundId && !event.expenseRecorded;
 
   return (
@@ -333,17 +343,44 @@ function EventDetailModal({
           ) : null}
 
           {event.expenseRecorded ? (
-            <View style={styles.recordedRow}>
-              <Ionicons name="checkmark-circle" size={16} color={colors.secondary} />
-              <Text style={styles.recordedText}>Recorded as an expense — the fund balance reflects this spend.</Text>
-            </View>
+            <>
+              <View style={styles.recordedRow}>
+                <Ionicons name="checkmark-circle" size={16} color={colors.secondary} />
+                <Text style={styles.recordedText}>Recorded as an expense — the fund balance reflects this spend.</Text>
+              </View>
+              {canWrite && (
+                <TouchableOpacity
+                  style={styles.undoBtn}
+                  onPress={() =>
+                    Alert.alert(
+                      'Undo Recording',
+                      `Remove this expense and put ${inr(event.actualCost!)} back into ${event.fund?.name ?? 'the fund'}? Not possible once it has been paid from an account.`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Undo',
+                          style: 'destructive',
+                          onPress: () => unrecordExpense.mutate(),
+                        },
+                      ],
+                    )
+                  }
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="arrow-undo-outline" size={15} color={colors.textSecondary} />
+                  <Text style={styles.undoText}>
+                    {unrecordExpense.isPending ? 'Undoing…' : 'Undo recording'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </>
           ) : canRecordExpense ? (
             <Button
               label={recordExpense.isPending ? 'Recording…' : 'Record Actual Cost as Expense'}
               onPress={() =>
                 Alert.alert(
                   'Record as Expense',
-                  `Add ${inr(event.actualCost!)} as an expense and debit it from ${event.fund?.name}? This can't be undone here — correct it in Accounts afterward if needed.`,
+                  `Add ${inr(event.actualCost!)} as an expense and debit it from ${event.fund?.name}? You can undo this later, until it's paid from an account.`,
                   [
                     { text: 'Cancel', style: 'cancel' },
                     { text: 'Record', onPress: () => recordExpense.mutate() },
@@ -556,6 +593,14 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
   },
   recordedText: { ...typography.bodySmall, color: colors.secondary, flex: 1 },
+  undoBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    marginTop: spacing.sm,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  undoText: { ...typography.labelMedium, color: colors.textSecondary },
 
   block: { gap: 4 },
   blockLabel: {

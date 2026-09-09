@@ -85,4 +85,18 @@ export class EventsController {
   ) {
     return this.eventsService.recordExpense(societyId, id, user.id);
   }
+
+  @Delete(':id/record-expense')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
+  @ApiOperation({
+    summary: 'Undo a recorded event expense, returning the money to its fund',
+  })
+  unrecordExpense(
+    @SocietyId() societyId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.eventsService.unrecordExpense(societyId, id, user.id);
+  }
 }

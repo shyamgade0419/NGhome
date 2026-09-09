@@ -123,3 +123,148 @@ describe('EventsService.recordExpense', () => {
     );
   });
 });
+
+/**
+ * unrecordExpense — the undo that did not exist.
+ *
+ * recordExpense creates the expense already APPROVED, and expenses can only
+ * be edited, rejected or deleted while PENDING, so a mis-recorded event cost
+ * was permanent: the fund stayed debited and recordExpense refused to run
+ * again because a linked expense existed.
+ */
+
+const EXPENSE_ID = 'expense-1';
+
+function makeUnrecordPrisma(opts: {
+  expense?: unknown;
+  debit?: unknown;
+} = {}) {
+  const expense =
+    'expense' in opts
+      ? opts.expense
+      : {
+          id: EXPENSE_ID,
+          societyId: SOCIETY_ID,
+          description: 'Event: Diwali Celebration',
+          amount: new Prisma.Decimal(25000),
+          status: 'APPROVED',
+        };
+  const debit =
+    'debit' in opts
+      ? opts.debit
+      : { id: 'txn-1', fundId: FUND_ID, amount: new Prisma.Decimal(25000) };
+
+  const tx = {
+    expense: { delete: jest.fn().mockResolvedValue({}) },
+    fund: {
+      update: jest.fn().mockResolvedValue({ id: FUND_ID, currentBalance: new Prisma.Decimal(125000) }),
+    },
+    transaction: { create: jest.fn().mockResolvedValue({}) },
+    auditLog: { create: jest.fn().mockResolvedValue({}) },
+  };
+
+  const prisma = {
+    expense: { findFirst: jest.fn().mockResolvedValue(expense) },
+    transaction: { findFirst: jest.fn().mockResolvedValue(debit) },
+    $transaction: jest.fn(async (cb: any) => cb(tx)),
+  } as unknown as PrismaService;
+
+  return { prisma, tx };
+}
+
+describe('EventsService — unrecordExpense', () => {
+  it('deletes the expense and credits the fund back by the same amount', async () => {
+    const { prisma, tx } = makeUnrecordPrisma();
+    await new EventsService(prisma).unrecordExpense(SOCIETY_ID, EVENT_ID, ACTOR_ID);
+
+    expect(tx.expense.delete).toHaveBeenCalledWith({ where: { id: EXPENSE_ID } });
+    expect(tx.fund.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: FUND_ID },
+        data: { currentBalance: { increment: expect.anything() } },
+      }),
+    );
+    const [fundArg] = tx.fund.update.mock.calls[0];
+    expect(fundArg.data.currentBalance.increment.toString()).toBe('25000');
+  });
+
+  it('credits the fund the debit actually hit, not whatever the event points at now', async () => {
+    // The event's linked fund can be edited after recording; crediting that
+    // would put the money back in the wrong fund.
+    const { prisma, tx } = makeUnrecordPrisma({
+      debit: { id: 'txn-1', fundId: 'the-fund-that-was-debited', amount: new Prisma.Decimal(25000) },
+    });
+    await new EventsService(prisma).unrecordExpense(SOCIETY_ID, EVENT_ID, ACTOR_ID);
+
+    const [fundArg] = tx.fund.update.mock.calls[0];
+    expect(fundArg.where.id).toBe('the-fund-that-was-debited');
+  });
+
+  it('writes a reversing CREDIT transaction carrying the restored balance', async () => {
+    const { prisma, tx } = makeUnrecordPrisma();
+    await new EventsService(prisma).unrecordExpense(SOCIETY_ID, EVENT_ID, ACTOR_ID);
+
+    const [txArg] = tx.transaction.create.mock.calls[0];
+    expect(txArg.data).toMatchObject({
+      societyId: SOCIETY_ID,
+      fundId: FUND_ID,
+      transactionType: 'CREDIT',
+      linkedEntityType: 'EVENT',
+      linkedEntityId: EVENT_ID,
+      createdById: ACTOR_ID,
+    });
+    // No account is credited — recordExpense never debited one.
+    expect(txArg.data.accountId).toBeNull();
+    expect(txArg.data.balanceAfter.toString()).toBe('125000');
+  });
+
+  it('refuses once the expense has been paid from an account', async () => {
+    const { prisma, tx } = makeUnrecordPrisma({
+      expense: {
+        id: EXPENSE_ID,
+        societyId: SOCIETY_ID,
+        description: 'Event: Diwali Celebration',
+        amount: new Prisma.Decimal(25000),
+        status: 'PAID',
+      },
+    });
+
+    await expect(
+      new EventsService(prisma).unrecordExpense(SOCIETY_ID, EVENT_ID, ACTOR_ID),
+    ).rejects.toThrow(ConflictException);
+    expect(tx.expense.delete).not.toHaveBeenCalled();
+    expect(tx.fund.update).not.toHaveBeenCalled();
+  });
+
+  it('throws when the event has no recorded expense', async () => {
+    const { prisma, tx } = makeUnrecordPrisma({ expense: null });
+
+    await expect(
+      new EventsService(prisma).unrecordExpense(SOCIETY_ID, EVENT_ID, ACTOR_ID),
+    ).rejects.toThrow(NotFoundException);
+    expect(tx.expense.delete).not.toHaveBeenCalled();
+  });
+
+  it('still removes the expense if the debit transaction is missing, without crediting a guessed fund', async () => {
+    const { prisma, tx } = makeUnrecordPrisma({ debit: null });
+    await new EventsService(prisma).unrecordExpense(SOCIETY_ID, EVENT_ID, ACTOR_ID);
+
+    expect(tx.expense.delete).toHaveBeenCalled();
+    expect(tx.fund.update).not.toHaveBeenCalled();
+    expect(tx.transaction.create).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).toHaveBeenCalled();
+  });
+
+  it('records the undo in the audit log', async () => {
+    const { prisma, tx } = makeUnrecordPrisma();
+    await new EventsService(prisma).unrecordExpense(SOCIETY_ID, EVENT_ID, ACTOR_ID);
+
+    const [auditArg] = tx.auditLog.create.mock.calls[0];
+    expect(auditArg.data.newValues).toMatchObject({
+      source: 'event',
+      action: 'UNRECORDED',
+      eventId: EVENT_ID,
+      fundId: FUND_ID,
+    });
+  });
+});

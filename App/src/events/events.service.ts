@@ -155,7 +155,7 @@ export class EventsService {
     });
     if (existing) {
       throw new ConflictException(
-        'This event\'s cost has already been recorded as an expense. Edit it directly in Accounts to correct the amount.',
+        'This event\'s cost has already been recorded as an expense. Undo the recording first if the amount was wrong, then record it again.',
       );
     }
 
@@ -229,6 +229,105 @@ export class EventsService {
       });
 
       return expense;
+    });
+  }
+
+  /**
+   * Undoes recordExpense: removes the expense and puts the money back in the
+   * fund.
+   *
+   * There was no way to undo a recording at all. recordExpense creates the
+   * expense already APPROVED, and expenses can only be edited, rejected or
+   * deleted while PENDING — so a mis-recorded event cost was permanent, the
+   * fund stayed debited forever, and recordExpense refused to run again
+   * because a linked expense existed. (The conflict message even told admins
+   * to correct the amount in Accounts, which the product cannot do.)
+   *
+   * The fund to credit comes from the original DEBIT transaction, not from
+   * `event.fundId`: the event's linked fund can be edited after recording, and
+   * crediting whatever it points at *now* would put the money back in the
+   * wrong fund. The transaction is the record of what actually moved.
+   *
+   * Refuses once the expense is PAID. At that point the money has genuinely
+   * left the bank account, and unwinding that is a reversing entry against the
+   * account — a different, deliberate accounting act — not the deletion of a
+   * mis-click.
+   */
+  async unrecordExpense(societyId: string, id: string, actorId: string) {
+    const expense = await this.prisma.expense.findFirst({
+      where: { societyId, linkedEntityType: LINKED_ENTITY_TYPE, linkedEntityId: id },
+    });
+    if (!expense) {
+      throw new NotFoundException('This event has no recorded expense to undo.');
+    }
+    if (expense.status === ExpenseStatus.PAID) {
+      throw new ConflictException(
+        'This expense has already been paid from an account, so it can no longer be undone here. ' +
+          'Record a correcting entry in Accounts instead.',
+      );
+    }
+
+    const debit = await this.prisma.transaction.findFirst({
+      where: {
+        societyId,
+        linkedEntityType: LINKED_ENTITY_TYPE,
+        linkedEntityId: id,
+        transactionType: TransactionType.DEBIT,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.expense.delete({ where: { id: expense.id } });
+
+      // A recording always writes a fund debit, but guard anyway rather than
+      // crediting an arbitrary fund if that row is somehow missing.
+      let restoredBalance: Prisma.Decimal | null = null;
+      if (debit?.fundId) {
+        const fund = await tx.fund.update({
+          where: { id: debit.fundId },
+          data: { currentBalance: { increment: debit.amount } },
+        });
+        restoredBalance = fund.currentBalance;
+
+        await tx.transaction.create({
+          data: {
+            societyId,
+            fundId: debit.fundId,
+            // No account is credited: recordExpense never debited one. The
+            // account only moves at mark-paid, which this path refuses.
+            accountId: null,
+            transactionType: TransactionType.CREDIT,
+            amount: debit.amount,
+            transactionDate: new Date(),
+            description: `Reversed: ${expense.description}`,
+            linkedEntityType: LINKED_ENTITY_TYPE,
+            linkedEntityId: id,
+            balanceAfter: fund.currentBalance,
+            createdById: actorId,
+          },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          societyId,
+          actorId,
+          action: AuditAction.EXPENSE_MODIFIED,
+          entityType: 'Expense',
+          entityId: expense.id,
+          newValues: {
+            source: 'event',
+            action: 'UNRECORDED',
+            eventId: id,
+            fundId: debit?.fundId ?? null,
+            amount: expense.amount.toString(),
+            fundBalanceAfter: restoredBalance?.toString() ?? null,
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      return { success: true };
     });
   }
 }

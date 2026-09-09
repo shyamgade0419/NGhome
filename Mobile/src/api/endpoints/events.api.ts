@@ -67,4 +67,10 @@ export const eventsApi = {
     const { data } = await apiClient.post<ApiResponse<{ id: string }>>(`/events/${id}/record-expense`);
     return data.data;
   },
+
+  /** Undoes the above — deletes the expense and returns the money to the fund.
+   *  Refused once the expense has been paid from an account. */
+  unrecordExpense: async (id: string): Promise<void> => {
+    await apiClient.delete(`/events/${id}/record-expense`);
+  },
 };
