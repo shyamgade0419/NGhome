@@ -5,6 +5,15 @@ import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagina
 
 export interface CreateExpenseDto {
   categoryId?: string;
+  /**
+   * Category by name, which is what both clients actually send — they offer a
+   * fixed list ("MAINTENANCE", "UTILITIES", …) and have no category IDs to
+   * hand. Only `categoryId` was read before, so every expense logged from
+   * either app was stored uncategorised and the picker did nothing: the list
+   * showed "—" and the resident expense breakdown reported everything as
+   * "Uncategorized". Resolved to a real category below.
+   */
+  category?: string;
   accountId?: string;
   vendorPayee?: string;
   description: string;
@@ -20,12 +29,38 @@ export interface CreateExpenseDto {
 export class ExpensesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Find-or-create a category by name, scoped to the society. Same pattern as
+   * EventsService.recordExpense — categories are a lazily provisioned per-
+   * society lookup, so a society never has to seed them before logging an
+   * expense, and two expenses in the same category always land on one row
+   * (@@unique([societyId, name])).
+   */
+  private async resolveCategoryId(
+    societyId: string,
+    dto: CreateExpenseDto,
+  ): Promise<string | undefined> {
+    if (dto.categoryId) return dto.categoryId;
+
+    const name = dto.category?.trim();
+    if (!name) return undefined;
+
+    const category = await this.prisma.expenseCategory.upsert({
+      where: { societyId_name: { societyId, name } },
+      create: { societyId, name },
+      update: {},
+    });
+    return category.id;
+  }
+
   async create(societyId: string, createdById: string, dto: CreateExpenseDto) {
+    const categoryId = await this.resolveCategoryId(societyId, dto);
+
     return this.prisma.expense.create({
       data: {
         societyId,
         createdById,
-        categoryId: dto.categoryId,
+        categoryId,
         accountId: dto.accountId,
         vendorPayee: dto.vendorPayee,
         description: dto.description,
