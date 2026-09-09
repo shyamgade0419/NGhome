@@ -5,7 +5,7 @@ import { UpdateSocietyConfigDto } from './dto/update-society-config.dto';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
 import { generateUniqueJoinCode } from '../common/utils/join-code.util';
-import { Prisma } from '@prisma/client';
+import { Prisma, AuditAction } from '@prisma/client';
 
 @Injectable()
 export class SocietiesService {
@@ -106,6 +106,98 @@ export class SocietiesService {
       },
     });
     return { ...society, admins: memberships.map((m) => m.user) };
+  }
+
+  /**
+   * Platform-wide totals for the console. Counted across every society, so
+   * this is deliberately PlatformAdminGuard-only — a society admin must never
+   * be able to learn how many other societies exist or how large they are.
+   *
+   * Deleted societies are excluded throughout (deletedAt: null) to match
+   * findAll, so the headline count and the list below it agree.
+   */
+  async getPlatformStats() {
+    // Societies are soft-deleted, and Flat/Building carry only a societyId
+    // with no relation to filter through — so resolve the live ids first and
+    // scope every count to them. Otherwise a deleted society's flats would
+    // still be counted and the totals would not match the list below.
+    const live = await this.prisma.society.findMany({
+      where: { deletedAt: null },
+      select: { id: true, isActive: true },
+    });
+    const liveIds = live.map((s) => s.id);
+
+    const [buildings, flats, members, admins] = await Promise.all([
+      this.prisma.building.count({ where: { societyId: { in: liveIds } } }),
+      this.prisma.flat.count({ where: { societyId: { in: liveIds }, deletedAt: null } }),
+      // distinct users, not membership rows: one person can hold memberships
+      // in several societies, and in more than one role within one society,
+      // and should count once either way.
+      this.prisma.societyMembership
+        .findMany({
+          where: { status: 'ACTIVE', societyId: { in: liveIds } },
+          select: { userId: true },
+          distinct: ['userId'],
+        })
+        .then((rows) => rows.length),
+      this.prisma.societyMembership
+        .findMany({
+          where: { status: 'ACTIVE', role: 'SOCIETY_ADMIN', societyId: { in: liveIds } },
+          select: { userId: true },
+          distinct: ['userId'],
+        })
+        .then((rows) => rows.length),
+    ]);
+
+    const societies = live.length;
+    const activeSocieties = live.filter((s) => s.isActive).length;
+
+    return {
+      societies,
+      activeSocieties,
+      suspendedSocieties: societies - activeSocieties,
+      buildings,
+      flats,
+      members,
+      admins,
+    };
+  }
+
+  /**
+   * Suspend or reinstate a society.
+   *
+   * isActive has existed on Society since the beginning with nothing able to
+   * change it — there was no endpoint and no UI, so a society could be created
+   * but never switched off. This is the platform's only lever for a society
+   * that stops paying or has to be taken offline.
+   *
+   * It does not delete anything: memberships, bills and history are untouched,
+   * so reinstating restores the society exactly as it was.
+   */
+  async setActive(id: string, isActive: boolean, actorId: string) {
+    const society = await this.findOne(id);
+
+    const updated = await this.prisma.society.update({
+      where: { id },
+      data: { isActive },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        societyId: id,
+        actorId,
+        action: AuditAction.CONFIG_CHANGED,
+        entityType: 'Society',
+        entityId: id,
+        oldValues: { isActive: society.isActive } as Prisma.InputJsonValue,
+        newValues: {
+          isActive,
+          action: isActive ? 'SOCIETY_REINSTATED' : 'SOCIETY_SUSPENDED',
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    return updated;
   }
 
   async findOneForMember(id: string, userId: string) {

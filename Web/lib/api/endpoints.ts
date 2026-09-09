@@ -474,4 +474,21 @@ export const platformApi = {
   listSocieties: (params?: { page?: number; limit?: number }): Promise<{ data: PaginatedResponse<PlatformSociety> }> =>
     api.get('/societies', { params }),
   getSociety: (id: string): Promise<{ data: PlatformSociety }> => api.get(`/societies/${id}`),
+
+  stats: (): Promise<{
+    data: {
+      societies: number;
+      activeSocieties: number;
+      suspendedSocieties: number;
+      buildings: number;
+      flats: number;
+      members: number;
+      admins: number;
+    };
+  }> => api.get('/societies/platform/stats'),
+
+  /** Suspend or reinstate. Nothing is deleted either way — memberships,
+   *  bills and history are untouched, so reinstating restores it as it was. */
+  setSocietyStatus: (id: string, isActive: boolean) =>
+    api.patch(`/societies/${id}/status`, { isActive }),
 };

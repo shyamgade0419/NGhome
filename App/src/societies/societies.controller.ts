@@ -5,6 +5,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { SystemRole } from '@prisma/client';
 import { SocietiesService } from './societies.service';
 import { CreateSocietyDto } from './dto/create-society.dto';
+import { SetSocietyStatusDto } from './dto/set-society-status.dto';
 import { UpdateSocietyConfigDto } from './dto/update-society-config.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -89,11 +90,34 @@ export class SocietiesController {
     return this.societiesService.update(societyId, dto);
   }
 
+  /**
+   * Declared before the ':id' route below — Nest matches in declaration
+   * order, so a literal path registered after a parameterised one is never
+   * reached ('platform/stats' would be read as an id).
+   */
+  @Get('platform/stats')
+  @UseGuards(PlatformAdminGuard)
+  @ApiOperation({ summary: '[Platform Admin] Platform-wide totals' })
+  async platformStats() {
+    return this.societiesService.getPlatformStats();
+  }
+
   @Get(':id')
   @UseGuards(PlatformAdminGuard)
   @ApiOperation({ summary: '[Platform Admin] Get society by ID, with its admin contacts' })
   async findOne(@Param('id') id: string) {
     return this.societiesService.findOneForPlatform(id);
+  }
+
+  @Patch(':id/status')
+  @UseGuards(PlatformAdminGuard)
+  @ApiOperation({ summary: '[Platform Admin] Suspend or reinstate a society' })
+  async setStatus(
+    @Param('id') id: string,
+    @Body() dto: SetSocietyStatusDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.societiesService.setActive(id, dto.isActive, user.id);
   }
 
   // ─── Join-code endpoints ────────────────────────────────────────────────────

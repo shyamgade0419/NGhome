@@ -13,20 +13,39 @@
  * back from the API even before the client-side check below redirects them.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
-import { Building2, Phone, Mail, Users, LogOut, ShieldCheck } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  Building2, Phone, Mail, Users, LogOut, ShieldCheck, Home, UserCog, Ban, RotateCcw,
+} from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { platformApi, PlatformSociety } from '@/lib/api/endpoints';
 import { Table, Thead, Tbody, Tr, Th, Td } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
+
+function StatCard({ label, value, icon: Icon }: { label: string; value: number; icon: React.ElementType }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+      <div className="flex items-center gap-1.5 text-slate-400">
+        <Icon size={13} />
+        <p className="text-[11px] font-medium uppercase tracking-wide">{label}</p>
+      </div>
+      <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{value}</p>
+    </div>
+  );
+}
 
 export default function PlatformDashboard() {
   const { user, isLoading: authLoading, logout } = useAuth();
   const router = useRouter();
+  const qc = useQueryClient();
+  const [confirming, setConfirming] = useState<PlatformSociety | null>(null);
 
   useEffect(() => {
     if (!authLoading && user && !user.isPlatformAdmin) {
@@ -38,6 +57,24 @@ export default function PlatformDashboard() {
     queryKey: ['platform-societies'],
     queryFn: () => platformApi.listSocieties({ limit: 100 }).then((r) => r.data),
     enabled: !!user?.isPlatformAdmin,
+  });
+
+  const { data: stats } = useQuery({
+    queryKey: ['platform-stats'],
+    queryFn: () => platformApi.stats().then((r) => r.data),
+    enabled: !!user?.isPlatformAdmin,
+  });
+
+  const setStatus = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+      platformApi.setSocietyStatus(id, isActive),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ['platform-societies'] });
+      qc.invalidateQueries({ queryKey: ['platform-stats'] });
+      toast.success(vars.isActive ? 'Society reinstated' : 'Society suspended');
+      setConfirming(null);
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to update society'),
   });
 
   if (authLoading || (user && !user.isPlatformAdmin)) {
@@ -67,6 +104,17 @@ export default function PlatformDashboard() {
       </header>
 
       <main className="p-6">
+        {stats && (
+          <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <StatCard label="Societies" value={stats.societies} icon={Building2} />
+            <StatCard label="Active" value={stats.activeSocieties} icon={ShieldCheck} />
+            <StatCard label="Suspended" value={stats.suspendedSocieties} icon={Ban} />
+            <StatCard label="Buildings" value={stats.buildings} icon={Building2} />
+            <StatCard label="Flats" value={stats.flats} icon={Home} />
+            <StatCard label="Members" value={stats.members} icon={Users} />
+          </div>
+        )}
+
         {isLoading ? (
           <PageSpinner />
         ) : isError ? (
@@ -93,6 +141,7 @@ export default function PlatformDashboard() {
                   <Th>Join Code</Th>
                   <Th>Status</Th>
                   <Th>Since</Th>
+                  <Th className="text-right">Actions</Th>
                 </Tr>
               </Thead>
               <Tbody>
@@ -137,10 +186,26 @@ export default function PlatformDashboard() {
                       )}
                     </Td>
                     <Td>
-                      <Badge variant={s.isActive ? 'success' : 'danger'}>{s.isActive ? 'Active' : 'Inactive'}</Badge>
+                      <Badge variant={s.isActive ? 'success' : 'danger'}>{s.isActive ? 'Active' : 'Suspended'}</Badge>
                     </Td>
                     <Td className="text-slate-500 text-xs">
                       {new Date(s.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </Td>
+                    <Td className="text-right">
+                      {/* Confirmed rather than immediate: suspending cuts off a
+                          whole society's residents, and the row a cursor lands
+                          on is not always the one that was meant. */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setConfirming(s)}
+                      >
+                        {s.isActive ? (
+                          <><Ban size={13} /> Suspend</>
+                        ) : (
+                          <><RotateCcw size={13} /> Reinstate</>
+                        )}
+                      </Button>
                     </Td>
                   </Tr>
                 ))}
@@ -149,6 +214,54 @@ export default function PlatformDashboard() {
           </div>
         )}
       </main>
+
+      <Modal
+        open={!!confirming}
+        onClose={() => setConfirming(null)}
+        title={confirming?.isActive ? 'Suspend society' : 'Reinstate society'}
+      >
+        {confirming && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-700">
+              {confirming.isActive ? (
+                <>
+                  Suspend <strong>{confirming.displayName ?? confirming.name}</strong>?
+                  Its {confirming._count.memberships} member
+                  {confirming._count.memberships === 1 ? '' : 's'} will lose access.
+                </>
+              ) : (
+                <>
+                  Reinstate <strong>{confirming.displayName ?? confirming.name}</strong>? Its members
+                  get access back immediately.
+                </>
+              )}
+            </p>
+            <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-500">
+              Nothing is deleted either way. Memberships, bills and history are kept, so a
+              suspended society comes back exactly as it was.
+            </p>
+            {confirming.admins.length > 0 && confirming.isActive && (
+              <p className="text-xs text-slate-500">
+                Worth telling first: {confirming.admins.map((a) => `${a.firstName} ${a.lastName}`).join(', ')}
+                {confirming.admins[0]?.email ? ` (${confirming.admins[0].email})` : ''}.
+              </p>
+            )}
+            <div className="flex justify-end gap-3 pt-1">
+              <Button type="button" variant="outline" onClick={() => setConfirming(null)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() =>
+                  setStatus.mutate({ id: confirming.id, isActive: !confirming.isActive })
+                }
+                loading={setStatus.isPending}
+              >
+                {confirming.isActive ? 'Suspend' : 'Reinstate'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
