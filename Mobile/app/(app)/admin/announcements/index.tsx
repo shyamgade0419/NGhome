@@ -48,6 +48,12 @@ function ComposeModal({ visible, onClose }: { visible: boolean; onClose: () => v
         title: form.title.trim(),
         content: form.content.trim(),
         priority: form.priority,
+        // Required. The API defaults isPublished to false and residents only
+        // ever see published announcements, so omitting this created a notice
+        // nobody could read while this screen said "sent to all residents".
+        // This form has no draft concept, so publishing on create is what the
+        // admin is actually being promised.
+        isPublished: true,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['announcements'] });
@@ -161,6 +167,23 @@ export default function AnnouncementsScreen() {
       Alert.alert('Error', e?.response?.data?.message ?? 'Failed to delete.'),
   });
 
+  const publishMutation = useMutation({
+    mutationFn: (id: string) => apiClient.post(`/announcements/${id}/publish`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['announcements'] });
+      Alert.alert('Published', 'Residents can now see this announcement.');
+    },
+    onError: (e: any) =>
+      Alert.alert('Error', e?.response?.data?.message ?? 'Failed to publish.'),
+  });
+
+  const handlePublish = (item: Announcement) => {
+    Alert.alert('Publish Announcement', `Make "${item.title}" visible to all residents?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Publish', onPress: () => publishMutation.mutate(item.id) },
+    ]);
+  };
+
   const handleDelete = (item: Announcement) => {
     Alert.alert(
       'Delete Announcement',
@@ -193,6 +216,20 @@ export default function AnnouncementsScreen() {
         <StatusBadge label={item.priority} variant={PRIORITY_VARIANT[item.priority] ?? 'neutral'} size="sm" />
       </View>
       <Text style={styles.content} numberOfLines={4}>{item.content}</Text>
+      {/* Announcements created before the isPublished fix were saved unpublished
+          and residents never saw them, even though this screen reported them as
+          sent. This surfaces those and offers the one action that rescues them
+          rather than making the admin re-type the notice. */}
+      {!item.isPublished && (
+        <TouchableOpacity
+          style={styles.publishRow}
+          onPress={() => handlePublish(item)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="eye-off-outline" size={15} color={colors.warning} />
+          <Text style={styles.publishText}>Not visible to residents — tap to publish</Text>
+        </TouchableOpacity>
+      )}
       <View style={styles.cardFooter}>
         <Text style={styles.audience}>{item.audience.replace(/_/g, ' ')}</Text>
         <View style={styles.footerRight}>
@@ -248,6 +285,14 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing.md },
   title: { ...typography.headingSmall, color: colors.text, flex: 1 },
   content: { ...typography.bodyMedium, color: colors.textSecondary, lineHeight: 22 },
+  publishRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: spacing.sm,
+    paddingVertical: 7, paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.warningLight,
+  },
+  publishText: { ...typography.labelSmall, color: colors.warning, flex: 1 },
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   footerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   audience: { ...typography.labelMedium, color: colors.primary },

@@ -130,6 +130,12 @@ export const expensesApi = {
   approve: (id: string) => api.post(`/expenses/${id}/approve`),
   reject: (id: string, reason: string) =>
     api.post(`/expenses/${id}/reject`, { reason }),
+
+  /** Settles an approved expense from a bank account. This is the only thing
+   *  that debits Account.currentBalance for an expense — until it runs, the
+   *  money is committed but the balance still shows it as available. */
+  markPaid: (id: string, accountId: string) =>
+    api.post(`/expenses/${id}/mark-paid`, { accountId }),
 };
 
 // Reports
@@ -159,6 +165,11 @@ export const communityApi = {
 
   deleteAnnouncement: (id: string) =>
     api.delete(`/announcements/${id}`),
+
+  /** Rescues announcements saved before isPublished was sent on create —
+   *  those are invisible to residents until this is called. */
+  publishAnnouncement: (id: string) =>
+    api.post(`/announcements/${id}/publish`),
 };
 
 // Society / admin

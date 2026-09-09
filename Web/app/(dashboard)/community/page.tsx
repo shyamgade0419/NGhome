@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Megaphone, Trash2 } from 'lucide-react';
+import { Plus, Megaphone, Trash2, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { communityApi } from '@/lib/api/endpoints';
 import { Header } from '@/components/layout/Header';
@@ -58,12 +58,26 @@ export default function CommunityPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (d: FormData) => communityApi.createAnnouncement(d),
+    // isPublished is required, not incidental: the API defaults it to false and
+    // residents only ever see published announcements, so omitting it created a
+    // notice nobody could read while this page reported it as published. There
+    // is no draft concept in this form, so publishing on create is what the
+    // admin is actually being promised.
+    mutationFn: (d: FormData) => communityApi.createAnnouncement({ ...d, isPublished: true }),
     onSuccess: () => {
       toast.success('Announcement published');
       qc.invalidateQueries({ queryKey: ['announcements'] });
       setShowModal(false);
       reset();
+    },
+    onError: () => toast.error('Failed to publish'),
+  });
+
+  const publishMutation = useMutation({
+    mutationFn: (id: string) => communityApi.publishAnnouncement(id),
+    onSuccess: () => {
+      toast.success('Announcement is now visible to residents');
+      qc.invalidateQueries({ queryKey: ['announcements'] });
     },
     onError: () => toast.error('Failed to publish'),
   });
@@ -116,6 +130,7 @@ export default function CommunityPage() {
                 announcement={a}
                 canDelete={isAdmin}
                 onDelete={() => deleteMutation.mutate(a.id)}
+                onPublish={() => publishMutation.mutate(a.id)}
               />
             ))}
           </div>
@@ -153,10 +168,12 @@ export default function CommunityPage() {
 function AnnouncementCard({
   announcement: a,
   canDelete,
+  onPublish,
   onDelete,
 }: {
   announcement: Announcement;
   canDelete: boolean;
+  onPublish: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -167,6 +184,19 @@ function AnnouncementCard({
           <Badge variant={priorityVariant(a.priority)}>{a.priority}</Badge>
         </div>
         <p className="text-sm text-slate-600 whitespace-pre-wrap">{a.content}</p>
+        {/* Announcements saved before isPublished was sent on create are
+            invisible to residents even though this page reported them as
+            published. Surfacing them with the one action that rescues them
+            beats making an admin re-type the notice. */}
+        {canDelete && !a.isPublished && (
+          <button
+            onClick={onPublish}
+            className="mt-2 flex items-center gap-1.5 rounded-lg bg-warning-light px-2.5 py-1.5 text-xs font-medium text-warning transition-opacity hover:opacity-80"
+          >
+            <EyeOff size={13} />
+            Not visible to residents — publish
+          </button>
+        )}
         <p className="mt-2 text-xs text-slate-400">
           {formatDateTime(a.publishedAt ?? a.createdAt)}
           {a.expiresAt && ` · Expires ${formatDateTime(a.expiresAt)}`}
