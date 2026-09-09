@@ -2,9 +2,10 @@
  * Admin — Accounts & Funds
  *
  * Lists society bank/cash accounts with balances and drills into a single
- * account's transaction ledger. Bank accounts themselves are still read-only
- * here; funds can be created and topped up, since without that a corpus fund
- * could not be set up or grown from anywhere in the product.
+ * account's transaction ledger. Both accounts and funds can be created here —
+ * neither could be created anywhere in the product before, which left a new
+ * society unable to approve a single payment (approval asks which account the
+ * money landed in) or to set up a corpus fund at all.
  */
 
 import React, { useState } from 'react';
@@ -26,7 +27,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { accountsApi, fundsApi, SocietyAccount, SocietyFund } from '@/api/endpoints/accounts.api';
+import { accountsApi, fundsApi, SocietyAccount, SocietyFund, AccountType } from '@/api/endpoints/accounts.api';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -101,6 +102,167 @@ function LedgerModal({ account, onClose }: { account: SocietyAccount; onClose: (
             ListFooterComponent={<View style={{ height: spacing['3xl'] }} />}
           />
         )}
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+// ── Account create ───────────────────────────────────────────────────────────
+
+const ACCOUNT_TYPES: { value: AccountType; label: string }[] = [
+  { value: 'CURRENT', label: 'Current' },
+  { value: 'SAVINGS', label: 'Savings' },
+  { value: 'CASH', label: 'Cash' },
+  { value: 'FIXED_DEPOSIT', label: 'Fixed Deposit' },
+  { value: 'OTHER', label: 'Other' },
+];
+
+/**
+ * Until this existed there was no way to create an account from anywhere in
+ * the product, and registering a society creates none. Approving a payment
+ * asks which account the money landed in, so a new society could collect real
+ * money by UPI and never record a rupee of it — approval simply failed with
+ * "No account available to credit".
+ *
+ * Bank details here are for humans reading the screen. Nothing connects to a
+ * bank: the balance moves only as payments are approved and expenses and
+ * salaries are paid.
+ */
+function NewAccountModal({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+  const [name, setName] = useState('');
+  const [accountType, setAccountType] = useState<AccountType>('CURRENT');
+  const [bankName, setBankName] = useState('');
+  const [accountNumberMasked, setAccountNumberMasked] = useState('');
+  const [ifscCode, setIfscCode] = useState('');
+  const [openingBalance, setOpeningBalance] = useState('');
+
+  const isCash = accountType === 'CASH';
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      accountsApi.create({
+        name: name.trim(),
+        accountType,
+        bankName: isCash ? undefined : bankName.trim() || undefined,
+        accountNumberMasked: isCash ? undefined : accountNumberMasked.trim() || undefined,
+        ifscCode: isCash ? undefined : ifscCode.trim().toUpperCase() || undefined,
+        openingBalance: openingBalance ? parseFloat(openingBalance) : undefined,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['accounts'] });
+      onClose();
+    },
+    onError: (e: any) =>
+      Alert.alert('Error', e?.response?.data?.message ?? 'Failed to create account.'),
+  });
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <View style={styles.modalHeader}>
+          <Text style={[styles.modalTitle, { flex: 1 }]}>New Account</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={12}>
+            <Ionicons name="close" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+            <Text style={styles.label}>Account Name *</Text>
+            <TextInput
+              style={styles.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="e.g. HDFC Current A/c, Petty Cash"
+              placeholderTextColor={colors.textTertiary}
+            />
+
+            <Text style={[styles.label, { marginTop: spacing.base }]}>Type</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+              {ACCOUNT_TYPES.map((t) => (
+                <TouchableOpacity
+                  key={t.value}
+                  style={[styles.chip, accountType === t.value && styles.chipActive]}
+                  onPress={() => setAccountType(t.value)}
+                >
+                  <Text style={[styles.chipText, accountType === t.value && styles.chipTextActive]}>
+                    {t.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {!isCash && (
+              <>
+                <Text style={[styles.label, { marginTop: spacing.base }]}>Bank Name</Text>
+                <TextInput
+                  style={styles.input}
+                  value={bankName}
+                  onChangeText={setBankName}
+                  placeholder="e.g. HDFC Bank"
+                  placeholderTextColor={colors.textTertiary}
+                />
+
+                <Text style={[styles.label, { marginTop: spacing.base }]}>Account Number</Text>
+                <Text style={styles.hint}>
+                  Last few digits are enough — this is only so people recognise the account.
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  value={accountNumberMasked}
+                  onChangeText={setAccountNumberMasked}
+                  placeholder="e.g. XXXX4321"
+                  placeholderTextColor={colors.textTertiary}
+                />
+
+                <Text style={[styles.label, { marginTop: spacing.base }]}>IFSC Code</Text>
+                <TextInput
+                  style={styles.input}
+                  value={ifscCode}
+                  onChangeText={setIfscCode}
+                  placeholder="e.g. HDFC0001234"
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="characters"
+                />
+              </>
+            )}
+
+            <Text style={[styles.label, { marginTop: spacing.base }]}>Opening Balance (₹)</Text>
+            <Text style={styles.hint}>
+              What this account holds today. Payments and expenses move it from here.
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={openingBalance}
+              onChangeText={(v) => setOpeningBalance(v.replace(/[^0-9.]/g, ''))}
+              keyboardType="decimal-pad"
+              placeholder="0"
+              placeholderTextColor={colors.textTertiary}
+            />
+
+            <View style={styles.noteBox}>
+              <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.noteText}>
+                This is a record for tracking money, not a connection to your bank. The balance
+                changes as you approve payments and pay expenses.
+              </Text>
+            </View>
+
+            <Button
+              label={mutation.isPending ? 'Creating…' : 'Create Account'}
+              onPress={() => {
+                if (!name.trim()) {
+                  Alert.alert('Required', 'Enter an account name.');
+                  return;
+                }
+                mutation.mutate();
+              }}
+              loading={mutation.isPending}
+              fullWidth
+              style={{ marginTop: spacing.xl }}
+            />
+          </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
@@ -416,6 +578,7 @@ export default function AccountsScreen() {
   const [selected, setSelected] = useState<SocietyAccount | null>(null);
   const [tab, setTab] = useState<'Accounts' | 'Funds'>('Accounts');
   const [showNewFund, setShowNewFund] = useState(false);
+  const [showNewAccount, setShowNewAccount] = useState(false);
   const [contributeTo, setContributeTo] = useState<SocietyFund | null>(null);
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
@@ -432,11 +595,12 @@ export default function AccountsScreen() {
         title="Accounts & Funds"
         showBack
         rightAction={
-          tab === "Funds" ? (
-            <TouchableOpacity onPress={() => setShowNewFund(true)} hitSlop={12}>
-              <Ionicons name="add" size={26} color={colors.primary} />
-            </TouchableOpacity>
-          ) : undefined
+          <TouchableOpacity
+            onPress={() => (tab === 'Funds' ? setShowNewFund(true) : setShowNewAccount(true))}
+            hitSlop={12}
+          >
+            <Ionicons name="add" size={26} color={colors.primary} />
+          </TouchableOpacity>
         }
       />
 
@@ -496,7 +660,13 @@ export default function AccountsScreen() {
             </TouchableOpacity>
           )}
           ListEmptyComponent={
-            <EmptyState icon="wallet-outline" title="No accounts" description="Society accounts are created in the web portal." />
+            <EmptyState
+              icon="wallet-outline"
+              title="No accounts yet"
+              description="Add the bank account or cash box your society's money goes into. You need at least one before you can approve any payment."
+              actionLabel="Create Account"
+              onAction={() => setShowNewAccount(true)}
+            />
           }
           ListFooterComponent={<View style={{ height: spacing['3xl'] }} />}
         />
@@ -504,6 +674,7 @@ export default function AccountsScreen() {
 
       {selected && <LedgerModal account={selected} onClose={() => setSelected(null)} />}
       {showNewFund && <NewFundModal onClose={() => setShowNewFund(false)} />}
+      {showNewAccount && <NewAccountModal onClose={() => setShowNewAccount(false)} />}
       {contributeTo && (
         <ContributeModal fund={contributeTo} onClose={() => setContributeTo(null)} />
       )}
@@ -609,4 +780,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryLight,
   },
   addMoneyText: { ...typography.labelMedium, color: colors.primary },
+
+  noteBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,
+    marginTop: spacing.base,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  noteText: { ...typography.bodySmall, color: colors.textSecondary, flex: 1, lineHeight: 18 },
 });

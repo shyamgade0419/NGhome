@@ -7,7 +7,7 @@ import {
   Droplets, Wallet, Users, Settings, Wrench, Megaphone,
   CheckCircle2, AlertCircle, Smartphone, MessageCircle,
   Pencil, Printer, IndianRupee, TrendingUp, Building2,
-  UserPlus, Shield, BarChart3, ChevronRight, FolderOpen, Bell, PiggyBank,
+  UserPlus, Shield, BarChart3, ChevronRight, FolderOpen, Bell, PiggyBank, Landmark,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Header } from '@/components/layout/Header';
@@ -453,6 +453,23 @@ const ARTICLES: Article[] = [
       { text: '(Admin) Click "New Announcement" to post a notice to all residents — maintenance shutdowns, events, AGM dates, etc. It reaches residents as soon as you save it.' },
       { text: '(Admin) If an announcement shows "Not visible to residents", nobody can read it yet — click that to publish it.', tip: 'Announcements posted before a recent update were saved but never released to residents. Any of those still carry that flag, so check your list and publish anything that should have gone out.' },
       { text: 'Important announcements are pinned at the top by admin.' },
+    ],
+  },
+  {
+    id: 'accounts',
+    title: 'Society Accounts',
+    subtitle: 'Set up where your money is tracked — do this before your first bill',
+    icon: Landmark,
+    color: 'text-blue-700',
+    bg: 'bg-blue-50',
+    roles: ['admin'],
+    steps: [
+      { text: 'Go to Accounts & Funds → "New Account".' },
+      { text: 'Name it so people recognise it ("HDFC Current A/c", "Petty Cash") and pick the type. Choose Cash for money collected by hand.' },
+      { text: 'Bank name, account number and IFSC are optional labels for humans — nothing here connects to your bank.', tip: 'An account is a record for tracking money. Its balance moves only as you approve payments and mark expenses paid, so if it drifts from your real bank statement, something has not been recorded.' },
+      { text: 'Enter the Opening Balance: what the account holds today.' },
+      { text: 'Most societies want two — the bank account their UPI ID pays into, and a Cash one for anything collected by hand.' },
+      { text: 'Do this before your first billing cycle.', tip: 'Approving a payment asks which account the money landed in. With no account you cannot approve anything, so residents can pay and none of it reaches your balances.' },
     ],
   },
   {

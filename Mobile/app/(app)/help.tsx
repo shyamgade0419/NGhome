@@ -296,6 +296,22 @@ const ARTICLES: Article[] = [
     tip: 'Undo stops working once the expense has been paid from a bank account, because the money has actually left by then. At that point make a correcting entry under Accounts instead.',
   },
   {
+    id: 'create-account',
+    icon: '🏛️',
+    title: 'Setting up your society account',
+    summary: 'Do this first — payments cannot be approved without one.',
+    audience: 'admin',
+    steps: [
+      'Go to Accounts & Funds from the admin menu, on the "Accounts" tab.',
+      'Tap "+" in the top-right (or "Create Account" if you have none yet).',
+      'Name it so people recognise it — "HDFC Current A/c", "Petty Cash".',
+      'Pick the type. Choose Cash for money collected by hand; the bank fields disappear.',
+      'Add the bank name, last few digits of the account number, and IFSC if you like. These are labels for humans — nothing connects to your bank.',
+      'Enter the Opening Balance: what the account holds today.',
+    ],
+    tip: 'Set this up before your first billing cycle. Approving a payment asks which account the money landed in, so with no account you cannot approve anything and collected money never reaches your balances. Most societies want two: the bank account their UPI ID pays into, and a Cash one.',
+  },
+  {
     id: 'create-fund',
     icon: '🏦',
     title: 'Setting up a corpus or sinking fund',

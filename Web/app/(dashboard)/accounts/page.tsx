@@ -21,6 +21,16 @@ import { PageSpinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatCurrency } from '@/lib/utils';
 
+const createAccountSchema = z.object({
+  name: z.string().min(1, 'Required'),
+  accountType: z.enum(['CURRENT', 'SAVINGS', 'CASH', 'FIXED_DEPOSIT', 'OTHER']),
+  bankName: z.string().optional(),
+  accountNumberMasked: z.string().optional(),
+  ifscCode: z.string().optional(),
+  openingBalance: z.coerce.number().min(0).optional(),
+});
+type CreateAccountForm = z.infer<typeof createAccountSchema>;
+
 const createFundSchema = z.object({
   name: z.string().min(1, 'Required'),
   description: z.string().optional(),
@@ -54,6 +64,24 @@ export default function AccountsPage() {
 
   const accounts: any[] = accountsData?.data ?? [];
   const funds: any[] = fundsData?.data ?? [];
+
+  const [showNewAccount, setShowNewAccount] = useState(false);
+
+  const createAccountForm = useForm<CreateAccountForm>({
+    resolver: zodResolver(createAccountSchema),
+    defaultValues: { accountType: 'CURRENT' },
+  });
+
+  const createAccount = useMutation({
+    mutationFn: (d: CreateAccountForm) => accountsApi.createAccount(d),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['accounts'] });
+      toast.success('Account created');
+      setShowNewAccount(false);
+      createAccountForm.reset({ accountType: 'CURRENT' });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to create account'),
+  });
 
   const createFundForm = useForm<CreateFundForm>({ resolver: zodResolver(createFundSchema) });
   const contributeForm = useForm<ContributeForm>({ resolver: zodResolver(contributeSchema) });
@@ -122,14 +150,24 @@ export default function AccountsPage() {
         </div>
 
         {/* Accounts table */}
-        <h2 className="mb-3 text-sm font-semibold text-slate-700 uppercase tracking-wide">
-          Bank Accounts
-        </h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">
+            Bank Accounts
+          </h2>
+          <Button size="sm" variant="outline" onClick={() => setShowNewAccount(true)}>
+            <Plus size={14} /> New Account
+          </Button>
+        </div>
         {accounts.length === 0 ? (
           <EmptyState
             icon={Landmark}
             title="No accounts yet"
-            description="Add bank accounts in Settings to start tracking balances."
+            description="Add the bank account or cash box your society's money goes into. You need at least one before you can approve any payment."
+            action={
+              <Button size="sm" onClick={() => setShowNewAccount(true)}>
+                <Plus size={14} /> Create Account
+              </Button>
+            }
           />
         ) : (
           <div className="mb-8 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -214,6 +252,72 @@ export default function AccountsPage() {
           </div>
         )}
       </PageContainer>
+
+      {/* Create account */}
+      <Modal
+        open={showNewAccount}
+        onClose={() => { setShowNewAccount(false); createAccountForm.reset({ accountType: 'CURRENT' }); }}
+        title="Create Account"
+      >
+        <form
+          onSubmit={createAccountForm.handleSubmit((d) => createAccount.mutate(d))}
+          className="space-y-4"
+        >
+          <Input
+            label="Account Name"
+            placeholder="HDFC Current A/c"
+            error={createAccountForm.formState.errors.name?.message}
+            {...createAccountForm.register('name')}
+          />
+          <Select
+            label="Type"
+            options={[
+              { value: 'CURRENT', label: 'Current' },
+              { value: 'SAVINGS', label: 'Savings' },
+              { value: 'CASH', label: 'Cash' },
+              { value: 'FIXED_DEPOSIT', label: 'Fixed Deposit' },
+              { value: 'OTHER', label: 'Other' },
+            ]}
+            {...createAccountForm.register('accountType')}
+          />
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Bank Name" placeholder="HDFC Bank" {...createAccountForm.register('bankName')} />
+            <Input label="IFSC Code" placeholder="HDFC0001234" {...createAccountForm.register('ifscCode')} />
+          </div>
+          <Input
+            label="Account Number"
+            placeholder="XXXX4321"
+            {...createAccountForm.register('accountNumberMasked')}
+          />
+          <p className="-mt-2 text-xs text-slate-500">
+            Last few digits are enough — this is only so people recognise the account.
+          </p>
+          <Input
+            label="Opening Balance (₹)"
+            type="number"
+            step="0.01"
+            placeholder="0"
+            error={createAccountForm.formState.errors.openingBalance?.message}
+            {...createAccountForm.register('openingBalance')}
+          />
+          {/* Worth stating plainly: people reasonably assume entering bank
+              details connects something. Nothing here talks to a bank. */}
+          <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-500">
+            This is a record for tracking money, not a connection to your bank. The balance
+            changes as you approve payments and mark expenses paid.
+          </p>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => { setShowNewAccount(false); createAccountForm.reset({ accountType: 'CURRENT' }); }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" loading={createAccount.isPending}>Create Account</Button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Create fund */}
       <Modal

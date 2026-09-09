@@ -27,6 +27,30 @@ export interface AccountTransaction {
 }
 
 export const accountsApi = {
+  /**
+   * An account is where the society's money is tracked — a bank account or a
+   * cash box — not a connection to a bank. Nothing syncs a real balance;
+   * currentBalance moves only as payments are approved and expenses and
+   * salaries are paid.
+   *
+   * At least one has to exist before any payment can be approved, since
+   * approval asks which account the money landed in. Registration creates
+   * none, so without this a new society could take payments and never
+   * record a single one.
+   */
+  create: async (payload: {
+    name: string;
+    accountType: AccountType;
+    bankName?: string;
+    accountNumberMasked?: string;
+    ifscCode?: string;
+    openingBalance?: number;
+    description?: string;
+  }) => {
+    const { data } = await apiClient.post('/accounts', payload);
+    return ((data as any)?.data ?? data) as SocietyAccount;
+  },
+
   list: async () => {
     const { data } = await apiClient.get<ApiResponse<SocietyAccount[]>>('/accounts');
     return data.data ?? (data as unknown as SocietyAccount[]);

@@ -435,6 +435,10 @@ export const auditLogsApi = {
 // Accounts & Funds
 export const accountsApi = {
   listAccounts: (params?: Record<string, unknown>) => api.get('/accounts', { params }),
+  /** An account is where money is tracked — a bank account or a cash box —
+   *  not a connection to a bank. At least one must exist before any payment
+   *  can be approved, since approval asks which account it landed in. */
+  createAccount: (data: unknown) => api.post('/accounts', data),
   getAccount: (id: string) => api.get(`/accounts/${id}`),
   listFunds: (params?: Record<string, unknown>) => api.get('/funds', { params }),
   createFund: (data: unknown) => api.post('/funds', data),
