@@ -4,6 +4,7 @@ import {
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from '../documents/sftp-storage.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { SubmitPaymentDto } from './dto/submit-payment.dto';
 import { DocumentAccessLevel, Prisma, PaymentStatus } from '@prisma/client';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
@@ -13,6 +14,7 @@ export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: SftpStorageService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async submit(
@@ -177,7 +179,7 @@ export class PaymentsService {
     // Fetch payment data outside the transaction (for amount, flatId, etc.)
     const payment = await this.findOne(societyId, paymentId);
 
-    return this.prisma.$transaction(async (tx) => {
+    const approved = await this.prisma.$transaction(async (tx) => {
       const now = new Date();
 
       // 1. Atomic status check-and-update. If another request already approved this
@@ -266,13 +268,29 @@ export class PaymentsService {
 
       return tx.paymentSubmission.findUnique({ where: { id: paymentId } });
     });
+
+    // Outside the transaction, and best-effort: "did my payment go through?"
+    // is the question this answers, but failing to answer it must never undo
+    // an approval that already succeeded.
+    await this.notifications.notifyQuietly(
+      () =>
+        this.notifications.sendToUsers(societyId, [payment.userId], {
+          title: 'Payment approved',
+          body: `Your payment of ₹${payment.amount.toString()} has been received and recorded.`,
+          type: 'PAYMENT_APPROVED',
+          data: { paymentId },
+        }),
+      `payment ${paymentId} approved`,
+    );
+
+    return approved;
   }
 
   async reject(societyId: string, paymentId: string, reviewedById: string, reason: string) {
     // Fetch for society scope check; status gate is inside the transaction
-    await this.findOne(societyId, paymentId);
+    const payment = await this.findOne(societyId, paymentId);
 
-    return this.prisma.$transaction(async (tx) => {
+    const rejected = await this.prisma.$transaction(async (tx) => {
       const now = new Date();
 
       const { count } = await tx.paymentSubmission.updateMany({
@@ -305,6 +323,21 @@ export class PaymentsService {
 
       return tx.paymentSubmission.findUnique({ where: { id: paymentId } });
     });
+
+    // The reason is the point: a rejection the resident cannot see leaves
+    // them thinking the bill is settled when it isn't.
+    await this.notifications.notifyQuietly(
+      () =>
+        this.notifications.sendToUsers(societyId, [payment.userId], {
+          title: 'Payment not accepted',
+          body: `Your payment of ₹${payment.amount.toString()} was not accepted. Reason: ${reason}`,
+          type: 'PAYMENT_REJECTED',
+          data: { paymentId },
+        }),
+      `payment ${paymentId} rejected`,
+    );
+
+    return rejected;
   }
 
   async findAll(societyId: string, page: number, limit: number, status?: PaymentStatus) {

@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { MaintenanceRequestStatus } from '@prisma/client';
 import { CreateMaintenanceRequestDto, UpdateRequestStatusDto } from './dto/create-request.dto';
 
 @Injectable()
 export class HelpdeskService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async create(societyId: string, residentId: string, dto: CreateMaintenanceRequestDto) {
     return this.prisma.maintenanceRequest.create({
@@ -80,7 +84,7 @@ export class HelpdeskService {
     const resolvedAt =
       dto.status === 'RESOLVED' || dto.status === 'CLOSED' ? new Date() : undefined;
 
-    return this.prisma.maintenanceRequest.update({
+    const updated = await this.prisma.maintenanceRequest.update({
       where: { id },
       data: {
         status: dto.status as MaintenanceRequestStatus,
@@ -93,5 +97,24 @@ export class HelpdeskService {
         assignedTo: { select: { id: true, firstName: true, lastName: true } },
       },
     });
+
+    // Tickets are one-way: a resident raises one and can only watch the
+    // status. Until now nothing told them it had changed, so the only way to
+    // find out was to keep reopening the app. adminNotes is included when
+    // present because that is usually the actual answer to their question.
+    await this.notifications.notifyQuietly(
+      () =>
+        this.notifications.sendToUsers(societyId, [updated.residentId], {
+          title: `Your request is ${dto.status.toLowerCase().replace(/_/g, ' ')}`,
+          body: dto.adminNotes?.trim()
+            ? `"${updated.title}" — ${dto.adminNotes.trim()}`
+            : `"${updated.title}" is now ${dto.status.toLowerCase().replace(/_/g, ' ')}.`,
+          type: 'HELPDESK_UPDATED',
+          data: { requestId: id, status: dto.status },
+        }),
+      `helpdesk request ${id} status change`,
+    );
+
+    return updated;
   }
 }

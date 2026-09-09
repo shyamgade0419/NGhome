@@ -73,6 +73,65 @@ export class NotificationsService {
   }
 
   /**
+   * Notify specific people rather than an audience.
+   *
+   * send() fans out by role, which suits an announcement but not the things
+   * residents most want to hear about — their payment being approved, their
+   * helpdesk ticket moving — where the audience is one person. Without this
+   * there was no way to tell someone something about their own account, so
+   * nothing did.
+   *
+   * Deduplicates userIds: a person holding two memberships in one society
+   * would otherwise be told the same thing twice.
+   */
+  async sendToUsers(societyId: string, userIds: string[], dto: SendNotificationDto) {
+    const recipients = [...new Set(userIds)].filter(Boolean);
+    if (recipients.length === 0) return null;
+
+    const notification = await this.prisma.notification.create({
+      data: {
+        societyId,
+        title: dto.title,
+        body: dto.body,
+        type: dto.type,
+        data: (dto.data ?? {}) as Prisma.InputJsonValue,
+        channels: dto.channels ?? [NotificationChannel.IN_APP],
+        audience: dto.audience ?? AnnouncementAudience.ALL_RESIDENTS,
+        scheduledAt: new Date(),
+      },
+    });
+
+    await this.prisma.notificationRecord.createMany({
+      data: recipients.map((userId) => ({
+        notificationId: notification.id,
+        userId,
+        channel: NotificationChannel.IN_APP,
+        status: NotificationStatus.SENT,
+        sentAt: new Date(),
+      })),
+    });
+
+    void this.pushService.sendToUsers(recipients, dto.title, dto.body, { type: dto.type });
+
+    return notification;
+  }
+
+  /**
+   * For callers inside another operation's transaction boundary — approving a
+   * payment, publishing a period. Telling someone about a thing must never be
+   * what stops the thing from happening, so a failure here is logged and
+   * swallowed rather than surfaced as a failed API response.
+   */
+  async notifyQuietly(fn: () => Promise<unknown>, context: string) {
+    try {
+      await fn();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`[notifications] ${context} failed:`, err);
+    }
+  }
+
+  /**
    * Every UI that composes a notification today (web and mobile) sends
    * with no audience override, so this always resolves via the
    * ALL_RESIDENTS default — and the button both clients show literally

@@ -9,6 +9,17 @@
 import { PaymentsService } from './payments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from '../documents/sftp-storage.service';
+import { NotificationsService } from '../notifications/notifications.service';
+
+/** Notifications are best-effort side effects — these tests assert on the
+ *  money paths, so a no-op stands in. notifyQuietly runs the callback so a
+ *  mistake inside a notification block still surfaces here. */
+const notificationsStub = () =>
+  ({
+    sendToUsers: jest.fn().mockResolvedValue(null),
+    send: jest.fn().mockResolvedValue(null),
+    notifyQuietly: jest.fn(async (fn: () => Promise<unknown>) => { await fn(); }),
+  }) as unknown as NotificationsService;
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 
 const SOCIETY_ID = 'society-a';
@@ -35,7 +46,7 @@ function makeServices(documents: Array<{ id: string; fileKey: string; fileName: 
     getBasePath: jest.fn().mockReturnValue('/ng-home-documents'),
   } as unknown as SftpStorageService;
 
-  return { prisma, storage, service: new PaymentsService(prisma, storage) };
+  return { prisma, storage, service: new PaymentsService(prisma, storage, notificationsStub()) };
 }
 
 describe('PaymentsService.getProofFile', () => {
@@ -91,7 +102,7 @@ describe('PaymentsService.submit — proof attachment', () => {
       upload: jest.fn().mockResolvedValue(undefined),
       getBasePath: jest.fn().mockReturnValue('/ng-home-documents'),
     } as unknown as SftpStorageService;
-    const service = new PaymentsService(prisma, storage);
+    const service = new PaymentsService(prisma, storage, notificationsStub());
 
     await service.submit(
       SOCIETY_ID, OWNER_ID, 'flat-1',
@@ -116,7 +127,7 @@ describe('PaymentsService.submit — proof attachment', () => {
       upload: jest.fn(),
       getBasePath: jest.fn().mockReturnValue('/ng-home-documents'),
     } as unknown as SftpStorageService;
-    const service = new PaymentsService(prisma, storage);
+    const service = new PaymentsService(prisma, storage, notificationsStub());
 
     await service.submit(
       SOCIETY_ID, OWNER_ID, 'flat-1',
@@ -181,7 +192,7 @@ function makeSubmitServices(opts: { accounts: { id: string }[]; verificationRequ
   } as unknown as PrismaService;
 
   const storage = {} as unknown as SftpStorageService;
-  return { service: new PaymentsService(prisma, storage), prisma, tx };
+  return { service: new PaymentsService(prisma, storage, notificationsStub()), prisma, tx };
 }
 
 const submitDto = {

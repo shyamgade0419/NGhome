@@ -5,6 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { BillingCalculatorService } from './billing-calculator.service';
 import { BillingRulesService } from '../billing-rules/billing-rules.service';
 import { CreateBillingPeriodDto } from './dto/create-billing-period.dto';
@@ -18,6 +19,7 @@ export class BillingService {
     private readonly prisma: PrismaService,
     private readonly calculator: BillingCalculatorService,
     private readonly billingRulesService: BillingRulesService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async createPeriod(societyId: string, dto: CreateBillingPeriodDto) {
@@ -212,7 +214,7 @@ export class BillingService {
       throw new BadRequestException('Period must be in CALCULATED or REVIEW status to publish');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const published = await this.prisma.$transaction(async (tx) => {
       await tx.maintenanceBill.updateMany({
         where: { billingPeriodId: periodId, societyId },
         data: { isPublished: true },
@@ -227,6 +229,30 @@ export class BillingService {
         },
       });
     });
+
+    // Publishing is the moment bills become visible, and until now nothing
+    // told anyone. Residents had to open the app on the off-chance. Sent
+    // outside the transaction and best-effort — a failed notification must
+    // not roll back a period that is already published.
+    const periodLabel = new Date(published.periodYear, published.periodMonth - 1, 1)
+      .toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+    const dueLabel = published.dueDate.toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'long',
+    });
+
+    await this.notifications.notifyQuietly(
+      () =>
+        this.notifications.send(societyId, {
+          title: `${periodLabel} bill is ready`,
+          body: `Your maintenance bill for ${periodLabel} is now available. Due ${dueLabel}.`,
+          type: 'BILL_PUBLISHED',
+          data: { billingPeriodId: periodId },
+        }),
+      `billing period ${periodId} published`,
+    );
+
+    return published;
   }
 
   async closePeriod(societyId: string, periodId: string, closedById: string) {
