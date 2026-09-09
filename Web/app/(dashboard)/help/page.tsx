@@ -7,7 +7,7 @@ import {
   Droplets, Wallet, Users, Settings, Wrench, Megaphone,
   CheckCircle2, AlertCircle, Smartphone, MessageCircle,
   Pencil, Printer, IndianRupee, TrendingUp, Building2,
-  UserPlus, Shield, BarChart3, ChevronRight, FolderOpen, Bell,
+  UserPlus, Shield, BarChart3, ChevronRight, FolderOpen, Bell, PiggyBank,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Header } from '@/components/layout/Header';
@@ -400,7 +400,8 @@ const ARTICLES: Article[] = [
       { text: 'Go to Expenses → "New Expense". Enter the vendor, amount, category, and date.' },
       { text: 'Upload a receipt or invoice as proof (optional but recommended).' },
       { text: 'Submitted expenses start as "Pending". An admin or accountant must approve them.' },
-      { text: 'To approve: open the expense → click "Approve". Select the bank account to debit.', tip: 'Only approved expenses deduct from your account balance.' },
+      { text: 'To approve: find the expense and click "Approve". This records that the committee agreed to the spend — it does not move any money yet.' },
+      { text: 'Then click "Mark Paid" and choose which account the money came out of. This is the step that reduces your bank balance and writes the payment into that account\'s ledger.', tip: 'If your balances look higher than the bank says, check for approved expenses still waiting to be marked paid.' },
       { text: 'Expenses appear in the Dashboard\'s Total Expenses widget for the relevant month.' },
     ],
   },
@@ -416,7 +417,7 @@ const ARTICLES: Article[] = [
     steps: [
       { text: 'Go to Settings → Payment Settings.' },
       { text: 'Enter your Society UPI ID (e.g. "societyname@ybl"). This is displayed to residents when they pay.', tip: 'Get this from your bank or the UPI app linked to the society account.' },
-      { text: 'Toggle "Require payment verification" OFF if you want UPI payments with a UTR to be auto-confirmed instantly. Leave ON to manually verify every payment.' },
+      { text: 'Leave "Require payment verification" ON. With it on, you approve each payment and choose which account it lands in, which is what puts the money into your balances.', tip: 'Switching it off marks bills paid automatically, but the money is not added to any account and no ledger entry is written — your balances will drift from the bank.' },
       { text: 'Go to Settings → Billing Rules to set maintenance amounts per flat category, water rates, and late fee structure.' },
       { text: 'Go to Settings → Society Info to update the society\'s display name, address, and contact email — shown on bills and statements.' },
     ],
@@ -449,8 +450,25 @@ const ARTICLES: Article[] = [
     steps: [
       { text: 'Go to Community to see all society announcements.' },
       { text: 'Announcements are listed newest first. Click one to read the full message.' },
-      { text: '(Admin) Click "New Announcement" to post a notice to all residents — maintenance shutdowns, events, AGM dates, etc.' },
+      { text: '(Admin) Click "New Announcement" to post a notice to all residents — maintenance shutdowns, events, AGM dates, etc. It reaches residents as soon as you save it.' },
+      { text: '(Admin) If an announcement shows "Not visible to residents", nobody can read it yet — click that to publish it.', tip: 'Announcements posted before a recent update were saved but never released to residents. Any of those still carry that flag, so check your list and publish anything that should have gone out.' },
       { text: 'Important announcements are pinned at the top by admin.' },
+    ],
+  },
+  {
+    id: 'funds',
+    title: 'Corpus & Reserve Funds',
+    subtitle: 'Set aside money for big future costs, and record contributions',
+    icon: PiggyBank,
+    color: 'text-emerald-700',
+    bg: 'bg-emerald-50',
+    roles: ['admin'],
+    steps: [
+      { text: 'Go to Accounts & Funds → "New Fund". Name it (Corpus Fund, Sinking Fund, Lift Replacement), and set the Opening Balance to whatever it already holds today.' },
+      { text: 'Decide whether residents can see it. This is off by default and it is the only thing that controls visibility for that fund.', tip: 'The "Show total bank balance to residents" switch in Settings covers the combined bank balance only — it does not hide or reveal funds.' },
+      { text: 'To add money later, click "Add Money" on the fund, enter the amount and a note like "Corpus collection Q3".' },
+      { text: 'Leave "Also credit a bank account" set to "No" when the money already came in as resident payments — it is in your accounts already.', tip: 'Choosing an account there adds the money to that balance too. Correct for a cash collection that was never recorded as a payment; double-counting for anything that came through the app.' },
+      { text: 'A fund is an earmark inside your bank accounts, not a separate bank account. That is why the Accounts page shows Total Bank Balance and Total Fund Balance as two separate figures rather than adding them together.' },
     ],
   },
   {
