@@ -4,6 +4,7 @@ import {
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from '../documents/sftp-storage.service';
+import { assertAllowedUpload, safeStorageName } from '../documents/file-safety';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SubmitPaymentDto } from './dto/submit-payment.dto';
 import { DocumentAccessLevel, Prisma, PaymentStatus } from '@prisma/client';
@@ -24,6 +25,11 @@ export class PaymentsService {
     dto: SubmitPaymentDto,
     proofFile?: { originalname: string; size: number; mimetype: string; buffer: Buffer },
   ) {
+    // First, before anything is written. The proof is stored after the payment
+    // row is created, so rejecting it there would leave a payment behind while
+    // telling the resident the submission failed.
+    if (proofFile) assertAllowedUpload(proofFile);
+
     const membership = await this.prisma.societyMembership.findFirst({
       where: { societyId, userId, flatId, status: 'ACTIVE' },
     });
@@ -104,7 +110,7 @@ export class PaymentsService {
     // would otherwise hide an ADMIN_ONLY doc from the very resident who
     // uploaded it).
     if (proofFile) {
-      const remotePath = `${this.storage.getBasePath()}/${societyId}/payment-proofs/${randomUUID()}-${proofFile.originalname}`;
+      const remotePath = `${this.storage.getBasePath()}/${societyId}/payment-proofs/${randomUUID()}-${safeStorageName(proofFile.originalname)}`;
       await this.storage.upload(proofFile.buffer, remotePath);
       await this.prisma.document.create({
         data: {

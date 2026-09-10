@@ -275,3 +275,31 @@ describe('PaymentsService — auto-approve lands the money', () => {
     expect(billArg.data).toEqual({ paidAmount: { increment: expect.anything() } });
   });
 });
+
+/**
+ * A receipt of the wrong type must be refused before anything is written. The
+ * proof is stored after the payment row is created, so refusing it at that
+ * point would leave a payment behind while telling the resident it failed.
+ */
+describe('PaymentsService.submit — unsupported receipt', () => {
+  it('rejects the file before creating a payment', async () => {
+    const create = jest.fn();
+    const prisma = {
+      societyMembership: { findFirst: jest.fn().mockResolvedValue({ id: 'm1' }) },
+      paymentSubmission: { create },
+    } as unknown as PrismaService;
+    const storage = { upload: jest.fn(), getBasePath: jest.fn() } as unknown as SftpStorageService;
+    const service = new PaymentsService(prisma, storage, notificationsStub());
+
+    await expect(
+      service.submit(
+        SOCIETY_ID, OWNER_ID, 'flat-1',
+        { amount: 500, paymentDate: '2026-01-01', paymentMethod: 'UPI' } as any,
+        { originalname: 'receipt.html', size: 10, mimetype: 'text/html', buffer: Buffer.from('<script>') },
+      ),
+    ).rejects.toThrow('That file type is not supported');
+
+    expect(create).not.toHaveBeenCalled();
+    expect(storage.upload).not.toHaveBeenCalled();
+  });
+});

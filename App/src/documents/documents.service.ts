@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from './sftp-storage.service';
+import { assertAllowedUpload, safeStorageName } from './file-safety';
 import { DocumentAccessLevel } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
@@ -103,7 +104,10 @@ export class DocumentsService {
       }
     }
 
-    const remotePath = `${this.storage.getBasePath()}/${societyId}/${randomUUID()}-${file.originalname}`;
+    assertAllowedUpload(file);
+    // The on-disk name is sanitised; file.originalname is still stored below as
+    // fileName, so people see the name they uploaded. See file-safety.ts.
+    const remotePath = `${this.storage.getBasePath()}/${societyId}/${randomUUID()}-${safeStorageName(file.originalname)}`;
     await this.storage.upload(file.buffer, remotePath);
 
     return this.prisma.document.create({

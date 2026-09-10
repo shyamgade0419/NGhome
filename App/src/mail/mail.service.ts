@@ -49,18 +49,25 @@ export class MailService implements OnModuleInit {
       );
       return;
     }
-    void this.verifyConnection().then((result) => {
-      if (result.ok) {
-        this.logger.log(
-          `SMTP ready — ${this.config.get('mail.user')} via ` +
-            `${this.config.get('mail.host')}:${this.config.get('mail.port')}`,
-        );
-      } else {
-        this.logger.error(
-          `SMTP check failed — password reset emails will not arrive: ${result.reason}`,
-        );
-      }
-    });
+    // verifyConnection already turns errors into a result, but this chain is
+    // deliberately unawaited and Node 22 kills the process on an unhandled
+    // rejection — so the catch stays, in case anything here ever does throw.
+    void this.verifyConnection()
+      .then((result) => {
+        if (result.ok) {
+          this.logger.log(
+            `SMTP ready — ${this.config.get('mail.user')} via ` +
+              `${this.config.get('mail.host')}:${this.config.get('mail.port')}`,
+          );
+        } else {
+          this.logger.error(
+            `SMTP check failed — password reset emails will not arrive: ${result.reason}`,
+          );
+        }
+      })
+      .catch((err) =>
+        this.logger.error(`SMTP check could not run: ${err instanceof Error ? err.message : err}`),
+      );
   }
 
   async sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
