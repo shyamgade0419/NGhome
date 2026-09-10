@@ -7,8 +7,10 @@
  */
 
 import { PaymentsService } from './payments.service';
+import { SubmitPaymentDto } from './dto/submit-payment.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from '../documents/sftp-storage.service';
+import { StoragePathService } from '../documents/storage-path.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
 /** Notifications are best-effort side effects — these tests assert on the
@@ -46,17 +48,32 @@ function makeServices(documents: Array<{ id: string; fileKey: string; fileName: 
     getBasePath: jest.fn().mockReturnValue('/ng-home-documents'),
   } as unknown as SftpStorageService;
 
-  return { prisma, storage, service: new PaymentsService(prisma, storage, notificationsStub()) };
+  return { prisma, storage, service: new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage)) };
 }
 
 describe('PaymentsService.getProofFile', () => {
-  const doc = { id: 'doc-1', fileKey: 'path/to/file.jpg', fileName: 'receipt.jpg', mimeType: 'image/jpeg' };
+  // Stored under the layout used before the per-flat reorganisation; such
+  // files are left where they are and must still download.
+  const LEGACY_KEY = `/ng-home-documents/${SOCIETY_ID}/payment-proofs/3f2b8c1e-receipt.jpg`;
+  const doc = { id: 'doc-1', fileKey: LEGACY_KEY, fileName: 'receipt.jpg', mimeType: 'image/jpeg' };
 
   it('lets the payment owner download their own proof', async () => {
     const { service, storage } = makeServices([doc]);
     const result = await service.getProofFile(SOCIETY_ID, PAYMENT_ID, { id: OWNER_ID, isReviewer: false });
     expect(result.fileName).toBe('receipt.jpg');
-    expect((storage.download as jest.Mock)).toHaveBeenCalledWith('path/to/file.jpg');
+    expect((storage.download as jest.Mock)).toHaveBeenCalledWith(LEGACY_KEY);
+  });
+
+  it.each([
+    '/ng-home-documents/society-b/residents/flat-1/payments/x.jpg',
+    `/ng-home-documents/${SOCIETY_ID}/../society-b/payment-proofs/x.jpg`,
+    '/etc/passwd',
+  ])('never reads a stored key outside the society folder: %s', async (fileKey) => {
+    const { service, storage } = makeServices([{ ...doc, fileKey }]);
+    await expect(
+      service.getProofFile(SOCIETY_ID, PAYMENT_ID, { id: OWNER_ID, isReviewer: false }),
+    ).rejects.toThrow(NotFoundException);
+    expect(storage.download).not.toHaveBeenCalled();
   });
 
   it('lets a reviewer (admin/accountant) download regardless of their own flat', async () => {
@@ -102,7 +119,7 @@ describe('PaymentsService.submit — proof attachment', () => {
       upload: jest.fn().mockResolvedValue(undefined),
       getBasePath: jest.fn().mockReturnValue('/ng-home-documents'),
     } as unknown as SftpStorageService;
-    const service = new PaymentsService(prisma, storage, notificationsStub());
+    const service = new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage));
 
     await service.submit(
       SOCIETY_ID, OWNER_ID, 'flat-1',
@@ -127,7 +144,7 @@ describe('PaymentsService.submit — proof attachment', () => {
       upload: jest.fn(),
       getBasePath: jest.fn().mockReturnValue('/ng-home-documents'),
     } as unknown as SftpStorageService;
-    const service = new PaymentsService(prisma, storage, notificationsStub());
+    const service = new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage));
 
     await service.submit(
       SOCIETY_ID, OWNER_ID, 'flat-1',
@@ -192,7 +209,7 @@ function makeSubmitServices(opts: { accounts: { id: string }[]; verificationRequ
   } as unknown as PrismaService;
 
   const storage = {} as unknown as SftpStorageService;
-  return { service: new PaymentsService(prisma, storage, notificationsStub()), prisma, tx };
+  return { service: new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage)), prisma, tx };
 }
 
 const submitDto = {
@@ -289,7 +306,7 @@ describe('PaymentsService.submit — unsupported receipt', () => {
       paymentSubmission: { create },
     } as unknown as PrismaService;
     const storage = { upload: jest.fn(), getBasePath: jest.fn() } as unknown as SftpStorageService;
-    const service = new PaymentsService(prisma, storage, notificationsStub());
+    const service = new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage));
 
     await expect(
       service.submit(
@@ -301,5 +318,64 @@ describe('PaymentsService.submit — unsupported receipt', () => {
 
     expect(create).not.toHaveBeenCalled();
     expect(storage.upload).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Payment proofs now live with the flat the payment is for:
+ *   {base}/{societyId}/residents/{flatId}/payments/{uuid}-{name}
+ * rather than a single society-wide payment-proofs folder.
+ */
+describe('PaymentsService.submit — where the proof is stored', () => {
+  function setupProof(opts: { docCreateFails?: boolean } = {}) {
+    const storage = {
+      getBasePath: jest.fn().mockReturnValue('/ng-home-documents'),
+      upload: jest.fn().mockResolvedValue(undefined),
+      remove: jest.fn().mockResolvedValue(undefined),
+    } as unknown as SftpStorageService;
+    const prisma = {
+      societyMembership: { findFirst: jest.fn().mockResolvedValue({ id: 'm1' }) },
+      maintenanceBill: { findFirst: jest.fn() },
+      societyConfiguration: { findUnique: jest.fn().mockResolvedValue({ paymentVerificationRequired: true }) },
+      account: { findMany: jest.fn().mockResolvedValue([]) },
+      paymentSubmission: { create: jest.fn().mockResolvedValue({ id: PAYMENT_ID }) },
+      document: {
+        create: opts.docCreateFails
+          ? jest.fn().mockRejectedValue(new Error('database unavailable'))
+          : jest.fn().mockResolvedValue({ id: 'doc-1' }),
+      },
+    } as unknown as PrismaService;
+    const service = new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage));
+    return { service, storage, prisma };
+  }
+
+  const receipt = { originalname: 'UPI Receipt.jpg', size: 10, mimetype: 'image/jpeg', buffer: Buffer.from('x') };
+  const dto = { amount: 500, paymentDate: '2026-01-01', paymentMethod: 'UPI' } as SubmitPaymentDto;
+
+  it("files the proof under the payment's own flat, in payments/", async () => {
+    const { service, storage, prisma } = setupProof();
+    await service.submit(SOCIETY_ID, OWNER_ID, 'flat-10', dto, receipt);
+
+    const [, remotePath] = (storage.upload as jest.Mock).mock.calls[0];
+    expect(remotePath).toMatch(
+      /^\/ng-home-documents\/society-a\/residents\/flat-10\/payments\/[0-9a-f-]{36}-UPI_Receipt\.jpg$/,
+    );
+    expect(remotePath).not.toContain('payment-proofs');
+
+    // Same Document relationship as before, pointing at the new location.
+    const [{ data }] = (prisma.document.create as jest.Mock).mock.calls[0];
+    expect(data.fileKey).toBe(remotePath);
+    expect(data.fileName).toBe('UPI Receipt.jpg');
+    expect(data.payments).toEqual({ connect: { id: PAYMENT_ID } });
+  });
+
+  it('removes the stored proof when its Document row cannot be written', async () => {
+    const { service, storage } = setupProof({ docCreateFails: true });
+
+    await expect(service.submit(SOCIETY_ID, OWNER_ID, 'flat-10', dto, receipt)).rejects.toThrow(
+      'database unavailable',
+    );
+    const [, uploadedPath] = (storage.upload as jest.Mock).mock.calls[0];
+    expect(storage.remove).toHaveBeenCalledWith(uploadedPath);
   });
 });

@@ -1,9 +1,9 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from './sftp-storage.service';
-import { assertAllowedUpload, safeStorageName } from './file-safety';
+import { assertAllowedUpload } from './file-safety';
+import { StoragePathService } from './storage-path.service';
 import { DocumentAccessLevel } from '@prisma/client';
-import { randomUUID } from 'crypto';
 
 export interface CreateDocumentDto {
   title: string;
@@ -44,6 +44,7 @@ export class DocumentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: SftpStorageService,
+    private readonly paths: StoragePathService,
   ) {}
 
   async create(societyId: string, uploadedById: string, dto: CreateDocumentDto) {
@@ -57,7 +58,11 @@ export class DocumentsService {
         fileKey: dto.fileKey,
         fileSize: dto.fileSize,
         mimeType: dto.mimeType,
-        storageProvider: dto.storageProvider ?? 'local',
+        // Always a link. dto.storageProvider is ignored: a caller-set 'sftp'
+        // would make their fileKey a server path that download and delete
+        // then act on — any file, in any society. Only upload() makes SFTP
+        // documents, with a path it built itself.
+        storageProvider: 'local',
         accessLevel: dto.accessLevel ?? DocumentAccessLevel.RESIDENTS_ONLY,
         category: dto.category,
         linkedEntityType: dto.linkedEntityType,
@@ -105,27 +110,45 @@ export class DocumentsService {
     }
 
     assertAllowedUpload(file);
-    // The on-disk name is sanitised; file.originalname is still stored below as
-    // fileName, so people see the name they uploaded. See file-safety.ts.
-    const remotePath = `${this.storage.getBasePath()}/${societyId}/${randomUUID()}-${safeStorageName(file.originalname)}`;
+
+    // Flat-owned when flatId is set, society-owned otherwise. flatId here is
+    // never the client's for a resident — it was forced to uploaderFlatId
+    // above — and for staff it has just been checked against this society.
+    // The on-disk name is sanitised; file.originalname is still stored below
+    // as fileName, so people see the name they uploaded.
+    const remotePath = this.paths.documentFile(
+      societyId,
+      flatId,
+      meta.category,
+      this.paths.storedFileName(file.originalname),
+    );
     await this.storage.upload(file.buffer, remotePath);
 
-    return this.prisma.document.create({
-      data: {
-        societyId,
-        flatId,
-        uploadedById: uploaderId,
-        title: meta.title,
-        description: meta.description,
-        fileName: file.originalname,
-        fileKey: remotePath,
-        fileSize: file.size,
-        mimeType: file.mimetype,
-        storageProvider: 'sftp',
-        accessLevel,
-        category: meta.category,
-      },
-    });
+    try {
+      const doc = await this.prisma.document.create({
+        data: {
+          societyId,
+          flatId,
+          uploadedById: uploaderId,
+          title: meta.title,
+          description: meta.description,
+          fileName: file.originalname,
+          fileKey: remotePath,
+          fileSize: file.size,
+          mimeType: file.mimetype,
+          storageProvider: 'sftp',
+          accessLevel,
+          category: meta.category,
+        },
+      });
+      return toClient(doc);
+    } catch (err) {
+      // Without a row pointing at it, the file is unreachable and would sit on
+      // the server forever. remove() never throws, so the original error is
+      // what the caller sees.
+      await this.storage.remove(remotePath);
+      throw err;
+    }
   }
 
   async findAll(
@@ -134,7 +157,7 @@ export class DocumentsService {
     category: string | undefined,
     callerFlatId: string | undefined,
   ) {
-    return this.prisma.document.findMany({
+    const docs = await this.prisma.document.findMany({
       where: {
         societyId,
         isActive: true,
@@ -153,9 +176,20 @@ export class DocumentsService {
       include: { uploadedBy: { select: { id: true, firstName: true, lastName: true } } },
       orderBy: { createdAt: 'desc' },
     });
+    return docs.map(toClient);
   }
 
   async findOne(
+    societyId: string,
+    id: string,
+    forResident: boolean,
+    callerFlatId: string | undefined,
+  ) {
+    return toClient(await this.findVisible(societyId, id, forResident, callerFlatId));
+  }
+
+  /** findOne's access decision, with the stored fileKey intact for internal use. */
+  private async findVisible(
     societyId: string,
     id: string,
     forResident: boolean,
@@ -183,14 +217,18 @@ export class DocumentsService {
     return doc;
   }
 
-  /** Streams the actual bytes back — findOne() above enforces the same
-   *  visibility rule before this is ever called, so nothing extra is
-   *  re-checked here (matches the pattern: one place owns the access
-   *  decision, everything downstream trusts it). */
+  /** Streams the actual bytes back — findVisible() above enforces the same
+   *  visibility rule as findOne, so the access decision is not re-made here
+   *  (matches the pattern: one place owns the access decision, everything
+   *  downstream trusts it). The key is still checked to be inside this
+   *  society's folder before the server is touched. */
   async getFileBuffer(societyId: string, id: string, forResident: boolean, callerFlatId: string | undefined) {
-    const doc = await this.findOne(societyId, id, forResident, callerFlatId);
+    const doc = await this.findVisible(societyId, id, forResident, callerFlatId);
     if (doc.storageProvider !== 'sftp') {
       throw new BadRequestException('This document is a link, not an uploaded file — open fileKey directly.');
+    }
+    if (!this.paths.isSocietyKey(societyId, doc.fileKey)) {
+      throw new NotFoundException('File not found');
     }
     const buffer = await this.storage.download(doc.fileKey);
     return { buffer, fileName: doc.fileName, mimeType: doc.mimeType };
@@ -214,12 +252,26 @@ export class DocumentsService {
       }
     }
 
-    if (doc.storageProvider === 'sftp') {
+    // A key outside this society's folder is never deleted; the row is still
+    // deactivated.
+    if (doc.storageProvider === 'sftp' && this.paths.isSocietyKey(societyId, doc.fileKey)) {
       await this.storage.remove(doc.fileKey);
     }
-    return this.prisma.document.update({
-      where: { id },
-      data: { isActive: false },
-    });
+    return toClient(
+      await this.prisma.document.update({
+        where: { id },
+        data: { isActive: false },
+      }),
+    );
   }
+}
+
+/**
+ * What a client sees of a document. An uploaded file's fileKey is its path on
+ * the SFTP server, so it is blanked; clients fetch the bytes through
+ * GET /documents/:id/download instead. A link document's fileKey is the link
+ * itself and is left alone.
+ */
+function toClient<T extends { storageProvider: string; fileKey: string }>(doc: T): T {
+  return doc.storageProvider === 'sftp' ? { ...doc, fileKey: '' } : doc;
 }

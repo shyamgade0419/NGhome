@@ -1,10 +1,10 @@
 import {
   Injectable, NotFoundException, BadRequestException, ForbiddenException,
 } from '@nestjs/common';
-import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from '../documents/sftp-storage.service';
-import { assertAllowedUpload, safeStorageName } from '../documents/file-safety';
+import { assertAllowedUpload } from '../documents/file-safety';
+import { StoragePathService } from '../documents/storage-path.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SubmitPaymentDto } from './dto/submit-payment.dto';
 import { DocumentAccessLevel, Prisma, PaymentStatus } from '@prisma/client';
@@ -16,6 +16,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly storage: SftpStorageService,
     private readonly notifications: NotificationsService,
+    private readonly paths: StoragePathService,
   ) {}
 
   async submit(
@@ -110,24 +111,38 @@ export class PaymentsService {
     // would otherwise hide an ADMIN_ONLY doc from the very resident who
     // uploaded it).
     if (proofFile) {
-      const remotePath = `${this.storage.getBasePath()}/${societyId}/payment-proofs/${randomUUID()}-${safeStorageName(proofFile.originalname)}`;
+      // Stored with the flat the payment is for. flatId is the payment's own,
+      // from the signed token, and was checked against an active membership at
+      // the top of this method — never a client-supplied path.
+      const remotePath = this.paths.paymentProof(
+        societyId,
+        flatId,
+        this.paths.storedFileName(proofFile.originalname),
+      );
       await this.storage.upload(proofFile.buffer, remotePath);
-      await this.prisma.document.create({
-        data: {
-          societyId,
-          uploadedById: userId,
-          title: `Payment proof — ${payment.id}`,
-          fileName: proofFile.originalname,
-          fileKey: remotePath,
-          fileSize: proofFile.size,
-          mimeType: proofFile.mimetype,
-          storageProvider: 'sftp',
-          accessLevel: DocumentAccessLevel.ADMIN_ONLY,
-          linkedEntityType: 'PaymentSubmission',
-          linkedEntityId: payment.id,
-          payments: { connect: { id: payment.id } },
-        },
-      });
+      try {
+        await this.prisma.document.create({
+          data: {
+            societyId,
+            uploadedById: userId,
+            title: `Payment proof — ${payment.id}`,
+            fileName: proofFile.originalname,
+            fileKey: remotePath,
+            fileSize: proofFile.size,
+            mimeType: proofFile.mimetype,
+            storageProvider: 'sftp',
+            accessLevel: DocumentAccessLevel.ADMIN_ONLY,
+            linkedEntityType: 'PaymentSubmission',
+            linkedEntityId: payment.id,
+            payments: { connect: { id: payment.id } },
+          },
+        });
+      } catch (err) {
+        // A file with no Document row can never be reached again. remove()
+        // never throws, so the caller still sees the real error.
+        await this.storage.remove(remotePath);
+        throw err;
+      }
     }
 
     // Auto-confirm: settle the bill without waiting for an admin. Everything
@@ -424,6 +439,9 @@ export class PaymentsService {
 
     const doc = payment.documents[0];
     if (!doc) throw new NotFoundException('No proof file was attached to this payment');
+    if (!this.paths.isSocietyKey(societyId, doc.fileKey)) {
+      throw new NotFoundException('No proof file was attached to this payment');
+    }
 
     const buffer = await this.storage.download(doc.fileKey);
     return { buffer, fileName: doc.fileName, mimeType: doc.mimeType };
