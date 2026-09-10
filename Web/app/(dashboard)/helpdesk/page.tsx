@@ -4,10 +4,10 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Wrench, X, ChevronDown, ChevronRight,
-  Clock, CheckCircle2, AlertCircle, XCircle,
+  Clock, CheckCircle2, AlertCircle, XCircle, MessageSquare, Send,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { helpdeskApi } from '@/lib/api/endpoints';
+import { helpdeskApi, HelpdeskComment } from '@/lib/api/endpoints';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { Button } from '@/components/ui/Button';
@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
-import { formatDate, formatDateTime } from '@/lib/utils';
+import { formatDate, formatDateTime, cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
 
 const CATEGORIES = [
@@ -185,6 +185,124 @@ function UpdateStatusModal({ request, onClose }: { request: any; onClose: () => 
   );
 }
 
+/**
+ * The conversation on a request, shown inside the card's expansion.
+ *
+ * Requests were one-way — the resident raised one and watched the status,
+ * with adminNotes as the only channel back. Both sides now post here. Lines
+ * are placed by who raised the request, not who is looking, so the thread
+ * reads the same on the admin's screen and the resident's.
+ */
+function RequestThreadPanel({ req }: { req: any }) {
+  const qc = useQueryClient();
+  const [draft, setDraft] = useState('');
+
+  const { data: comments, isLoading } = useQuery({
+    queryKey: ['helpdesk-comments', req.id],
+    queryFn: () => helpdeskApi.comments(req.id).then((r: any) => (r.data?.data ?? r.data) as HelpdeskComment[]),
+  });
+
+  const send = useMutation({
+    mutationFn: () => helpdeskApi.addComment(req.id, draft.trim()),
+    onSuccess: () => {
+      setDraft('');
+      qc.invalidateQueries({ queryKey: ['helpdesk-comments', req.id] });
+    },
+    onError: (e: { response?: { data?: { message?: string } } }) =>
+      toast.error(e?.response?.data?.message ?? 'Could not send reply'),
+  });
+
+  const closed = req.status === 'CLOSED';
+  const thread = comments ?? [];
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Conversation</p>
+
+      <div className="space-y-2">
+        <div className="ml-auto max-w-[85%] rounded-xl rounded-br-sm bg-primary-50 px-3 py-2">
+          <p className="text-[11px] text-slate-500">
+            {req.resident ? `${req.resident.firstName} ${req.resident.lastName}` : 'Resident'} ·{' '}
+            {formatDateTime(req.createdAt)}
+          </p>
+          <p className="text-sm text-slate-800 whitespace-pre-wrap">
+            {req.description?.trim() || req.title}
+          </p>
+        </div>
+
+        {req.adminNotes && (
+          <div className="max-w-[85%] rounded-xl rounded-bl-sm border border-slate-200 bg-white px-3 py-2">
+            <p className="text-[11px] text-slate-500">Society note</p>
+            <p className="text-sm text-slate-800 whitespace-pre-wrap">{req.adminNotes}</p>
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="flex justify-center py-2"><Spinner /></div>
+        ) : (
+          thread.map((c) => (
+            <div
+              key={c.id}
+              className={cn(
+                'max-w-[85%] rounded-xl px-3 py-2',
+                c.isFromResident
+                  ? 'ml-auto rounded-br-sm bg-primary-50'
+                  : 'rounded-bl-sm border border-slate-200 bg-white',
+              )}
+            >
+              <p className="text-[11px] text-slate-500">
+                {c.author.firstName} {c.author.lastName}
+                {c.isFromResident ? '' : ' · Society'} · {formatDateTime(c.createdAt)}
+              </p>
+              <p className="text-sm text-slate-800 whitespace-pre-wrap">{c.body}</p>
+            </div>
+          ))
+        )}
+
+        {!isLoading && thread.length === 0 && !req.adminNotes && (
+          <p className="py-1 text-center text-xs text-slate-400">
+            No replies yet. Anything added here goes to the other side straight away.
+          </p>
+        )}
+      </div>
+
+      {closed ? (
+        <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+          This request is closed. Raise a new one if the problem has come back.
+        </p>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (draft.trim()) send.mutate();
+          }}
+          className="flex items-end gap-2 pt-1"
+        >
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter sends, Shift+Enter adds a line — the chat convention.
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (draft.trim()) send.mutate();
+              }
+            }}
+            placeholder="Write a reply…"
+            rows={2}
+            maxLength={2000}
+            aria-label="Reply"
+            className="flex-1 resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+          />
+          <Button type="submit" size="sm" loading={send.isPending} disabled={!draft.trim()}>
+            <Send size={13} /> Send
+          </Button>
+        </form>
+      )}
+    </div>
+  );
+}
+
 function RequestCard({ req, admin }: { req: any; admin: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [showUpdate, setShowUpdate] = useState(false);
@@ -218,31 +336,25 @@ function RequestCard({ req, admin }: { req: any; admin: boolean }) {
                 Update
               </Button>
             )}
-            {(req.description || req.adminNotes) && (
-              <button onClick={() => setExpanded(v => !v)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100">
-                {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-              </button>
-            )}
+            {/* Always offered now, not only when there was a description or a
+                note: the conversation is always worth opening, even to start it. */}
+            <button
+              onClick={() => setExpanded(v => !v)}
+              className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-slate-500 hover:bg-slate-100"
+              aria-expanded={expanded}
+            >
+              <MessageSquare size={14} />
+              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
           </div>
         </div>
 
         {expanded && (
-          <div className="border-t border-slate-100 px-4 pb-4 pt-3 space-y-2">
-            {req.description && (
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">Issue Description</p>
-                <p className="text-sm text-slate-700">{req.description}</p>
-              </div>
-            )}
-            {req.adminNotes && (
-              <div className="rounded-lg bg-primary-50 border border-primary-100 px-3 py-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-primary-400 mb-1">Admin Update</p>
-                <p className="text-sm text-primary-800">{req.adminNotes}</p>
-              </div>
-            )}
+          <div className="border-t border-slate-100 bg-slate-50/60 px-4 pb-4 pt-3 space-y-2">
             {req.resolvedAt && (
               <p className="text-xs text-slate-400">Resolved: {formatDateTime(req.resolvedAt)}</p>
             )}
+            <RequestThreadPanel req={req} />
           </div>
         )}
       </Card>

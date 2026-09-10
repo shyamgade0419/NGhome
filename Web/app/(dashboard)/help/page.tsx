@@ -429,14 +429,16 @@ const ARTICLES: Article[] = [
     icon: Wrench,
     color: 'text-red-700',
     bg: 'bg-red-50',
-    roles: ['resident'],
+    roles: ['resident', 'admin'],
     Illustration: IllustrationHelpdesk,
     steps: [
       { text: 'Go to Helpdesk → "New Request".' },
       { text: 'Choose a category (Plumbing, Electrical, Cleaning, Security, etc.) and priority.' },
       { text: 'Write a clear title and description of the issue. The more detail you provide, the faster it gets resolved.' },
       { text: 'Submit the request. You\'ll see it listed with an OPEN status.' },
-      { text: 'The admin will assign it to the right person and update the status to IN PROGRESS or RESOLVED.', tip: 'You\'ll see the admin\'s notes and assignee once they review it.' },
+      { text: 'Click the conversation icon on any request to open its thread. Both the resident and the society can reply there, and each side is notified when the other does.', tip: 'Only the resident who raised a request and the society\'s staff can see it — not other residents.' },
+      { text: '(Admin) Replying and changing the status are separate on purpose: answering a question never moves a request to Resolved by accident. Use "Update" when the work itself moves on.' },
+      { text: '(Admin) When a resident replies, whoever the request is assigned to is notified; if nobody is, the society admins are. Assign requests so replies reach the right person.' },
     ],
   },
   {

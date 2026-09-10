@@ -422,7 +422,25 @@ export const helpdeskApi = {
   updateStatus: (id: string, data: {
     status: string; adminNotes?: string; assignedToId?: string;
   }) => api.patch(`/helpdesk/${id}/status`, data),
+
+  /** The reply thread, oldest first. The server refuses a resident who did
+   *  not raise the request. */
+  comments: (id: string): Promise<{ data: HelpdeskComment[] }> =>
+    api.get(`/helpdesk/${id}/comments`),
+  addComment: (id: string, body: string): Promise<{ data: HelpdeskComment }> =>
+    api.post(`/helpdesk/${id}/comments`, { body }),
 };
+
+export interface HelpdeskComment {
+  id: string;
+  body: string;
+  createdAt: string;
+  authorId: string;
+  /** Computed server-side: whether the person who raised the request wrote
+   *  this line. Decides which side of the thread it sits on. */
+  isFromResident: boolean;
+  author: { id: string; firstName: string; lastName: string };
+}
 
 // Audit Logs
 export const auditLogsApi = {

@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsEnum, MinLength, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MaintenanceCategory, MaintenancePriority } from '@prisma/client';
 
@@ -43,4 +43,12 @@ export class UpdateRequestStatusDto {
   @IsOptional()
   @IsString()
   assignedToId?: string;
+}
+
+export class CreateRequestCommentDto {
+  @ApiProperty({ description: 'The reply. Visible to the resident who raised the request and to staff.' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(2000)
+  body: string;
 }

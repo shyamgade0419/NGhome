@@ -250,6 +250,7 @@ model User {
   uploadedDocuments    Document[]
   submittedRequests    MaintenanceRequest[] @relation("RequestSubmitter")
   assignedRequests     MaintenanceRequest[] @relation("RequestAssignee")
+  requestComments      MaintenanceRequestComment[] @relation("RequestCommentAuthor")
   createdEvents        Event[]
   pushTokens           PushToken[]
 
@@ -1177,9 +1178,31 @@ model MaintenanceRequest {
   flat       Flat?   @relation(fields: [flatId], references: [id])
   resident   User    @relation("RequestSubmitter", fields: [residentId], references: [id])
   assignedTo User?   @relation("RequestAssignee", fields: [assignedToId], references: [id])
+  comments   MaintenanceRequestComment[]
 
   @@index([societyId])
   @@index([residentId])
   @@index([status])
   @@map("maintenance_requests")
+}
+
+// A reply on a helpdesk request. Tickets were one-way: a resident raised one
+// and could only watch the status change, with a single adminNotes field as
+// the only channel back. Either side can now post, visible to both — the
+// resident who raised it and the society's staff. Deliberately no internal /
+// staff-only flag yet: adminNotes still serves that purpose, and a hidden
+// channel inside a conversation the resident believes is complete is worth a
+// separate decision.
+model MaintenanceRequestComment {
+  id        String   @id @default(uuid())
+  requestId String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  request MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  author  User               @relation("RequestCommentAuthor", fields: [authorId], references: [id])
+
+  @@index([requestId, createdAt])
+  @@map("maintenance_request_comments")
 }

@@ -11,6 +11,7 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
+import { RequestThread } from '@/components/helpdesk/RequestThread';
 import { colors, spacing, typography, radius } from '@/theme';
 
 const CATEGORIES = [
@@ -129,12 +130,17 @@ function NewRequestModal({ visible, onClose }: { visible: boolean; onClose: () =
   );
 }
 
-function RequestCard({ req }: { req: MaintenanceRequest }) {
-  const [expanded, setExpanded] = useState(false);
+/**
+ * Tapping opens the conversation rather than expanding in place. The inline
+ * expansion showed the description and the single adminNotes line, which was
+ * the whole of the channel back; the thread shows both of those plus every
+ * reply, and is where the resident can answer.
+ */
+function RequestCard({ req, onOpen }: { req: MaintenanceRequest; onOpen: () => void }) {
   const statusColor = STATUS_COLOR[req.status] ?? colors.textSecondary;
 
   return (
-    <TouchableOpacity style={styles.card} onPress={() => setExpanded(v => !v)} activeOpacity={0.85}>
+    <TouchableOpacity style={styles.card} onPress={onOpen} activeOpacity={0.85}>
       <View style={styles.cardTop}>
         <View style={styles.cardLeft}>
           <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
@@ -148,26 +154,24 @@ function RequestCard({ req }: { req: MaintenanceRequest }) {
         </View>
       </View>
 
-      {expanded && (
-        <View style={styles.cardBody}>
-          {req.description && <Text style={styles.cardDesc}>{req.description}</Text>}
-          {req.adminNotes && (
-            <View style={styles.adminNote}>
-              <Ionicons name="chatbubble-ellipses-outline" size={14} color={colors.primary} />
-              <Text style={styles.adminNoteText}>{req.adminNotes}</Text>
-            </View>
-          )}
-          {req.resolvedAt && (
-            <Text style={styles.resolvedText}>✅ Resolved on {new Date(req.resolvedAt).toLocaleDateString('en-IN')}</Text>
-          )}
-        </View>
-      )}
+      <View style={styles.threadHint}>
+        <Ionicons name="chatbubbles-outline" size={14} color={colors.primary} />
+        <Text style={styles.threadHintText}>
+          {req.status === 'CLOSED' ? 'View conversation' : 'View conversation & reply'}
+        </Text>
+        {req.resolvedAt ? (
+          <Text style={styles.resolvedText}>
+            · Resolved {new Date(req.resolvedAt).toLocaleDateString('en-IN')}
+          </Text>
+        ) : null}
+      </View>
     </TouchableOpacity>
   );
 }
 
 export default function ResidentHelpdeskScreen() {
   const [showNew, setShowNew] = useState(false);
+  const [openRequest, setOpenRequest] = useState<MaintenanceRequest | null>(null);
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['helpdesk-mine'],
@@ -188,6 +192,9 @@ export default function ResidentHelpdeskScreen() {
       />
 
       <NewRequestModal visible={showNew} onClose={() => setShowNew(false)} />
+      {openRequest && (
+        <RequestThread request={openRequest} onClose={() => setOpenRequest(null)} />
+      )}
 
       {isLoading ? (
         <LoadingState />
@@ -206,7 +213,7 @@ export default function ResidentHelpdeskScreen() {
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />}
-          renderItem={({ item }) => <RequestCard req={item} />}
+          renderItem={({ item }) => <RequestCard req={item} onOpen={() => setOpenRequest(item)} />}
         />
       )}
     </SafeAreaView>
@@ -234,11 +241,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm, paddingVertical: 2, flexShrink: 0,
   },
   statusText: { ...typography.labelSmall },
-  cardBody: { marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, gap: spacing.xs },
-  cardDesc: { ...typography.bodySmall, color: colors.textSecondary },
-  adminNote: { flexDirection: 'row', gap: spacing.xs, alignItems: 'flex-start', backgroundColor: colors.primaryLight, borderRadius: radius.sm, padding: spacing.sm },
-  adminNoteText: { ...typography.bodySmall, color: colors.primary, flex: 1 },
   resolvedText: { ...typography.bodySmall, color: colors.success },
+  threadHint: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: spacing.sm, paddingTop: spacing.sm,
+    borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  threadHintText: { ...typography.labelSmall, color: colors.primary },
 
   addBtn: { padding: spacing.xs },
 

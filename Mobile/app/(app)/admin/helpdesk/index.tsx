@@ -12,6 +12,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
+import { RequestThread } from '@/components/helpdesk/RequestThread';
 import { colors, spacing, typography, radius } from '@/theme';
 
 const STATUS_OPTIONS = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] as const;
@@ -112,7 +113,15 @@ function UpdateModal({
   );
 }
 
-function RequestCard({ req, onUpdate }: { req: MaintenanceRequest; onUpdate: (r: MaintenanceRequest) => void }) {
+function RequestCard({
+  req,
+  onUpdate,
+  onOpen,
+}: {
+  req: MaintenanceRequest;
+  onUpdate: (r: MaintenanceRequest) => void;
+  onOpen: (r: MaintenanceRequest) => void;
+}) {
   return (
     <View style={styles.card}>
       <View style={styles.cardTop}>
@@ -136,12 +145,21 @@ function RequestCard({ req, onUpdate }: { req: MaintenanceRequest; onUpdate: (r:
           )}
         </View>
       </View>
-      {req.status !== 'CLOSED' && (
-        <TouchableOpacity style={styles.updateBtn} onPress={() => onUpdate(req)}>
-          <Ionicons name="create-outline" size={14} color={colors.primary} />
-          <Text style={styles.updateBtnText}>Update</Text>
+      <View style={styles.cardActions}>
+        {/* Status stays its own action: it changes the ticket, whereas a reply
+            is just talking about it. Keeping them apart means answering a
+            question never accidentally moves a ticket to Resolved. */}
+        <TouchableOpacity style={styles.updateBtn} onPress={() => onOpen(req)}>
+          <Ionicons name="chatbubbles-outline" size={14} color={colors.primary} />
+          <Text style={styles.updateBtnText}>Conversation</Text>
         </TouchableOpacity>
-      )}
+        {req.status !== 'CLOSED' && (
+          <TouchableOpacity style={styles.updateBtn} onPress={() => onUpdate(req)}>
+            <Ionicons name="create-outline" size={14} color={colors.primary} />
+            <Text style={styles.updateBtnText}>Update status</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 }
@@ -150,6 +168,7 @@ export default function AdminHelpdeskScreen() {
   const qc = useQueryClient();
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [updating, setUpdating] = useState<MaintenanceRequest | null>(null);
+  const [openRequest, setOpenRequest] = useState<MaintenanceRequest | null>(null);
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['helpdesk-admin', filterStatus],
@@ -184,6 +203,9 @@ export default function AdminHelpdeskScreen() {
       </View>
 
       {updating && <UpdateModal request={updating} onClose={() => setUpdating(null)} />}
+      {openRequest && (
+        <RequestThread request={openRequest} onClose={() => setOpenRequest(null)} />
+      )}
 
       {isLoading ? (
         <LoadingState />
@@ -200,7 +222,9 @@ export default function AdminHelpdeskScreen() {
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />}
-          renderItem={({ item }) => <RequestCard req={item} onUpdate={setUpdating} />}
+          renderItem={({ item }) => (
+            <RequestCard req={item} onUpdate={setUpdating} onOpen={setOpenRequest} />
+          )}
         />
       )}
     </SafeAreaView>
@@ -235,7 +259,8 @@ const styles = StyleSheet.create({
   cardMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   metaText: { ...typography.bodySmall, color: colors.textSecondary },
   adminNotePreview: { ...typography.bodySmall, color: colors.primary, fontStyle: 'italic' },
-  updateBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: spacing.sm, paddingHorizontal: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
+  cardActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.border },
+  updateBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, padding: spacing.sm, paddingHorizontal: spacing.md },
   updateBtnText: { ...typography.labelSmall, color: colors.primary },
 
   // Modal

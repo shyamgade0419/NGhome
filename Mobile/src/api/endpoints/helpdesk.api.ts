@@ -40,4 +40,26 @@ export const helpdeskApi = {
     const { data } = await apiClient.patch<any>(`/helpdesk/${id}/status`, payload);
     return data;
   },
+
+  /** Oldest first. The server refuses a resident who didn't raise the request. */
+  comments: async (id: string): Promise<RequestComment[]> => {
+    const { data } = await apiClient.get<RequestComment[] | { data: RequestComment[] }>(`/helpdesk/${id}/comments`);
+    return Array.isArray(data) ? data : data.data;
+  },
+
+  addComment: async (id: string, body: string): Promise<RequestComment> => {
+    const { data } = await apiClient.post<RequestComment | { data: RequestComment }>(`/helpdesk/${id}/comments`, { body });
+    return 'data' in data && !('body' in data) ? data.data : (data as RequestComment);
+  },
 };
+
+export interface RequestComment {
+  id: string;
+  body: string;
+  createdAt: string;
+  authorId: string;
+  /** Whether the person who raised the request wrote this line — computed
+   *  server-side, and what decides which side of the thread it sits on. */
+  isFromResident: boolean;
+  author: { id: string; firstName: string; lastName: string };
+}
