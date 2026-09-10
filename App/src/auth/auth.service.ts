@@ -544,7 +544,24 @@ export class AuthService {
 
     const appUrl = this.configService.get<string>('mail.appUrl');
     const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
-    await this.mailService.sendPasswordResetEmail(user.email, resetUrl);
+
+    // Sent without awaiting, and a failure is logged rather than thrown.
+    //
+    // This used to await the send with nothing catching it. When SMTP failed,
+    // a registered address got a 500 while an unregistered one got success —
+    // so a failed request confirmed the account existed, breaking the promise
+    // at the top of this method. It also made every reset wait on the mail
+    // server, which is itself a timing signal for the same thing.
+    //
+    // The log line is how a failure gets noticed: the user always sees
+    // success, so the server log is the only place it can show up.
+    void this.mailService.sendPasswordResetEmail(user.email, resetUrl).catch((err) => {
+      this.logger.error(
+        `Password reset email for user ${user.id} could not be sent: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    });
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<void> {

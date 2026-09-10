@@ -1,9 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 
 @Injectable()
-export class MailService {
+export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
   private transporter: nodemailer.Transporter | null = null;
 
@@ -18,8 +18,49 @@ export class MailService {
           user: this.config.get<string>('mail.user'),
           pass: this.config.get<string>('mail.pass'),
         },
+        // nodemailer waits two minutes by default. A firewalled mail port
+        // drops packets rather than refusing them, so without these a broken
+        // setup looks like a hang rather than an error.
+        connectionTimeout: 15_000,
+        greetingTimeout: 15_000,
+        socketTimeout: 30_000,
       });
     }
+  }
+
+  /**
+   * Reports on every boot whether email works, in the container log.
+   *
+   * The production image carries only the compiled app — no scripts, no
+   * ts-node — so there is no terminal step for checking SMTP. And because
+   * password reset deliberately always reports success to the user, a broken
+   * mail setup is otherwise invisible until someone notices they never got
+   * the email. One line per deploy removes the guesswork.
+   *
+   * Not awaited: a slow or unreachable mail server must never delay startup,
+   * or the container healthcheck would fail and the deploy would roll back
+   * over a problem that only affects email.
+   */
+  onModuleInit() {
+    if (!this.transporter) {
+      this.logger.warn(
+        'SMTP_HOST is not set — password reset emails are NOT being sent. ' +
+          'The reset link is written to this log instead.',
+      );
+      return;
+    }
+    void this.verifyConnection().then((result) => {
+      if (result.ok) {
+        this.logger.log(
+          `SMTP ready — ${this.config.get('mail.user')} via ` +
+            `${this.config.get('mail.host')}:${this.config.get('mail.port')}`,
+        );
+      } else {
+        this.logger.error(
+          `SMTP check failed — password reset emails will not arrive: ${result.reason}`,
+        );
+      }
+    });
   }
 
   async sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
