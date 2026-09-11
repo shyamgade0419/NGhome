@@ -55,3 +55,32 @@ describe('MailService boot check', () => {
     expect(svc.onModuleInit()).toBeUndefined();
   });
 });
+
+describe('MailService.sendPasswordResetEmail — unconfigured SMTP', () => {
+  let warn: jest.SpyInstance;
+  let error: jest.SpyInstance;
+  beforeEach(() => {
+    warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  const RESET_URL = 'https://nghome-app.novagade.in/reset-password?token=THE-ACTUAL-SECRET-TOKEN';
+
+  it('logs the live reset link in development — the only way a developer without SMTP set up sees it', async () => {
+    const svc = new MailService(new ConfigService({ mail: {}, nodeEnv: 'development' }));
+    await svc.sendPasswordResetEmail('resident@example.com', RESET_URL);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(RESET_URL));
+  });
+
+  it('never writes the reset link or token to the logs in production, even with SMTP unconfigured', async () => {
+    const svc = new MailService(new ConfigService({ mail: {}, nodeEnv: 'production' }));
+    await svc.sendPasswordResetEmail('resident@example.com', RESET_URL);
+
+    expect(warn).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('resident@example.com'));
+    const loggedText = error.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(loggedText).not.toContain('THE-ACTUAL-SECRET-TOKEN');
+    expect(loggedText).not.toContain(RESET_URL);
+  });
+});

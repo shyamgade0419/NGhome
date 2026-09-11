@@ -117,6 +117,19 @@ export class MailService implements OnModuleInit {
     ].join('\n');
 
     if (!this.transporter) {
+      // Only in development: this branch runs whenever SMTP happens to be
+      // unconfigured, which is not the same thing as being in development —
+      // a production deployment that hasn't set SMTP_HOST yet (or lost its
+      // SMTP config) would otherwise write a live, usable password-reset
+      // token straight into the application logs. In production, log only
+      // that mail delivery isn't working — never the token or link.
+      if (this.config.get<string>('nodeEnv') === 'production') {
+        this.logger.error(
+          `SMTP is not configured — a password-reset email to ${to} could not be sent. ` +
+            'Set SMTP_HOST, SMTP_USER and SMTP_PASS.',
+        );
+        return;
+      }
       this.logger.warn(`[DEV] Password reset link for ${to}: ${resetUrl}`);
       return;
     }
