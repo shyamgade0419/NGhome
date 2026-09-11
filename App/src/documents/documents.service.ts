@@ -17,6 +17,9 @@ export interface CreateDocumentDto {
   category?: string;
   linkedEntityType?: string;
   linkedEntityId?: string;
+  // Only meaningful for admin/staff registering a private link on a
+  // resident's behalf; a resident's own flatId is always used instead.
+  flatId?: string;
 }
 
 export interface UploadDocumentMeta {
@@ -47,10 +50,27 @@ export class DocumentsService {
     private readonly paths: StoragePathService,
   ) {}
 
-  async create(societyId: string, uploadedById: string, dto: CreateDocumentDto) {
+  async create(
+    societyId: string,
+    uploadedById: string,
+    isResident: boolean,
+    uploaderFlatId: string | undefined,
+    dto: CreateDocumentDto,
+  ) {
+    // Same access-level resolution as a real upload: a resident registering a
+    // link is forced onto their own flat as FLAT_PRIVATE too, so this endpoint
+    // can't be used to slip a document to ADMIN_ONLY/COMMITTEE_ONLY, or onto a
+    // flat that isn't theirs — the accessLevel/flatId in the body only ever
+    // decide anything for admin/staff.
+    const { accessLevel, flatId } = await this.resolveAccessAndFlat(societyId, isResident, uploaderFlatId, {
+      accessLevel: dto.accessLevel,
+      flatId: dto.flatId,
+    });
+
     return this.prisma.document.create({
       data: {
         societyId,
+        flatId,
         uploadedById,
         title: dto.title,
         description: dto.description,
@@ -63,7 +83,7 @@ export class DocumentsService {
         // then act on — any file, in any society. Only upload() makes SFTP
         // documents, with a path it built itself.
         storageProvider: 'local',
-        accessLevel: dto.accessLevel ?? DocumentAccessLevel.RESIDENTS_ONLY,
+        accessLevel,
         category: dto.category,
         linkedEntityType: dto.linkedEntityType,
         linkedEntityId: dto.linkedEntityId,
@@ -72,11 +92,43 @@ export class DocumentsService {
   }
 
   /**
+   * What accessLevel and flatId a new document (link or uploaded) gets,
+   * shared by create() and upload() so the same rule protects both: a
+   * resident is always forced onto their own flat as FLAT_PRIVATE — never
+   * trust the client for either value, the same way flatId ownership is
+   * never trusted elsewhere in this codebase (buildings/flats DEFECT-1
+   * pattern). Staff may pick any of the fixed levels, and a FLAT_PRIVATE
+   * pick must name a flat that actually belongs to this society.
+   */
+  private async resolveAccessAndFlat(
+    societyId: string,
+    isResident: boolean,
+    uploaderFlatId: string | undefined,
+    requested: { accessLevel?: string; flatId?: string },
+  ): Promise<{ accessLevel: DocumentAccessLevel; flatId: string | null }> {
+    if (isResident) {
+      if (!uploaderFlatId) {
+        throw new ForbiddenException('Only a resident assigned to a flat can add flat documents.');
+      }
+      return { accessLevel: DocumentAccessLevel.FLAT_PRIVATE, flatId: uploaderFlatId };
+    }
+
+    const level = requested.accessLevel ?? DocumentAccessLevel.RESIDENTS_ONLY;
+    if (!ADMIN_SELECTABLE_LEVELS.includes(level)) {
+      throw new BadRequestException(`Invalid accessLevel "${level}"`);
+    }
+    if (level === DocumentAccessLevel.FLAT_PRIVATE) {
+      if (!requested.flatId) throw new BadRequestException('flatId is required for FLAT_PRIVATE documents');
+      const flat = await this.prisma.flat.findFirst({ where: { id: requested.flatId, societyId } });
+      if (!flat) throw new NotFoundException('Flat not found in this society');
+      return { accessLevel: level as DocumentAccessLevel, flatId: requested.flatId };
+    }
+    return { accessLevel: level as DocumentAccessLevel, flatId: null };
+  }
+
+  /**
    * Real file upload (SFTP-backed), as opposed to create() above which only
-   * ever stored a caller-supplied link. A RESIDENT calling this always gets
-   * FLAT_PRIVATE forced onto their own flatId — never trust the client for
-   * either value, the same way flatId ownership is never trusted elsewhere
-   * in this codebase (buildings/flats DEFECT-1 pattern).
+   * ever stores a caller-supplied link.
    */
   async upload(
     societyId: string,
@@ -86,28 +138,7 @@ export class DocumentsService {
     file: { originalname: string; size: number; mimetype: string; buffer: Buffer },
     meta: UploadDocumentMeta,
   ) {
-    let accessLevel: DocumentAccessLevel;
-    let flatId: string | null = null;
-
-    if (isResident) {
-      if (!uploaderFlatId) {
-        throw new ForbiddenException('Only a resident assigned to a flat can upload flat documents.');
-      }
-      accessLevel = DocumentAccessLevel.FLAT_PRIVATE;
-      flatId = uploaderFlatId;
-    } else {
-      const requested = meta.accessLevel ?? DocumentAccessLevel.RESIDENTS_ONLY;
-      if (!ADMIN_SELECTABLE_LEVELS.includes(requested)) {
-        throw new BadRequestException(`Invalid accessLevel "${requested}"`);
-      }
-      accessLevel = requested as DocumentAccessLevel;
-      if (accessLevel === DocumentAccessLevel.FLAT_PRIVATE) {
-        if (!meta.flatId) throw new BadRequestException('flatId is required for FLAT_PRIVATE documents');
-        const flat = await this.prisma.flat.findFirst({ where: { id: meta.flatId, societyId } });
-        if (!flat) throw new NotFoundException('Flat not found in this society');
-        flatId = meta.flatId;
-      }
-    }
+    const { accessLevel, flatId } = await this.resolveAccessAndFlat(societyId, isResident, uploaderFlatId, meta);
 
     assertAllowedUpload(file);
 

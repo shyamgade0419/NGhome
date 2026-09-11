@@ -4,7 +4,7 @@
  * their signed token whatever the body says, and stays FLAT_PRIVATE.
  */
 
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { DocumentAccessLevel } from '@prisma/client';
 import { DocumentsService } from './documents.service';
 import { StoragePathService } from './storage-path.service';
@@ -186,7 +186,7 @@ describe('DocumentsService — files stored under the old layout', () => {
 describe('DocumentsService — a stored path is never taken from the client', () => {
   it("records a link document as a link, even when the body claims it is 'sftp'", async () => {
     const { service, create } = setup();
-    await service.create(SOCIETY, 'user-1', {
+    await service.create(SOCIETY, 'admin-1', false, undefined, {
       title: 'x',
       fileName: 'x.pdf',
       fileKey: `${BASE}/society-2/residents/flat-7/payments/their-receipt.jpg`,
@@ -198,7 +198,90 @@ describe('DocumentsService — a stored path is never taken from the client', ()
     const [{ data }] = create.mock.calls[0];
     expect(data.storageProvider).toBe('local');
   });
+});
 
+describe('DocumentsService.create — the same access rules as a real upload', () => {
+  it("forces a resident's link onto their own flat as FLAT_PRIVATE, whatever accessLevel or flatId the body asks for", async () => {
+    const { service, create } = setup();
+    await service.create(SOCIETY, 'user-1', true, MY_FLAT, {
+      title: 'Society AGM minutes',
+      fileName: 'minutes.pdf',
+      fileKey: 'https://drive.example.com/minutes.pdf',
+      fileSize: 0,
+      mimeType: 'application/pdf',
+      accessLevel: DocumentAccessLevel.ADMIN_ONLY,
+      flatId: OTHER_FLAT, // attempted: someone else's flat
+    });
+
+    const [{ data }] = create.mock.calls[0];
+    expect(data.accessLevel).toBe(DocumentAccessLevel.FLAT_PRIVATE);
+    expect(data.flatId).toBe(MY_FLAT);
+  });
+
+  it('refuses a resident with no flat, and writes nothing', async () => {
+    const { service, create } = setup();
+    await expect(
+      service.create(SOCIETY, 'user-1', true, undefined, {
+        title: 'x',
+        fileName: 'x.pdf',
+        fileKey: 'https://drive.example.com/x.pdf',
+        fileSize: 0,
+        mimeType: 'application/pdf',
+      }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unrecognised accessLevel from staff, and writes nothing', async () => {
+    const { service, create } = setup();
+    await expect(
+      service.create(SOCIETY, 'admin-1', false, undefined, {
+        title: 'x',
+        fileName: 'x.pdf',
+        fileKey: 'https://drive.example.com/x.pdf',
+        fileSize: 0,
+        mimeType: 'application/pdf',
+        accessLevel: 'SUPER_SECRET' as DocumentAccessLevel,
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("refuses a staff FLAT_PRIVATE link naming a flat from another society, and writes nothing", async () => {
+    const { service, create } = setup({ flatInSociety: false });
+    await expect(
+      service.create(SOCIETY, 'admin-1', false, undefined, {
+        title: 'x',
+        fileName: 'x.pdf',
+        fileKey: 'https://drive.example.com/x.pdf',
+        fileSize: 0,
+        mimeType: 'application/pdf',
+        accessLevel: DocumentAccessLevel.FLAT_PRIVATE,
+        flatId: 'flat-in-another-society',
+      }),
+    ).rejects.toThrow(NotFoundException);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('stores a staff FLAT_PRIVATE link under the flat it names, once that flat is confirmed', async () => {
+    const { service, prisma, create } = setup();
+    await service.create(SOCIETY, 'admin-1', false, undefined, {
+      title: 'Sale deed',
+      fileName: 'deed.pdf',
+      fileKey: 'https://drive.example.com/deed.pdf',
+      fileSize: 0,
+      mimeType: 'application/pdf',
+      accessLevel: DocumentAccessLevel.FLAT_PRIVATE,
+      flatId: OTHER_FLAT,
+    });
+
+    expect(prisma.flat.findFirst).toHaveBeenCalledWith({ where: { id: OTHER_FLAT, societyId: SOCIETY } });
+    const [{ data }] = create.mock.calls[0];
+    expect(data.flatId).toBe(OTHER_FLAT);
+  });
+});
+
+describe('DocumentsService — a stored path is never taken from the client', () => {
   it.each([
     `${BASE}/society-2/residents/flat-7/payments/their-receipt.jpg`,
     `${BASE}/${SOCIETY}/../society-2/society/documents/x.pdf`,

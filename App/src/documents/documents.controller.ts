@@ -31,7 +31,7 @@ export class DocumentsController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateDocumentDto,
   ) {
-    return this.documentsService.create(societyId, user.id, dto);
+    return this.documentsService.create(societyId, user.id, user.currentRole === 'RESIDENT', user.flatId, dto);
   }
 
   /**
