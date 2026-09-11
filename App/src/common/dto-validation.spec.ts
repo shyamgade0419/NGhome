@@ -15,6 +15,9 @@ import { CreateExpenseDto } from '../expenses/dto/create-expense.dto';
 import { CreateAccountDto } from '../accounts/dto/create-account.dto';
 import { CreateFundDto } from '../funds/dto/create-fund.dto';
 import { CreateEventDto } from '../events/dto/create-event.dto';
+import { SubmitPaymentDto } from '../payments/dto/submit-payment.dto';
+import { CreateEmployeeDto } from '../salaries/dto/create-employee.dto';
+import { ProcessSalaryDto } from '../salaries/dto/process-salary.dto';
 
 // Mirrors main.ts exactly — testing against different settings proves nothing.
 const pipe = new ValidationPipe({
@@ -152,6 +155,85 @@ describe('Money DTO validation', () => {
       await expect(
         run({ title: 'X', eventDate: '2026-10-20T00:00:00.000Z', totallyMadeUp: 'value' }, CreateEventDto),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('SubmitPaymentDto', () => {
+    const valid = { amount: 2500, paymentDate: '2026-09-09', paymentMethod: 'UPI' };
+
+    it('accepts the payload the apps actually send', async () => {
+      await expect(run(valid, SubmitPaymentDto)).resolves.toMatchObject({ amount: 2500 });
+    });
+
+    it('rejects a ₹0 payment', async () => {
+      await expect(run({ ...valid, amount: 0 }, SubmitPaymentDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a negative payment', async () => {
+      await expect(run({ ...valid, amount: -500 }, SubmitPaymentDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('CreateEmployeeDto — was a plain interface, so ValidationPipe skipped it entirely', () => {
+    const valid = { name: 'Ramesh Kumar', designation: 'Security Guard', baseSalary: 18000 };
+
+    it('accepts a normal employee payload', async () => {
+      await expect(run(valid, CreateEmployeeDto)).resolves.toMatchObject({ name: 'Ramesh Kumar' });
+    });
+
+    it('rejects a negative baseSalary', async () => {
+      await expect(run({ ...valid, baseSalary: -18000 }, CreateEmployeeDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects NaN as baseSalary', async () => {
+      await expect(run({ ...valid, baseSalary: NaN }, CreateEmployeeDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a malformed email', async () => {
+      await expect(run({ ...valid, email: 'not-an-email' }, CreateEmployeeDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a malformed joinDate', async () => {
+      await expect(run({ ...valid, joinDate: 'not-a-date' }, CreateEmployeeDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('ProcessSalaryDto — was a plain interface, so ValidationPipe skipped it entirely', () => {
+    const valid = { employeeId: 'employee-1', salaryMonth: 9, salaryYear: 2026 };
+
+    it('accepts a normal process-salary payload', async () => {
+      await expect(run(valid, ProcessSalaryDto)).resolves.toMatchObject({ salaryMonth: 9, salaryYear: 2026 });
+    });
+
+    it.each([0, 13, -1, 1.5])('rejects an invalid salaryMonth (%j)', async (salaryMonth) => {
+      await expect(run({ ...valid, salaryMonth }, ProcessSalaryDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it.each([1999, 2101])('rejects an out-of-range salaryYear (%j)', async (salaryYear) => {
+      await expect(run({ ...valid, salaryYear }, ProcessSalaryDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a negative baseSalary override', async () => {
+      await expect(run({ ...valid, baseSalary: -5000 }, ProcessSalaryDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a negative additions/deductions value', async () => {
+      await expect(run({ ...valid, additions: -100 }, ProcessSalaryDto)).rejects.toThrow(BadRequestException);
+      await expect(run({ ...valid, deductions: -100 }, ProcessSalaryDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('accepts an additionsDetail/deductionsDetail line-item breakdown', async () => {
+      await expect(
+        run({ ...valid, additionsDetail: { Bonus: 2000 }, deductionsDetail: { PF: 500 } }, ProcessSalaryDto),
+      ).resolves.toMatchObject({ additionsDetail: { Bonus: 2000 } });
+    });
+
+    it('rejects additionsDetail that is not an object', async () => {
+      await expect(run({ ...valid, additionsDetail: 'not-an-object' }, ProcessSalaryDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects an unknown field rather than silently dropping it', async () => {
+      await expect(run({ ...valid, totallyMadeUp: 'value' }, ProcessSalaryDto)).rejects.toThrow(BadRequestException);
     });
   });
 });
