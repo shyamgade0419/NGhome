@@ -5,7 +5,7 @@
  */
 
 import { BadRequestException } from '@nestjs/common';
-import { assertAllowedUpload, safeStorageName } from './file-safety';
+import { assertAllowedUpload, assertSafeLinkUrl, safeStorageName } from './file-safety';
 import { normalizePrivateKey } from './sftp-storage.service';
 
 describe('safeStorageName', () => {
@@ -73,6 +73,27 @@ describe('assertAllowedUpload', () => {
     expect(() => assertAllowedUpload({ originalname: 'page.html', mimetype: 'image/png' })).toThrow(
       BadRequestException,
     );
+  });
+});
+
+describe('assertSafeLinkUrl', () => {
+  it.each([
+    'https://drive.example.com/agm-minutes.pdf',
+    'http://intranet.example.org/notice.pdf',
+  ])('accepts %s', (url) => {
+    expect(() => assertSafeLinkUrl(url)).not.toThrow();
+  });
+
+  it.each([
+    'javascript:alert(document.cookie)',
+    'data:text/html,<script>alert(1)</script>',
+    'vbscript:msgbox("x")',
+    'file:///etc/passwd',
+    'ftp://example.com/x.pdf',
+    'not a url at all',
+    '',
+  ])('rejects %j', (url) => {
+    expect(() => assertSafeLinkUrl(url)).toThrow(BadRequestException);
   });
 });
 

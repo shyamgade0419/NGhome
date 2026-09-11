@@ -67,3 +67,24 @@ export function safeStorageName(originalName: string): string {
     .slice(-120); // keep the end, where the extension is
   return cleaned || 'file';
 }
+
+/**
+ * A "link" document (DocumentsService.create) stores whatever URL the
+ * caller provides as fileKey, and the frontend renders it straight into an
+ * <a href>. Without this, a fileKey of `javascript:...` or `data:text/html,
+ * <script>...` would sit in the database as a normal-looking document and
+ * run in the browser of whoever clicked it — stored XSS, not a storage bug,
+ * but the same "never trust what the client hands you for a path/URL"
+ * principle applies. Only http/https are ever safe to hand to <a href>.
+ */
+export function assertSafeLinkUrl(value: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new BadRequestException('That link is not a valid URL.');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new BadRequestException('Only http:// or https:// links are supported.');
+  }
+}

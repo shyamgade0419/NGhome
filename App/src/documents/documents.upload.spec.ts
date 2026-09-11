@@ -189,7 +189,7 @@ describe('DocumentsService — a stored path is never taken from the client', ()
     await service.create(SOCIETY, 'admin-1', false, undefined, {
       title: 'x',
       fileName: 'x.pdf',
-      fileKey: `${BASE}/society-2/residents/flat-7/payments/their-receipt.jpg`,
+      fileKey: 'https://drive.example.com/their-receipt.jpg',
       fileSize: 0,
       mimeType: 'application/pdf',
       storageProvider: 'sftp',
@@ -278,6 +278,25 @@ describe('DocumentsService.create — the same access rules as a real upload', (
     expect(prisma.flat.findFirst).toHaveBeenCalledWith({ where: { id: OTHER_FLAT, societyId: SOCIETY } });
     const [{ data }] = create.mock.calls[0];
     expect(data.flatId).toBe(OTHER_FLAT);
+  });
+
+  it.each([
+    'javascript:alert(document.cookie)',
+    'data:text/html,<script>alert(1)</script>',
+    'vbscript:msgbox("x")',
+    'not a url',
+  ])('refuses an unsafe link scheme (%s), and writes nothing', async (fileKey) => {
+    const { service, create } = setup();
+    await expect(
+      service.create(SOCIETY, 'admin-1', false, undefined, {
+        title: 'x',
+        fileName: 'x.pdf',
+        fileKey,
+        fileSize: 0,
+        mimeType: 'text/html',
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(create).not.toHaveBeenCalled();
   });
 });
 

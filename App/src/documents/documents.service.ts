@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from './sftp-storage.service';
-import { assertAllowedUpload } from './file-safety';
+import { assertAllowedUpload, assertSafeLinkUrl } from './file-safety';
 import { StoragePathService } from './storage-path.service';
 import { DocumentAccessLevel } from '@prisma/client';
 
@@ -66,6 +66,11 @@ export class DocumentsService {
       accessLevel: dto.accessLevel,
       flatId: dto.flatId,
     });
+
+    // fileKey here is a link the client typed in, not a storage path — the
+    // frontend renders it straight into an <a href>, so only http/https may
+    // ever land in the database (see assertSafeLinkUrl).
+    assertSafeLinkUrl(dto.fileKey);
 
     return this.prisma.document.create({
       data: {
