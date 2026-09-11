@@ -76,6 +76,66 @@ describe('assertAllowedUpload', () => {
   });
 });
 
+describe('assertAllowedUpload — file signature (magic bytes)', () => {
+  const PDF = Buffer.from('%PDF-1.7\n%\xe2\xe3\xcf\xd3\n', 'latin1');
+  const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]);
+  const WEBP = Buffer.concat([Buffer.from('RIFF', 'latin1'), Buffer.from([0, 0, 0, 0]), Buffer.from('WEBP', 'latin1')]);
+  const ZIP = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]); // docx/xlsx container
+  const OLE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00, 0x00]); // legacy doc/xls
+  const HTML_SCRIPT = Buffer.from('<html><body><script>alert(document.cookie)</script>');
+
+  it.each([
+    ['receipt.pdf', 'application/pdf', PDF],
+    ['photo.jpg', 'image/jpeg', JPEG],
+    ['photo.png', 'image/png', PNG],
+    ['photo.webp', 'image/webp', WEBP],
+    ['agreement.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ZIP],
+    ['accounts.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ZIP],
+    ['old.doc', 'application/msword', OLE],
+    ['old.xls', 'application/vnd.ms-excel', OLE],
+  ])('accepts a genuine %s whose bytes match', (originalname, mimetype, buffer) => {
+    expect(() => assertAllowedUpload({ originalname, mimetype, buffer })).not.toThrow();
+  });
+
+  it.each([
+    ['receipt.pdf', 'application/pdf'],
+    ['photo.jpg', 'image/jpeg'],
+    ['photo.png', 'image/png'],
+    ['photo.webp', 'image/webp'],
+    ['agreement.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['old.doc', 'application/msword'],
+  ])(
+    'rejects %s whose extension and MIME type agree but the bytes are actually HTML/script',
+    (originalname, mimetype) => {
+      expect(() => assertAllowedUpload({ originalname, mimetype, buffer: HTML_SCRIPT })).toThrow(
+        BadRequestException,
+      );
+    },
+  );
+
+  it('accepts a genuine HEIC by its ftyp box, without demanding one exact vendor sub-brand', () => {
+    const heic = Buffer.concat([
+      Buffer.from([0x00, 0x00, 0x00, 0x18]),
+      Buffer.from('ftyp', 'latin1'),
+      Buffer.from('heic', 'latin1'),
+    ]);
+    expect(() =>
+      assertAllowedUpload({ originalname: 'IMG_0001.heic', mimetype: 'image/heic', buffer: heic }),
+    ).not.toThrow();
+  });
+
+  it('does not signature-check txt/csv — no reliable magic bytes for plain text', () => {
+    expect(() =>
+      assertAllowedUpload({ originalname: 'notes.txt', mimetype: 'text/plain', buffer: HTML_SCRIPT }),
+    ).not.toThrow();
+  });
+
+  it('skips the signature check when no buffer is available (extension+MIME only, unchanged behaviour)', () => {
+    expect(() => assertAllowedUpload({ originalname: 'receipt.pdf', mimetype: 'application/pdf' })).not.toThrow();
+  });
+});
+
 describe('assertSafeLinkUrl', () => {
   it.each([
     'https://drive.example.com/agm-minutes.pdf',

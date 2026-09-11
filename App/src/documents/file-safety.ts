@@ -38,12 +38,54 @@ const ALLOWED_EXTENSIONS = new Set([
   'txt', 'csv', 'doc', 'docx', 'xls', 'xlsx',
 ]);
 
-export function assertAllowedUpload(file: { originalname: string; mimetype: string }) {
+/**
+ * The first few bytes of a real file of each type — checked against the
+ * actual upload, not just its claimed name and MIME type, both of which the
+ * client sets and neither of which cost anything to fake. Catches an HTML/
+ * script/executable payload renamed to look like an allowed extension with
+ * a matching Content-Type (an "evil.html" sent as "receipt.pdf",
+ * application/pdf) — the exact case the extension+MIME check above cannot
+ * see, because both of those claims agree with each other while lying about
+ * the actual bytes.
+ *
+ * txt/csv are deliberately not checked here: plain text has no reliable
+ * signature, and rejecting on content would risk real receipts/exports that
+ * happen to look unusual — the extension+MIME agreement above is what
+ * stands in for them.
+ */
+const SIGNATURE_CHECKS: Record<string, (buf: Buffer) => boolean> = {
+  pdf: (buf) => buf.subarray(0, 4).toString('latin1') === '%PDF',
+  jpg: (buf) => buf.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])),
+  jpeg: (buf) => buf.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])),
+  png: (buf) => buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  webp: (buf) => buf.subarray(0, 4).toString('latin1') === 'RIFF' && buf.subarray(8, 12).toString('latin1') === 'WEBP',
+  // ISO base media file format box header — real across iPhone/Android
+  // camera vendors' many HEIC/HEIF sub-brands; deliberately not stricter
+  // than this, to avoid rejecting a genuine photo over a brand this list
+  // didn't happen to name.
+  heic: (buf) => buf.subarray(4, 8).toString('latin1') === 'ftyp',
+  heif: (buf) => buf.subarray(4, 8).toString('latin1') === 'ftyp',
+  // .docx / .xlsx are ZIP containers (Office Open XML).
+  docx: (buf) => buf.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04])),
+  xlsx: (buf) => buf.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04])),
+  // Legacy .doc / .xls — OLE2 compound file.
+  doc: (buf) => buf.subarray(0, 8).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])),
+  xls: (buf) => buf.subarray(0, 8).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])),
+};
+
+export function assertAllowedUpload(file: { originalname: string; mimetype: string; buffer?: Buffer }) {
   const ext = file.originalname.split('.').pop()?.toLowerCase() ?? '';
   if (!ALLOWED_MIME_TYPES.has(file.mimetype) || !ALLOWED_EXTENSIONS.has(ext)) {
     throw new BadRequestException(
       'That file type is not supported. Upload a PDF, a photo (JPG, PNG, WebP, HEIC), ' +
         'or a Word, Excel, text or CSV document.',
+    );
+  }
+
+  const checkSignature = SIGNATURE_CHECKS[ext];
+  if (checkSignature && file.buffer && !checkSignature(file.buffer)) {
+    throw new BadRequestException(
+      "That file's contents don't match a " + ext.toUpperCase() + ' file — it may be renamed or corrupted.',
     );
   }
 }

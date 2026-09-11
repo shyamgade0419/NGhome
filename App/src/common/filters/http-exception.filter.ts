@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
+import { MulterError } from 'multer';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -38,6 +39,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     } else if (exception instanceof Prisma.PrismaClientValidationError) {
       status = HttpStatus.BAD_REQUEST;
       message = 'Invalid data provided';
+    } else if (exception instanceof MulterError) {
+      // Thrown by FileInterceptor's own multipart parsing, before any
+      // controller code runs — it is neither an HttpException nor a Prisma
+      // error, so without this it fell into the generic 500 branch below
+      // and an oversized upload read as "Internal server error" instead of
+      // the actual, actionable reason.
+      [status, message] = this.handleMulterError(exception);
     } else if (exception instanceof Error) {
       this.logger.error(exception.message, exception.stack);
     }
@@ -57,6 +65,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       path: request.url,
     });
+  }
+
+  private handleMulterError(error: MulterError): [number, string] {
+    switch (error.code) {
+      case 'LIMIT_FILE_SIZE':
+        return [HttpStatus.PAYLOAD_TOO_LARGE, 'That file is too large. The limit is 10 MB.'];
+      case 'LIMIT_UNEXPECTED_FILE':
+        return [HttpStatus.BAD_REQUEST, 'Unexpected file field in the upload.'];
+      default:
+        return [HttpStatus.BAD_REQUEST, 'The upload could not be processed.'];
+    }
   }
 
   private handlePrismaError(error: Prisma.PrismaClientKnownRequestError): string {

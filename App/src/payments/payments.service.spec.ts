@@ -13,6 +13,11 @@ import { SftpStorageService } from '../documents/sftp-storage.service';
 import { StoragePathService } from '../documents/storage-path.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
+// Real JPEG magic bytes (FF D8 FF) — assertAllowedUpload now checks a
+// proof's actual signature, not just its claimed extension/MIME type, so a
+// placeholder buffer like Buffer.from('x') is no longer a valid fixture.
+const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+
 /** Notifications are best-effort side effects — these tests assert on the
  *  money paths, so a no-op stands in. notifyQuietly runs the callback so a
  *  mistake inside a notification block still surfaces here. */
@@ -124,7 +129,7 @@ describe('PaymentsService.submit — proof attachment', () => {
     await service.submit(
       SOCIETY_ID, OWNER_ID, 'flat-1',
       { amount: 500, paymentDate: '2026-01-01', paymentMethod: 'UPI' } as any,
-      { originalname: 'receipt.jpg', size: 1234, mimetype: 'image/jpeg', buffer: Buffer.from('x') },
+      { originalname: 'receipt.jpg', size: 1234, mimetype: 'image/jpeg', buffer: JPEG_BYTES },
     );
 
     expect((storage.upload as jest.Mock)).toHaveBeenCalled();
@@ -203,6 +208,8 @@ function makeSubmitServices(opts: { accounts: { id: string }[]; verificationRequ
     },
     account: { findMany: jest.fn().mockResolvedValue(opts.accounts) },
     paymentSubmission: {
+      // No existing payment for this (flat, UTR) unless a test says otherwise.
+      findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: PAYMENT_ID, ...data })),
     },
     $transaction: jest.fn(async (cb: any) => cb(tx)),
@@ -298,6 +305,68 @@ describe('PaymentsService — auto-approve lands the money', () => {
  * proof is stored after the payment row is created, so refusing it at that
  * point would leave a payment behind while telling the resident it failed.
  */
+describe('PaymentsService.submit — idempotency (same flat, same UTR)', () => {
+  it('returns the existing payment instead of creating a second one when a resident double-taps Submit', async () => {
+    const existing = { id: 'payment-original', status: 'PENDING' };
+    const { service, prisma } = makeSubmitServices({ accounts: [] });
+    (prisma.paymentSubmission.findFirst as jest.Mock).mockResolvedValue(existing);
+
+    const result = await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
+
+    expect(result).toBe(existing);
+    expect(prisma.paymentSubmission.create).not.toHaveBeenCalled();
+  });
+
+  it('does not touch storage on the deduplicated (second) submission, even if a proof file is attached again', async () => {
+    const { service, prisma, storage } = (() => {
+      const s = makeSubmitServices({ accounts: [] });
+      (s.prisma.paymentSubmission.findFirst as jest.Mock).mockResolvedValue({ id: 'payment-original' });
+      return { ...s, storage: { upload: jest.fn() } as unknown as SftpStorageService };
+    })();
+    await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto, {
+      originalname: 'receipt.jpg', size: 10, mimetype: 'image/jpeg', buffer: JPEG_BYTES,
+    });
+    expect((storage.upload as jest.Mock)).not.toHaveBeenCalled();
+    expect(prisma.paymentSubmission.create).not.toHaveBeenCalled();
+  });
+
+  it('creates a new payment as normal when no UTR is given (cash/cheque are never deduplicated)', async () => {
+    const { service, prisma } = makeSubmitServices({ accounts: [] });
+    await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, { ...submitDto, utrNumber: undefined, paymentMethod: 'CASH' as any });
+    expect(prisma.paymentSubmission.findFirst).not.toHaveBeenCalled();
+    expect(prisma.paymentSubmission.create).toHaveBeenCalled();
+  });
+
+  it('creates a second, independent payment for a different UTR — a real second payment, not a retry', async () => {
+    const { service, prisma } = makeSubmitServices({ accounts: [] });
+    await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, { ...submitDto, utrNumber: 'a-different-utr' });
+    expect(prisma.paymentSubmission.findFirst).toHaveBeenCalledWith({
+      where: { societyId: SOCIETY_ID, flatId: FLAT_ID, utrNumber: 'a-different-utr' },
+    });
+    expect(prisma.paymentSubmission.create).toHaveBeenCalled();
+  });
+
+  it('falls back to the winning row when two retries race past the pre-check and the database catches it', async () => {
+    const { service, prisma } = makeSubmitServices({ accounts: [] });
+    const raceWinner = { id: 'payment-winner' };
+    const p2002 = Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+    Object.setPrototypeOf(p2002, Prisma.PrismaClientKnownRequestError.prototype);
+    (prisma.paymentSubmission.create as jest.Mock).mockRejectedValue(p2002);
+    (prisma.paymentSubmission.findFirst as jest.Mock)
+      .mockResolvedValueOnce(null) // pre-check: nothing yet, so it proceeds to create()
+      .mockResolvedValueOnce(raceWinner); // after the race is caught, the other request's row
+
+    const result = await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
+    expect(result).toBe(raceWinner);
+  });
+
+  it('re-throws a database error that is not the UTR unique-constraint violation', async () => {
+    const { service, prisma } = makeSubmitServices({ accounts: [] });
+    (prisma.paymentSubmission.create as jest.Mock).mockRejectedValue(new Error('connection lost'));
+    await expect(service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto)).rejects.toThrow('connection lost');
+  });
+});
+
 describe('PaymentsService.submit — unsupported receipt', () => {
   it('rejects the file before creating a payment', async () => {
     const create = jest.fn();
@@ -349,7 +418,7 @@ describe('PaymentsService.submit — where the proof is stored', () => {
     return { service, storage, prisma };
   }
 
-  const receipt = { originalname: 'UPI Receipt.jpg', size: 10, mimetype: 'image/jpeg', buffer: Buffer.from('x') };
+  const receipt = { originalname: 'UPI Receipt.jpg', size: 10, mimetype: 'image/jpeg', buffer: JPEG_BYTES };
   const dto = { amount: 500, paymentDate: '2026-01-01', paymentMethod: 'UPI' } as SubmitPaymentDto;
 
   it("files the proof under the payment's own flat, in payments/", async () => {
