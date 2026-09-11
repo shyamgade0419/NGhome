@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import { Decimal } from '@prisma/client/runtime/library';
 import { AppModule } from './app.module';
+import { validateProductionConfig } from './config/validate-production-config';
 
 // Prisma uses decimal.js-light which lacks toJSON(). Without this patch, Decimal fields
 // serialize as raw {s, e, d} objects instead of numeric strings, causing NaN on the frontend.
@@ -21,21 +22,10 @@ async function bootstrap() {
   const port = configService.get<number>('port') ?? 3000;
   const nodeEnv = configService.get<string>('nodeEnv') ?? 'development';
 
-  // Fail fast in production if critical secrets are missing or still at insecure defaults
-  if (nodeEnv === 'production') {
-    const accessSecret = configService.get<string>('jwt.accessSecret');
-    const refreshSecret = configService.get<string>('jwt.refreshSecret');
-    const insecureDefaults = ['default-access-secret', 'default-refresh-secret'];
-    if (!accessSecret || insecureDefaults.includes(accessSecret)) {
-      throw new Error('FATAL: JWT_ACCESS_SECRET must be set to a secure value in production');
-    }
-    if (!refreshSecret || insecureDefaults.includes(refreshSecret)) {
-      throw new Error('FATAL: JWT_REFRESH_SECRET must be set to a secure value in production');
-    }
-    if (!process.env.DATABASE_URL) {
-      throw new Error('FATAL: DATABASE_URL must be set in production');
-    }
-  }
+  // Fail fast in production rather than come up misconfigured — bad secrets
+  // or a non-SFTP storage provider would otherwise only surface the first
+  // time someone logs in or uploads a file. See validate-production-config.ts.
+  validateProductionConfig(configService);
 
   // Security
   app.use(
