@@ -909,6 +909,15 @@ model PaymentSubmission {
   // never considered equal to each other by Postgres, so this never blocks
   // those. See PaymentsService.submit.
   @@unique([flatId, utrNumber])
+  // approve()/submit()'s auto-approve path both only ever set transactionId
+  // once per payment, guarded by an atomic conditional status transition
+  // (PENDING/UNDER_REVIEW -> APPROVED can happen at most once per row) — so
+  // this constraint should never reject a legitimate write. It exists as a
+  // second, database-level guarantee that a Transaction is never linked to
+  // more than one payment, independent of the application logic staying
+  // correct. NULL (every non-approved payment) is never considered equal to
+  // another NULL by Postgres, so this never blocks PENDING/REJECTED rows.
+  @@unique([transactionId])
   @@map("payment_submissions")
 }
 

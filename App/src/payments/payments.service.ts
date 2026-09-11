@@ -64,6 +64,21 @@ export class PaymentsService {
       });
       if (!bill) throw new NotFoundException('Bill not found');
       if (bill.isPaid) throw new BadRequestException('Bill is already fully paid');
+      // NG Home has no overpayment/advance-credit model — a bill's
+      // paidAmount is not allowed to exceed its totalAmount. Without this,
+      // a payment larger than what's owed would increment paidAmount past
+      // totalAmount while pendingAmount gets clamped to 0, silently
+      // recording money that was never actually credited anywhere.
+      if (new Prisma.Decimal(dto.amount).greaterThan(bill.pendingAmount)) {
+        throw new BadRequestException(
+          `Payment amount exceeds the outstanding balance on this bill (₹${bill.pendingAmount.toString()}).`,
+        );
+      }
+    }
+
+    if (dto.billingPeriodId) {
+      const period = await this.prisma.billingPeriod.findFirst({ where: { id: dto.billingPeriodId, societyId } });
+      if (!period) throw new NotFoundException('Billing period not found in this society');
     }
 
     // Check if society requires manual payment verification
@@ -202,13 +217,34 @@ export class PaymentsService {
             },
           });
 
-          // Atomic increment rather than a read-modify-write: two payments
-          // landing together would otherwise each write a total computed
-          // from the same stale starting figure, losing one of them.
-          const updatedBill = await tx.maintenanceBill.update({
-            where: { id: bill.id },
+          /**
+           * Atomically claims the right to apply this amount, not just an
+           * increment. A plain `paidAmount: { increment: amount }` is
+           * itself atomic against losing an update, but says nothing about
+           * whether the bill can still absorb this amount — two different
+           * payments for the same bill, each individually within the
+           * outstanding balance at the moment they were checked, can both
+           * pass a separate "read pending, then increment" check and still
+           * jointly push paidAmount past totalAmount, because neither
+           * check accounts for the other's concurrent write. Folding the
+           * check into the WHERE clause of the increment itself closes
+           * that: Postgres serializes two concurrent UPDATEs against the
+           * same row, so the second one's WHERE (pendingAmount >= amount)
+           * is evaluated against the first's already-committed, already-
+           * reduced pendingAmount — at most one of two such payments that
+           * would jointly overpay ever reports count === 1.
+           */
+          const claimed = await tx.maintenanceBill.updateMany({
+            where: { id: bill.id, pendingAmount: { gte: amount } },
             data: { paidAmount: { increment: amount } },
           });
+          if (claimed.count !== 1) {
+            throw new BadRequestException(
+              'Payment amount exceeds the outstanding balance on this bill.',
+            );
+          }
+          const updatedBill = await tx.maintenanceBill.findUnique({ where: { id: bill.id } });
+          if (!updatedBill) throw new NotFoundException('Bill not found');
           const pending = updatedBill.totalAmount.minus(updatedBill.paidAmount);
           await tx.maintenanceBill.update({
             where: { id: bill.id },
@@ -343,11 +379,33 @@ export class PaymentsService {
 
       // 5. Update bill paid/pending amounts if linked
       if (payment.maintenanceBillId) {
-        // Increment paidAmount atomically; pendingAmount is derived from the post-increment value
-        const updatedBill = await tx.maintenanceBill.update({
-          where: { id: payment.maintenanceBillId },
+        /**
+         * Atomically claims the right to apply this amount, re-checked
+         * against the bill's current state, not just what was true at
+         * submission — another payment for the same bill may have been
+         * approved first. Folding the check into the WHERE clause of the
+         * increment itself (rather than a separate read-then-check) is
+         * what makes this safe even when two *different* payments for the
+         * same bill are approved at the exact same instant: Postgres
+         * serializes two concurrent UPDATEs against the same row, so the
+         * second's WHERE (pendingAmount >= amount) is evaluated against
+         * the first's already-committed, already-reduced pendingAmount —
+         * at most one of two approvals that would jointly overpay the bill
+         * ever reports count === 1. Same pattern as submit()'s
+         * auto-approve path above.
+         */
+        const claimed = await tx.maintenanceBill.updateMany({
+          where: { id: payment.maintenanceBillId, pendingAmount: { gte: payment.amount } },
           data: { paidAmount: { increment: payment.amount } },
         });
+        if (claimed.count !== 1) {
+          throw new BadRequestException(
+            "This payment exceeds the bill's current outstanding balance — another payment for the same " +
+              'bill was likely approved first. Reject this payment or verify the amount before approving.',
+          );
+        }
+        const updatedBill = await tx.maintenanceBill.findUnique({ where: { id: payment.maintenanceBillId } });
+        if (!updatedBill) throw new NotFoundException('Bill not found');
         // Decimal, not float. `newPending === 0` on a float subtraction can
         // land on 1e-13 for a bill with paise, leaving a fully paid bill
         // marked unpaid with no way for the resident to clear it.

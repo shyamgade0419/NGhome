@@ -213,6 +213,11 @@ function makeSubmitServices(opts: { accounts: { id: string }[]; verificationRequ
     },
     transaction: { create: jest.fn().mockResolvedValue({ id: 'txn-1' }) },
     maintenanceBill: {
+      // The atomic conditional claim (WHERE pendingAmount >= amount) — see
+      // PaymentsService.submit. submitDto's amount (2500) never exceeds
+      // this mock bill's pendingAmount (2500), so this always claims.
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      findUnique: jest.fn().mockResolvedValue(bill),
       update: jest
         .fn()
         .mockResolvedValue({ ...bill, paidAmount: new Prisma.Decimal(2500), totalAmount: new Prisma.Decimal(2500) }),
@@ -223,6 +228,7 @@ function makeSubmitServices(opts: { accounts: { id: string }[]; verificationRequ
   const prisma = {
     societyMembership: { findFirst: jest.fn().mockResolvedValue({ id: 'm1' }) },
     maintenanceBill: { findFirst: jest.fn().mockResolvedValue(bill) },
+    billingPeriod: { findFirst: jest.fn().mockResolvedValue({ id: 'period-1', societyId: SOCIETY_ID }) },
     societyConfiguration: {
       findUnique: jest
         .fn()
@@ -257,6 +263,18 @@ const submitDto = {
   paymentMethod: 'UPI' as any,
   utrNumber: '426117890123',
 };
+
+describe('PaymentsService.submit — cross-society billingPeriodId is rejected', () => {
+  it('refuses a billingPeriodId from another society, and creates nothing', async () => {
+    const { service, prisma, tx } = makeSubmitServices({ accounts: [{ id: 'account-1' }] });
+    (prisma.billingPeriod.findFirst as jest.Mock).mockResolvedValue(null);
+
+    await expect(
+      service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, { ...submitDto, billingPeriodId: 'period-from-society-b' }),
+    ).rejects.toThrow(NotFoundException);
+    expect(tx.paymentSubmission.create).not.toHaveBeenCalled();
+  });
+});
 
 describe('PaymentsService — auto-approve lands the money', () => {
   it('credits the account and writes a CREDIT transaction when exactly one account exists', async () => {
@@ -322,11 +340,12 @@ describe('PaymentsService — auto-approve lands the money', () => {
     expect(tx.account.update).not.toHaveBeenCalled();
   });
 
-  it('increments the bill atomically rather than writing a computed total', async () => {
+  it('claims the bill increment atomically (conditional on the outstanding balance), rather than an unconditional write', async () => {
     const { service, tx } = makeSubmitServices({ accounts: [{ id: 'account-1' }] });
     await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
 
-    const [billArg] = tx.maintenanceBill.update.mock.calls[0];
+    const [billArg] = tx.maintenanceBill.updateMany.mock.calls[0];
+    expect(billArg.where.pendingAmount).toEqual({ gte: expect.anything() });
     expect(billArg.data).toEqual({ paidAmount: { increment: expect.anything() } });
   });
 

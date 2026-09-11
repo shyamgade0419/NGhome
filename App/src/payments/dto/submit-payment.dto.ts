@@ -1,5 +1,5 @@
 import {
-  IsString, IsOptional, IsNumber, IsEnum, IsDateString, Min,
+  IsString, IsOptional, IsNumber, IsEnum, IsDateString, IsPositive,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentMethod } from '@prisma/client';
@@ -15,9 +15,12 @@ export class SubmitPaymentDto {
   @IsString()
   billingPeriodId?: string;
 
+  // Strictly positive — ₹0 is not a payment, and a negative amount would
+  // credit an account for a "debit" while the ledger records it as a
+  // CREDIT transaction, corrupting the books.
   @ApiProperty()
   @IsNumber()
-  @Min(0)
+  @IsPositive()
   amount: number;
 
   @ApiProperty()
