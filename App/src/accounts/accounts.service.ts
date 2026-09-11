@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma, AccountType } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { CreateAccountDto } from './dto/create-account.dto';
 export { CreateAccountDto } from './dto/create-account.dto';

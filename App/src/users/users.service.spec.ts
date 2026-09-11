@@ -21,6 +21,7 @@ const FLAT_B_ID = 'flat-b-1';
 function makePrisma(overrides: {
   societyFindUnique?: unknown;
   userFindUnique?: unknown;
+  userFindFirst?: unknown;
   flatFindFirst?: unknown;
   membershipFindMany?: unknown[];
   membershipUpdate?: unknown;
@@ -29,6 +30,7 @@ function makePrisma(overrides: {
   const defaults = {
     societyFindUnique: 'societyFindUnique' in overrides ? overrides.societyFindUnique : { id: SOCIETY_ID },
     userFindUnique: 'userFindUnique' in overrides ? overrides.userFindUnique : { id: USER_ID },
+    userFindFirst: 'userFindFirst' in overrides ? overrides.userFindFirst : { id: USER_ID, memberships: [] },
     flatFindFirst: 'flatFindFirst' in overrides ? overrides.flatFindFirst : { id: FLAT_ID, societyId: SOCIETY_ID },
     membershipFindMany: overrides.membershipFindMany ?? [],
     membershipUpdate: overrides.membershipUpdate ?? { id: 'membership-1', updated: true },
@@ -39,7 +41,7 @@ function makePrisma(overrides: {
     society: { findUnique: jest.fn().mockResolvedValue(defaults.societyFindUnique) },
     user: {
       findUnique: jest.fn().mockResolvedValue(defaults.userFindUnique),
-      findFirst: jest.fn().mockResolvedValue({ id: USER_ID, memberships: [] }),
+      findFirst: jest.fn().mockResolvedValue(defaults.userFindFirst),
     },
     flat: { findFirst: jest.fn().mockResolvedValue(defaults.flatFindFirst) },
     societyMembership: {
@@ -49,6 +51,53 @@ function makePrisma(overrides: {
     },
   } as unknown as PrismaService;
 }
+
+/**
+ * findOne(id, societyId) is how the admin "view resident" screen loads a
+ * user — societyId here is always the caller's own (from TenantGuard), so
+ * this pins that a user with no active membership in the CALLER's society
+ * reads as not-found, not as "here is Society B's user". No production
+ * code path was found that lets a client supply societyId directly to this
+ * method, but the method itself had no test proving the scoping actually
+ * works if that ever changed.
+ */
+describe('UsersService.findOne — tenant isolation', () => {
+  it('finds the user when they hold an active membership in the given society', async () => {
+    const prisma = makePrisma({ userFindFirst: { id: USER_ID, memberships: [] } });
+    const service = new UsersService(prisma);
+    await expect(service.findOne(USER_ID, SOCIETY_ID)).resolves.toEqual({ id: USER_ID, memberships: [] });
+    expect(prisma.user.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: USER_ID,
+          memberships: { some: { societyId: SOCIETY_ID, status: 'ACTIVE' } },
+        }),
+      }),
+    );
+  });
+
+  it("refuses a user who belongs only to a different society — Society A cannot read Society B's user", async () => {
+    // A real Prisma query scoped by `memberships: { some: { societyId } } }`
+    // would return null here; the mock stands in for that database behaviour.
+    const prisma = makePrisma({ userFindFirst: null });
+    const service = new UsersService(prisma);
+    await expect(service.findOne(USER_ID, OTHER_SOCIETY_ID)).rejects.toThrow(NotFoundException);
+    expect(prisma.user.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          memberships: { some: { societyId: OTHER_SOCIETY_ID, status: 'ACTIVE' } },
+        }),
+      }),
+    );
+  });
+
+  it('update() and deactivate() both refuse a cross-society id the same way, before writing anything', async () => {
+    const prisma = makePrisma({ userFindFirst: null });
+    const service = new UsersService(prisma);
+    await expect(service.update(USER_ID, OTHER_SOCIETY_ID, {})).rejects.toThrow(NotFoundException);
+    await expect(service.deactivate(USER_ID, OTHER_SOCIETY_ID)).rejects.toThrow(NotFoundException);
+  });
+});
 
 describe('UsersService — addToSociety flat validation (DEFECT-1)', () => {
   describe('valid combinations', () => {

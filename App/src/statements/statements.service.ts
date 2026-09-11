@@ -6,6 +6,11 @@ import { Prisma } from '@prisma/client';
 export class StatementsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // publishedById is accepted for symmetry with publish() below and because
+  // the controller already has the actor's id here, but MonthlyStatement has
+  // no field to record who generated it — kept, not persisted; not this
+  // audit's call to add a schema field for it.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async generateStatement(societyId: string, periodId: string, publishedById: string) {
     const period = await this.prisma.billingPeriod.findFirst({
       where: { id: periodId, societyId },

@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { SystemRole, AccountType } from '@prisma/client';
+import { SystemRole } from '@prisma/client';
 import { AccountsService, CreateAccountDto } from './accounts.service';
 import { UpdateAccountDto } from './dto/create-account.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';

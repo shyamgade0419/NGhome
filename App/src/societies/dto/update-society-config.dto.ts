@@ -1,5 +1,5 @@
 import {
-  IsOptional, IsString, IsInt, IsBoolean, IsNumber, Min, Max, IsIn,
+  IsOptional, IsString, IsInt, IsBoolean, IsNumber, Min, Max,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { BillingCycleType } from '@prisma/client';

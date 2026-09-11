@@ -134,6 +134,9 @@ export class FlatsService {
 
   async update(societyId: string, id: string, dto: Partial<CreateFlatDto>) {
     await this.findOne(societyId, id);
+    // buildingId is deliberately excluded — moving a flat to a different
+    // building is not supported by this generic update.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { buildingId, ...rest } = dto;
     return this.prisma.flat.update({ where: { id }, data: rest });
   }

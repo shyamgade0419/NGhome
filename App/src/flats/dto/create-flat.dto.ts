@@ -1,5 +1,5 @@
 import {
-  IsString, IsOptional, IsNumber, IsInt, IsEnum, Min, IsBoolean,
+  IsString, IsOptional, IsNumber, IsInt, IsEnum, Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { FlatStatus } from '@prisma/client';

@@ -1,6 +1,6 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query, UseGuards, UseInterceptors,
-  UploadedFile, Res, StreamableFile, HttpCode, HttpStatus,
+  Controller, Get, Post, Body, Param, Query, UseGuards, UseInterceptors,
+  UploadedFile, Res, StreamableFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes } from '@nestjs/swagger';

@@ -2,7 +2,6 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSocietyDto } from './dto/create-society.dto';
 import { UpdateSocietyConfigDto } from './dto/update-society-config.dto';
-import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
 import { generateUniqueJoinCode } from '../common/utils/join-code.util';
 import { Prisma, AuditAction } from '@prisma/client';

@@ -72,6 +72,10 @@ export class BillingRulesService {
 
   async update(societyId: string, id: string, dto: Partial<CreateBillingRuleDto>) {
     await this.findOne(societyId, id);
+    // components is deliberately excluded from a flat update() — updating a
+    // rule's components (each with their own id/order) is not implemented
+    // here; only scalar fields on the rule itself are.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { components, ...ruleData } = dto;
     return this.prisma.billingRule.update({
       where: { id },
