@@ -1,7 +1,6 @@
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
-
-const API_URL = process.env.API_URL ?? 'http://localhost:3000';
+import { fetchBackendWithRefresh, applyTokenRotation } from '@/lib/server/backend-request';
 
 /**
  * Forwards a multipart payment submission (fields + an optional receipt
@@ -12,22 +11,28 @@ const API_URL = process.env.API_URL ?? 'http://localhost:3000';
  * and drop the multipart boundary the backend needs to parse it. Reading
  * the incoming request as FormData and handing that same FormData
  * straight to fetch() lets fetch re-encode it with a fresh, correct
- * multipart boundary — no manual parsing needed.
+ * multipart boundary — no manual parsing needed, and it's what makes the
+ * same FormData instance safe to reuse for the refresh-and-retry below.
+ *
+ * A retry here is one browser-initiated submission being replayed once at
+ * the auth layer after a token rotation — not a second user action — so it
+ * carries no duplicate-payment risk beyond what the backend's own UTR
+ * idempotency check already handles for a genuine double-tap.
  */
 export async function POST(req: NextRequest) {
-  const accessToken = cookies().get('ng_access')?.value;
-  if (!accessToken) {
+  if (!cookies().get('ng_access')?.value) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
   }
 
   const incoming = await req.formData();
 
-  const backendRes = await fetch(`${API_URL}/api/v1/payments`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}` },
-    body: incoming,
-  });
+  const { res: backendRes, rotatedTokens, hadRefreshToken } = await fetchBackendWithRefresh(
+    '/payments',
+    { method: 'POST', body: incoming },
+  );
 
   const data = await backendRes.json().catch(() => ({}));
-  return NextResponse.json(data, { status: backendRes.status });
+  const response = NextResponse.json(data, { status: backendRes.status });
+  applyTokenRotation(response, rotatedTokens, hadRefreshToken, backendRes.status);
+  return response;
 }

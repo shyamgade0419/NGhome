@@ -1,7 +1,6 @@
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
-
-const API_URL = process.env.API_URL ?? 'http://localhost:3000';
+import { fetchBackendWithRefresh, applyTokenRotation } from '@/lib/server/backend-request';
 
 /**
  * Streams the actual receipt/screenshot bytes for a payment straight
@@ -15,27 +14,32 @@ const API_URL = process.env.API_URL ?? 'http://localhost:3000';
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const accessToken = cookies().get('ng_access')?.value;
-  if (!accessToken) {
+
+  if (!cookies().get('ng_access')?.value) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
   }
 
-  const backendRes = await fetch(`${API_URL}/api/v1/payments/${id}/proof`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  const { res: backendRes, rotatedTokens, hadRefreshToken } = await fetchBackendWithRefresh(
+    `/payments/${id}/proof`,
+    { method: 'GET' },
+  );
 
   if (!backendRes.ok) {
     // Error responses from this endpoint are JSON — safe to pass through as-is.
     const body = await backendRes.json().catch(() => ({ message: 'Failed to load receipt' }));
-    return NextResponse.json(body, { status: backendRes.status });
+    const response = NextResponse.json(body, { status: backendRes.status });
+    applyTokenRotation(response, rotatedTokens, hadRefreshToken, backendRes.status);
+    return response;
   }
 
   const buffer = await backendRes.arrayBuffer();
-  return new NextResponse(buffer, {
+  const response = new NextResponse(buffer, {
     status: 200,
     headers: {
       'Content-Type': backendRes.headers.get('content-type') ?? 'application/octet-stream',
       'Content-Disposition': backendRes.headers.get('content-disposition') ?? 'inline',
     },
   });
+  applyTokenRotation(response, rotatedTokens, hadRefreshToken, backendRes.status);
+  return response;
 }
