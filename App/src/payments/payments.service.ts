@@ -101,35 +101,183 @@ export class PaymentsService {
       !!bill &&
       !!soleAccountId;
 
-    let payment: Prisma.PaymentSubmissionGetPayload<object>;
+    // The proof upload is network I/O and cannot live inside a Postgres
+    // transaction — but the remote path only needs societyId/flatId and a
+    // random filename, never the payment's own id, so it can happen before
+    // the payment row exists. Everything that follows (the row itself, the
+    // Document that points at this file, and — for auto-approve — the
+    // account credit, the Transaction, the bill update and the audit
+    // record) runs in ONE transaction below, so there is no window where an
+    // APPROVED payment exists without the money having actually moved.
+    let proofRemotePath: string | undefined;
+    if (proofFile) {
+      proofRemotePath = this.paths.paymentProof(
+        societyId,
+        flatId,
+        this.paths.storedFileName(proofFile.originalname),
+      );
+      await this.storage.upload(proofFile.buffer, proofRemotePath);
+    }
+
+    const amount = new Prisma.Decimal(dto.amount);
+    const now = new Date();
+
     try {
-      payment = await this.prisma.paymentSubmission.create({
-        data: {
-          societyId,
-          flatId,
-          userId,
-          maintenanceBillId: dto.maintenanceBillId,
-          billingPeriodId: dto.billingPeriodId,
-          amount: new Prisma.Decimal(dto.amount),
-          paymentDate: new Date(dto.paymentDate),
-          paymentMethod: dto.paymentMethod,
-          referenceNumber: dto.referenceNumber,
-          utrNumber: dto.utrNumber,
-          bankName: dto.bankName,
-          chequeNumber: dto.chequeNumber,
-          notes: dto.notes,
-          status: autoApprove ? PaymentStatus.APPROVED : PaymentStatus.PENDING,
-          ...(autoApprove ? { reviewedAt: new Date(), approvedAt: new Date() } : {}),
-        },
+      const result = await this.prisma.$transaction(async (tx) => {
+        let payment = await tx.paymentSubmission.create({
+          data: {
+            societyId,
+            flatId,
+            userId,
+            maintenanceBillId: dto.maintenanceBillId,
+            billingPeriodId: dto.billingPeriodId,
+            amount,
+            paymentDate: new Date(dto.paymentDate),
+            paymentMethod: dto.paymentMethod,
+            referenceNumber: dto.referenceNumber,
+            utrNumber: dto.utrNumber,
+            bankName: dto.bankName,
+            chequeNumber: dto.chequeNumber,
+            notes: dto.notes,
+            // Always created PENDING, even when this will end up
+            // auto-approved below — APPROVED is only ever written once the
+            // account credit, Transaction, and bill update have all
+            // succeeded too, atomically, further down this same callback.
+            status: PaymentStatus.PENDING,
+          },
+        });
+
+        // Attach the proof screenshot/receipt, if one was uploaded — a
+        // Document row (reusing the same SFTP-backed storage flat documents
+        // use), linked via the PaymentDocuments relation. accessLevel:
+        // ADMIN_ONLY keeps it out of the resident's own generic Documents
+        // list (this isn't a society document, it's evidence for one
+        // specific payment); visibility for actually viewing it back is
+        // enforced by getProofFile() below — the submitting resident +
+        // admin/accountant, checked directly against this payment, not by
+        // the generic Document accessLevel rules (which would otherwise
+        // hide an ADMIN_ONLY doc from the very resident who uploaded it).
+        if (proofFile && proofRemotePath) {
+          await tx.document.create({
+            data: {
+              societyId,
+              uploadedById: userId,
+              title: `Payment proof — ${payment.id}`,
+              fileName: proofFile.originalname,
+              fileKey: proofRemotePath,
+              fileSize: proofFile.size,
+              mimeType: proofFile.mimetype,
+              storageProvider: 'sftp',
+              accessLevel: DocumentAccessLevel.ADMIN_ONLY,
+              linkedEntityType: 'PaymentSubmission',
+              linkedEntityId: payment.id,
+              payments: { connect: { id: payment.id } },
+            },
+          });
+        }
+
+        // Auto-confirm: settle the bill without waiting for an admin.
+        // Everything approve() does, minus the human — the account credit,
+        // the Transaction, and linking transactionId back onto the payment,
+        // all inside this same transaction, so the money always lands
+        // somewhere before the payment can read as APPROVED.
+        if (autoApprove && bill && soleAccountId) {
+          const updatedAccount = await tx.account.update({
+            where: { id: soleAccountId },
+            data: { currentBalance: { increment: amount } },
+          });
+
+          const transaction = await tx.transaction.create({
+            data: {
+              societyId,
+              accountId: soleAccountId,
+              transactionType: 'CREDIT',
+              amount,
+              transactionDate: new Date(dto.paymentDate),
+              description: `Payment received (auto-approved)${dto.utrNumber ? ` — UTR ${dto.utrNumber}` : ''}`,
+              linkedEntityType: 'PaymentSubmission',
+              linkedEntityId: payment.id,
+              balanceAfter: updatedAccount.currentBalance,
+              createdById: userId,
+            },
+          });
+
+          // Atomic increment rather than a read-modify-write: two payments
+          // landing together would otherwise each write a total computed
+          // from the same stale starting figure, losing one of them.
+          const updatedBill = await tx.maintenanceBill.update({
+            where: { id: bill.id },
+            data: { paidAmount: { increment: amount } },
+          });
+          const pending = updatedBill.totalAmount.minus(updatedBill.paidAmount);
+          await tx.maintenanceBill.update({
+            where: { id: bill.id },
+            data: {
+              pendingAmount: pending.lessThan(0) ? new Prisma.Decimal(0) : pending,
+              isPaid: pending.lessThanOrEqualTo(0),
+            },
+          });
+
+          payment = await tx.paymentSubmission.update({
+            where: { id: payment.id },
+            data: {
+              status: PaymentStatus.APPROVED,
+              reviewedAt: now,
+              approvedAt: now,
+              transactionId: transaction.id,
+            },
+          });
+
+          // Same audit trail a manual approve() gets — this payment was
+          // approved by the auto-approve rule, not left silently unlogged.
+          await tx.auditLog.create({
+            data: {
+              societyId,
+              actorId: userId,
+              action: 'PAYMENT_APPROVED',
+              entityType: 'PaymentSubmission',
+              entityId: payment.id,
+              newValues: { status: 'APPROVED', transactionId: transaction.id, method: 'auto' } as Prisma.InputJsonValue,
+            },
+          });
+        }
+
+        return payment;
       });
+
+      if (result.status === PaymentStatus.APPROVED) {
+        // Outside the transaction, and best-effort — the same pattern
+        // approve() uses: a notification failing must never undo an
+        // approval that already committed.
+        await this.notifications.notifyQuietly(
+          () =>
+            this.notifications.sendToUsers(societyId, [userId], {
+              title: 'Payment approved',
+              body: `Your payment of ₹${result.amount.toString()} has been received and recorded.`,
+              type: 'PAYMENT_APPROVED',
+              data: { paymentId: result.id },
+            }),
+          `payment ${result.id} auto-approved`,
+        );
+        return { ...result, autoApproved: true };
+      }
+      return result;
     } catch (err) {
-      // The lookup above is a best-effort fast path, not the actual
-      // guarantee — two retries landing close enough together can both pass
-      // it before either has written a row. The unique index on
+      // Nothing in the transaction committed — including the payment row
+      // itself — so a file with no Document row pointing at it can never be
+      // reached again. remove() never throws, so the caller still sees the
+      // real error.
+      if (proofRemotePath) await this.storage.remove(proofRemotePath);
+
+      // The idempotency lookup above is a best-effort fast path, not the
+      // actual guarantee — two retries landing close enough together can
+      // both pass it before either has written a row. The unique index on
       // (flatId, utrNumber) is what actually prevents the duplicate; P2002
-      // here means it just caught exactly that race. Whichever request lost
-      // it returns the winner's row instead of an error, so a resident who
-      // double-tapped Submit still just sees their payment recorded.
+      // here means it just caught exactly that race, on the paymentSubmission
+      // .create() call above (the only write in this transaction touching
+      // that index). Whichever request lost it returns the winner's row
+      // instead of an error, so a resident who double-tapped Submit still
+      // just sees their payment recorded.
       if (dto.utrNumber && err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         const existing = await this.prisma.paymentSubmission.findFirst({
           where: { societyId, flatId, utrNumber: dto.utrNumber },
@@ -138,101 +286,6 @@ export class PaymentsService {
       }
       throw err;
     }
-
-    // Attach the proof screenshot/receipt, if one was uploaded — a Document
-    // row (reusing the same SFTP-backed storage flat documents use), linked
-    // via the PaymentDocuments relation. accessLevel: ADMIN_ONLY keeps it
-    // out of the resident's own generic Documents list (this isn't a
-    // society document, it's evidence for one specific payment); visibility
-    // for actually viewing it back is enforced by getProofFile() below —
-    // the submitting resident + admin/accountant, checked directly against
-    // this payment, not by the generic Document accessLevel rules (which
-    // would otherwise hide an ADMIN_ONLY doc from the very resident who
-    // uploaded it).
-    if (proofFile) {
-      // Stored with the flat the payment is for. flatId is the payment's own,
-      // from the signed token, and was checked against an active membership at
-      // the top of this method — never a client-supplied path.
-      const remotePath = this.paths.paymentProof(
-        societyId,
-        flatId,
-        this.paths.storedFileName(proofFile.originalname),
-      );
-      await this.storage.upload(proofFile.buffer, remotePath);
-      try {
-        await this.prisma.document.create({
-          data: {
-            societyId,
-            uploadedById: userId,
-            title: `Payment proof — ${payment.id}`,
-            fileName: proofFile.originalname,
-            fileKey: remotePath,
-            fileSize: proofFile.size,
-            mimeType: proofFile.mimetype,
-            storageProvider: 'sftp',
-            accessLevel: DocumentAccessLevel.ADMIN_ONLY,
-            linkedEntityType: 'PaymentSubmission',
-            linkedEntityId: payment.id,
-            payments: { connect: { id: payment.id } },
-          },
-        });
-      } catch (err) {
-        // A file with no Document row can never be reached again. remove()
-        // never throws, so the caller still sees the real error.
-        await this.storage.remove(remotePath);
-        throw err;
-      }
-    }
-
-    // Auto-confirm: settle the bill without waiting for an admin. Everything
-    // approve() does, minus the human — crucially including the account credit
-    // and the Transaction, so the money actually lands somewhere.
-    if (autoApprove && bill && soleAccountId) {
-      const amount = new Prisma.Decimal(dto.amount);
-
-      await this.prisma.$transaction(async (tx) => {
-        const updatedAccount = await tx.account.update({
-          where: { id: soleAccountId },
-          data: { currentBalance: { increment: amount } },
-        });
-
-        await tx.transaction.create({
-          data: {
-            societyId,
-            accountId: soleAccountId,
-            transactionType: 'CREDIT',
-            amount,
-            transactionDate: new Date(dto.paymentDate),
-            description: `Payment received (auto-approved)${dto.utrNumber ? ` — UTR ${dto.utrNumber}` : ''}`,
-            linkedEntityType: 'PaymentSubmission',
-            linkedEntityId: payment.id,
-            balanceAfter: updatedAccount.currentBalance,
-            createdById: userId,
-          },
-        });
-
-        // Atomic increment rather than the read-modify-write this used to do:
-        // two payments landing together would otherwise each write a total
-        // computed from the same stale starting figure, losing one of them.
-        const updatedBill = await tx.maintenanceBill.update({
-          where: { id: bill.id },
-          data: { paidAmount: { increment: amount } },
-        });
-
-        const pending = updatedBill.totalAmount.minus(updatedBill.paidAmount);
-        await tx.maintenanceBill.update({
-          where: { id: bill.id },
-          data: {
-            pendingAmount: pending.lessThan(0) ? new Prisma.Decimal(0) : pending,
-            isPaid: pending.lessThanOrEqualTo(0),
-          },
-        });
-      });
-
-      return { ...payment, autoApproved: true };
-    }
-
-    return payment;
   }
 
   async approve(societyId: string, paymentId: string, reviewedById: string, accountId: string, notes?: string) {

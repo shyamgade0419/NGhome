@@ -105,6 +105,10 @@ describe('PaymentsService.getProofFile', () => {
 
 describe('PaymentsService.submit — proof attachment', () => {
   function makeSubmitPrisma(payment: { id: string }) {
+    const tx = {
+      paymentSubmission: { create: jest.fn().mockResolvedValue(payment) },
+      document: { create: jest.fn().mockResolvedValue({ id: 'doc-1' }) },
+    };
     return {
       societyMembership: { findFirst: jest.fn().mockResolvedValue({ id: 'm1' }) },
       maintenanceBill: { findFirst: jest.fn() },
@@ -113,9 +117,10 @@ describe('PaymentsService.submit — proof attachment', () => {
       // can land the money anywhere. These cases require verification, so the
       // list is never used — it just has to exist.
       account: { findMany: jest.fn().mockResolvedValue([]) },
-      paymentSubmission: { create: jest.fn().mockResolvedValue(payment) },
-      document: { create: jest.fn().mockResolvedValue({ id: 'doc-1' }) },
-    } as unknown as PrismaService;
+      paymentSubmission: { findFirst: jest.fn().mockResolvedValue(null) },
+      $transaction: jest.fn((cb: any) => cb(tx)),
+      __tx: tx,
+    } as unknown as PrismaService & { __tx: typeof tx };
   }
 
   it('uploads and links a Document when a proof file is provided', async () => {
@@ -133,7 +138,7 @@ describe('PaymentsService.submit — proof attachment', () => {
     );
 
     expect((storage.upload as jest.Mock)).toHaveBeenCalled();
-    expect((prisma.document as any).create).toHaveBeenCalledWith(
+    expect((prisma as any).__tx.document.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           accessLevel: 'ADMIN_ONLY',
@@ -157,7 +162,7 @@ describe('PaymentsService.submit — proof attachment', () => {
     );
 
     expect((storage.upload as jest.Mock)).not.toHaveBeenCalled();
-    expect((prisma.document as any).create).not.toHaveBeenCalled();
+    expect((prisma as any).__tx.document.create).not.toHaveBeenCalled();
   });
 });
 
@@ -186,16 +191,33 @@ function makeSubmitServices(opts: { accounts: { id: string }[]; verificationRequ
     pendingAmount: new Prisma.Decimal(2500),
   };
 
+  // Everything submit() writes now runs inside one $transaction(tx => ...)
+  // callback — tx stands in for the whole write surface, including the
+  // payment row itself, so an auto-approved payment's status/transactionId
+  // update and its audit record are exercised by the very same mock the
+  // account/bill assertions already use.
   const tx = {
+    paymentSubmission: {
+      create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: PAYMENT_ID, ...data })),
+      // A real Prisma update() returns the full row, not just the changed
+      // fields — the mock merges over a realistic base row so fields the
+      // service reads afterwards (amount, for the notification body) are
+      // there, the same as they'd be in production.
+      update: jest.fn().mockImplementation(({ data }: any) =>
+        Promise.resolve({ id: PAYMENT_ID, amount: new Prisma.Decimal(2500), flatId: FLAT_ID, ...data }),
+      ),
+    },
+    document: { create: jest.fn().mockResolvedValue({ id: 'doc-1' }) },
     account: {
       update: jest.fn().mockResolvedValue({ id: 'account-1', currentBalance: new Prisma.Decimal(2500) }),
     },
-    transaction: { create: jest.fn().mockResolvedValue({}) },
+    transaction: { create: jest.fn().mockResolvedValue({ id: 'txn-1' }) },
     maintenanceBill: {
       update: jest
         .fn()
         .mockResolvedValue({ ...bill, paidAmount: new Prisma.Decimal(2500), totalAmount: new Prisma.Decimal(2500) }),
     },
+    auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
   };
 
   const prisma = {
@@ -210,13 +232,22 @@ function makeSubmitServices(opts: { accounts: { id: string }[]; verificationRequ
     paymentSubmission: {
       // No existing payment for this (flat, UTR) unless a test says otherwise.
       findFirst: jest.fn().mockResolvedValue(null),
-      create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: PAYMENT_ID, ...data })),
+      // The transaction failure/P2002 fallback path calls this directly on
+      // the top-level client (outside the rolled-back transaction).
+      create: jest.fn(),
     },
     $transaction: jest.fn(async (cb: any) => cb(tx)),
   } as unknown as PrismaService;
 
-  const storage = {} as unknown as SftpStorageService;
-  return { service: new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage)), prisma, tx };
+  const storage = { upload: jest.fn().mockResolvedValue(undefined) } as unknown as SftpStorageService;
+  const notifications = notificationsStub();
+  return {
+    service: new PaymentsService(prisma, storage, notifications, new StoragePathService(storage)),
+    prisma,
+    tx,
+    storage,
+    notifications,
+  };
 }
 
 const submitDto = {
@@ -298,6 +329,65 @@ describe('PaymentsService — auto-approve lands the money', () => {
     const [billArg] = tx.maintenanceBill.update.mock.calls[0];
     expect(billArg.data).toEqual({ paidAmount: { increment: expect.anything() } });
   });
+
+  it('is created PENDING and only flipped to APPROVED after the account/transaction/bill writes, never before', async () => {
+    const { service, tx } = makeSubmitServices({ accounts: [{ id: 'account-1' }] });
+    await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
+
+    const [createArg] = tx.paymentSubmission.create.mock.calls[0];
+    expect(createArg.data.status).toBe('PENDING');
+    const [updateArg] = tx.paymentSubmission.update.mock.calls[0];
+    expect(updateArg.data.status).toBe('APPROVED');
+  });
+
+  it('links transactionId onto the payment — an APPROVED payment is never left without one', async () => {
+    const { service, tx } = makeSubmitServices({ accounts: [{ id: 'account-1' }] });
+    const result: any = await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
+
+    expect(result.transactionId).toBe('txn-1');
+    const [updateArg] = tx.paymentSubmission.update.mock.calls[0];
+    expect(updateArg.data.transactionId).toBe('txn-1');
+  });
+
+  it('writes the same PAYMENT_APPROVED audit record a manual approval gets', async () => {
+    const { service, tx } = makeSubmitServices({ accounts: [{ id: 'account-1' }] });
+    await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
+
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        societyId: SOCIETY_ID,
+        actorId: OWNER_ID,
+        action: 'PAYMENT_APPROVED',
+        entityType: 'PaymentSubmission',
+        entityId: PAYMENT_ID,
+      }),
+    });
+  });
+
+  it('notifies the resident the same way approve() does', async () => {
+    const { service, notifications } = makeSubmitServices({ accounts: [{ id: 'account-1' }] });
+    await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
+
+    expect(notifications.sendToUsers).toHaveBeenCalledWith(
+      SOCIETY_ID,
+      [OWNER_ID],
+      expect.objectContaining({ type: 'PAYMENT_APPROVED' }),
+    );
+  });
+
+  it('never leaves a false APPROVED payment when the financial write fails — nothing in the transaction commits', async () => {
+    const { service, tx } = makeSubmitServices({ accounts: [{ id: 'account-1' }] });
+    (tx.account.update as jest.Mock).mockRejectedValue(new Error('account update failed'));
+
+    // The real guarantee here is Postgres's own transaction rollback — this
+    // mock can only prove submit() propagates the failure rather than
+    // swallowing it and returning something that looks like success.
+    await expect(service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto)).rejects.toThrow(
+      'account update failed',
+    );
+    expect(tx.paymentSubmission.update).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
+  });
 });
 
 /**
@@ -331,27 +421,29 @@ describe('PaymentsService.submit — idempotency (same flat, same UTR)', () => {
   });
 
   it('creates a new payment as normal when no UTR is given (cash/cheque are never deduplicated)', async () => {
-    const { service, prisma } = makeSubmitServices({ accounts: [] });
+    const { service, prisma, tx } = makeSubmitServices({ accounts: [] });
     await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, { ...submitDto, utrNumber: undefined, paymentMethod: 'CASH' as any });
     expect(prisma.paymentSubmission.findFirst).not.toHaveBeenCalled();
-    expect(prisma.paymentSubmission.create).toHaveBeenCalled();
+    expect(tx.paymentSubmission.create).toHaveBeenCalled();
   });
 
   it('creates a second, independent payment for a different UTR — a real second payment, not a retry', async () => {
-    const { service, prisma } = makeSubmitServices({ accounts: [] });
+    const { service, prisma, tx } = makeSubmitServices({ accounts: [] });
     await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, { ...submitDto, utrNumber: 'a-different-utr' });
     expect(prisma.paymentSubmission.findFirst).toHaveBeenCalledWith({
       where: { societyId: SOCIETY_ID, flatId: FLAT_ID, utrNumber: 'a-different-utr' },
     });
-    expect(prisma.paymentSubmission.create).toHaveBeenCalled();
+    expect(tx.paymentSubmission.create).toHaveBeenCalled();
   });
 
   it('falls back to the winning row when two retries race past the pre-check and the database catches it', async () => {
-    const { service, prisma } = makeSubmitServices({ accounts: [] });
+    const { service, prisma, tx } = makeSubmitServices({ accounts: [] });
     const raceWinner = { id: 'payment-winner' };
     const p2002 = Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
     Object.setPrototypeOf(p2002, Prisma.PrismaClientKnownRequestError.prototype);
-    (prisma.paymentSubmission.create as jest.Mock).mockRejectedValue(p2002);
+    // The write itself lives inside the transaction — this is the one that
+    // actually throws when a real unique-index violation is caught.
+    (tx.paymentSubmission.create as jest.Mock).mockRejectedValue(p2002);
     (prisma.paymentSubmission.findFirst as jest.Mock)
       .mockResolvedValueOnce(null) // pre-check: nothing yet, so it proceeds to create()
       .mockResolvedValueOnce(raceWinner); // after the race is caught, the other request's row
@@ -361,8 +453,8 @@ describe('PaymentsService.submit — idempotency (same flat, same UTR)', () => {
   });
 
   it('re-throws a database error that is not the UTR unique-constraint violation', async () => {
-    const { service, prisma } = makeSubmitServices({ accounts: [] });
-    (prisma.paymentSubmission.create as jest.Mock).mockRejectedValue(new Error('connection lost'));
+    const { service, tx } = makeSubmitServices({ accounts: [] });
+    (tx.paymentSubmission.create as jest.Mock).mockRejectedValue(new Error('connection lost'));
     await expect(service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto)).rejects.toThrow('connection lost');
   });
 });
@@ -402,27 +494,31 @@ describe('PaymentsService.submit — where the proof is stored', () => {
       upload: jest.fn().mockResolvedValue(undefined),
       remove: jest.fn().mockResolvedValue(undefined),
     } as unknown as SftpStorageService;
-    const prisma = {
-      societyMembership: { findFirst: jest.fn().mockResolvedValue({ id: 'm1' }) },
-      maintenanceBill: { findFirst: jest.fn() },
-      societyConfiguration: { findUnique: jest.fn().mockResolvedValue({ paymentVerificationRequired: true }) },
-      account: { findMany: jest.fn().mockResolvedValue([]) },
-      paymentSubmission: { create: jest.fn().mockResolvedValue({ id: PAYMENT_ID }) },
+    const tx = {
+      paymentSubmission: { create: jest.fn().mockResolvedValue({ id: PAYMENT_ID, status: 'PENDING' }) },
       document: {
         create: opts.docCreateFails
           ? jest.fn().mockRejectedValue(new Error('database unavailable'))
           : jest.fn().mockResolvedValue({ id: 'doc-1' }),
       },
+    };
+    const prisma = {
+      societyMembership: { findFirst: jest.fn().mockResolvedValue({ id: 'm1' }) },
+      maintenanceBill: { findFirst: jest.fn() },
+      societyConfiguration: { findUnique: jest.fn().mockResolvedValue({ paymentVerificationRequired: true }) },
+      account: { findMany: jest.fn().mockResolvedValue([]) },
+      paymentSubmission: { findFirst: jest.fn().mockResolvedValue(null) },
+      $transaction: jest.fn((cb: any) => cb(tx)),
     } as unknown as PrismaService;
     const service = new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage));
-    return { service, storage, prisma };
+    return { service, storage, prisma, tx };
   }
 
   const receipt = { originalname: 'UPI Receipt.jpg', size: 10, mimetype: 'image/jpeg', buffer: JPEG_BYTES };
   const dto = { amount: 500, paymentDate: '2026-01-01', paymentMethod: 'UPI' } as SubmitPaymentDto;
 
   it("files the proof under the payment's own flat, in payments/", async () => {
-    const { service, storage, prisma } = setupProof();
+    const { service, storage, tx } = setupProof();
     await service.submit(SOCIETY_ID, OWNER_ID, 'flat-10', dto, receipt);
 
     const [, remotePath] = (storage.upload as jest.Mock).mock.calls[0];
@@ -432,7 +528,7 @@ describe('PaymentsService.submit — where the proof is stored', () => {
     expect(remotePath).not.toContain('payment-proofs');
 
     // Same Document relationship as before, pointing at the new location.
-    const [{ data }] = (prisma.document.create as jest.Mock).mock.calls[0];
+    const [{ data }] = (tx.document.create as jest.Mock).mock.calls[0];
     expect(data.fileKey).toBe(remotePath);
     expect(data.fileName).toBe('UPI Receipt.jpg');
     expect(data.payments).toEqual({ connect: { id: PAYMENT_ID } });
