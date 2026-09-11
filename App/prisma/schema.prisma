@@ -184,6 +184,8 @@ enum AuditAction {
   FUND_TRANSACTION
   CONFIG_CHANGED
   PERIOD_CLOSED
+  DOCUMENT_DELETED
+  COMPLAINT_STATUS_CHANGED
   OTHER
 }
 
@@ -900,6 +902,13 @@ model PaymentSubmission {
   @@index([societyId])
   @@index([flatId])
   @@index([userId])
+  // A UTR is a real bank-assigned reference for one specific transaction —
+  // the same (flat, UTR) pair can only ever mean the same payment
+  // resubmitted (a network retry after tapping Submit twice), never two
+  // legitimate payments. NULL utrNumber values (cash/cheque payments) are
+  // never considered equal to each other by Postgres, so this never blocks
+  // those. See PaymentsService.submit.
+  @@unique([flatId, utrNumber])
   @@map("payment_submissions")
 }
 

@@ -36,6 +36,27 @@ export class PaymentsService {
     });
     if (!membership) throw new ForbiddenException('Flat not assigned to your account');
 
+    /**
+     * Idempotency: tap Submit, the request lands, the network dies before
+     * the response does, tap Submit again with the same form still filled
+     * in — the second request must not create a second payment. A UTR is a
+     * real bank-assigned reference for one specific transaction, so the
+     * same (flat, UTR) pair showing up twice is always a resubmission of
+     * the same payment, never two legitimate ones — a genuinely different
+     * payment (next month's bill, say) comes from a different bank
+     * transaction and so always carries a different UTR. Cash/cheque
+     * payments have no UTR and are unaffected (this only ever runs when
+     * one was actually submitted); the unique index below is the same
+     * check enforced at the database level for the case where two retries
+     * race each other past this lookup.
+     */
+    if (dto.utrNumber) {
+      const existing = await this.prisma.paymentSubmission.findFirst({
+        where: { societyId, flatId, utrNumber: dto.utrNumber },
+      });
+      if (existing) return existing;
+    }
+
     let bill: Awaited<ReturnType<typeof this.prisma.maintenanceBill.findFirst>> = null;
     if (dto.maintenanceBillId) {
       bill = await this.prisma.maintenanceBill.findFirst({
@@ -80,25 +101,43 @@ export class PaymentsService {
       !!bill &&
       !!soleAccountId;
 
-    const payment = await this.prisma.paymentSubmission.create({
-      data: {
-        societyId,
-        flatId,
-        userId,
-        maintenanceBillId: dto.maintenanceBillId,
-        billingPeriodId: dto.billingPeriodId,
-        amount: new Prisma.Decimal(dto.amount),
-        paymentDate: new Date(dto.paymentDate),
-        paymentMethod: dto.paymentMethod,
-        referenceNumber: dto.referenceNumber,
-        utrNumber: dto.utrNumber,
-        bankName: dto.bankName,
-        chequeNumber: dto.chequeNumber,
-        notes: dto.notes,
-        status: autoApprove ? PaymentStatus.APPROVED : PaymentStatus.PENDING,
-        ...(autoApprove ? { reviewedAt: new Date(), approvedAt: new Date() } : {}),
-      },
-    });
+    let payment: Prisma.PaymentSubmissionGetPayload<object>;
+    try {
+      payment = await this.prisma.paymentSubmission.create({
+        data: {
+          societyId,
+          flatId,
+          userId,
+          maintenanceBillId: dto.maintenanceBillId,
+          billingPeriodId: dto.billingPeriodId,
+          amount: new Prisma.Decimal(dto.amount),
+          paymentDate: new Date(dto.paymentDate),
+          paymentMethod: dto.paymentMethod,
+          referenceNumber: dto.referenceNumber,
+          utrNumber: dto.utrNumber,
+          bankName: dto.bankName,
+          chequeNumber: dto.chequeNumber,
+          notes: dto.notes,
+          status: autoApprove ? PaymentStatus.APPROVED : PaymentStatus.PENDING,
+          ...(autoApprove ? { reviewedAt: new Date(), approvedAt: new Date() } : {}),
+        },
+      });
+    } catch (err) {
+      // The lookup above is a best-effort fast path, not the actual
+      // guarantee — two retries landing close enough together can both pass
+      // it before either has written a row. The unique index on
+      // (flatId, utrNumber) is what actually prevents the duplicate; P2002
+      // here means it just caught exactly that race. Whichever request lost
+      // it returns the winner's row instead of an error, so a resident who
+      // double-tapped Submit still just sees their payment recorded.
+      if (dto.utrNumber && err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const existing = await this.prisma.paymentSubmission.findFirst({
+          where: { societyId, flatId, utrNumber: dto.utrNumber },
+        });
+        if (existing) return existing;
+      }
+      throw err;
+    }
 
     // Attach the proof screenshot/receipt, if one was uploaded — a Document
     // row (reusing the same SFTP-backed storage flat documents use), linked
