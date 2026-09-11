@@ -401,10 +401,17 @@ export const meetingsApi = {
 // Documents
 export const documentsApi = {
   list: (params?: { category?: string }) => api.get('/documents', { params }),
+  // Registers a document by external link — no file storage involved. For an
+  // actual file, use the multipart upload against /api/backend-file/documents
+  // instead (see the Documents page); fileKey here is never a server path.
   create: (data: {
     title: string; description?: string; fileName: string;
     fileKey: string; fileSize: number; mimeType: string;
     accessLevel: string; category?: string;
+    // Only meaningful for staff/admin registering a link on a resident's
+    // behalf with accessLevel FLAT_PRIVATE; a resident's own flatId is
+    // always used server-side regardless of what's sent here.
+    flatId?: string;
   }) => api.post('/documents', data),
   get: (id: string) => api.get(`/documents/${id}`),
   remove: (id: string) => api.delete(`/documents/${id}`),
