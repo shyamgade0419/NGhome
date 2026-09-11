@@ -1,0 +1,121 @@
+name: CI
+
+# No production secrets are used anywhere in this workflow, and no job talks
+# to ServerByt/SFTP, the real SMTP account, or any other external service —
+# everything below runs against ephemeral, locally-generated values.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  api:
+    name: API (NestJS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: App
+    env:
+      # prisma generate only needs a syntactically valid connection string —
+      # it does not connect to a database. Nothing below runs a migration or
+      # a real query, so no Postgres service container is needed here.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      JWT_ACCESS_SECRET: ci-access-secret
+      JWT_REFRESH_SECRET: ci-refresh-secret
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: App/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Lint
+        # Informational only, not a merge gate: the repo has no prettier
+        # config and predates this workflow with ~400 pre-existing
+        # formatting-only findings across files this workflow's author
+        # didn't touch. Failing every PR on pre-existing debt it didn't
+        # create isn't useful; reformatting ~150 files to silence it is out
+        # of scope for a CI setup change. Real lint errors still show in
+        # the step output for review.
+        run: npx eslint "src/**/*.ts" -f unix
+        continue-on-error: true
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  web:
+    name: Web (Next.js)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Web
+    env:
+      # The BFF routes only need *some* value at build time (Next.js
+      # doesn't call it during build/typecheck) — no live API is reached.
+      API_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: Web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+
+      # `next build` runs Next's own ESLint pass as part of the build and
+      # fails the build on real errors (see next.config.mjs) — this is the
+      # project's actual lint gate for Web, not a separate step.
+      - name: Build (includes lint + typecheck via Next)
+        run: npm run build
+
+  mobile:
+    name: Mobile (Expo)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: Mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+
+      # No "npm test" step: the Mobile app currently has zero test files
+      # (`jest` exits 1 with "No tests found" — verified, not assumed).
+      # Adding real coverage here (auth refresh, upload, logout, API
+      # failure handling) is tracked as a follow-up, not faked with
+      # --passWithNoTests.
