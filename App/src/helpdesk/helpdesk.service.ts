@@ -1,7 +1,7 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { MaintenanceRequestStatus, SystemRole } from '@prisma/client';
+import { MaintenanceRequestStatus, SystemRole, Prisma } from '@prisma/client';
 import {
   CreateMaintenanceRequestDto,
   UpdateRequestStatusDto,
@@ -193,24 +193,37 @@ export class HelpdeskService {
     return admins.map((a) => a.userId);
   }
 
-  async updateStatus(societyId: string, id: string, dto: UpdateRequestStatusDto) {
-    await this.findOne(societyId, id);
+  async updateStatus(societyId: string, id: string, actorId: string, dto: UpdateRequestStatusDto) {
+    const before = await this.findOne(societyId, id);
     const resolvedAt =
       dto.status === 'RESOLVED' || dto.status === 'CLOSED' ? new Date() : undefined;
 
-    const updated = await this.prisma.maintenanceRequest.update({
-      where: { id },
-      data: {
-        status: dto.status as MaintenanceRequestStatus,
-        adminNotes: dto.adminNotes,
-        assignedToId: dto.assignedToId,
-        ...(resolvedAt ? { resolvedAt } : {}),
-      },
-      include: {
-        resident: { select: { id: true, firstName: true, lastName: true } },
-        assignedTo: { select: { id: true, firstName: true, lastName: true } },
-      },
-    });
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.maintenanceRequest.update({
+        where: { id },
+        data: {
+          status: dto.status as MaintenanceRequestStatus,
+          adminNotes: dto.adminNotes,
+          assignedToId: dto.assignedToId,
+          ...(resolvedAt ? { resolvedAt } : {}),
+        },
+        include: {
+          resident: { select: { id: true, firstName: true, lastName: true } },
+          assignedTo: { select: { id: true, firstName: true, lastName: true } },
+        },
+      }),
+      this.prisma.auditLog.create({
+        data: {
+          societyId,
+          actorId,
+          action: 'COMPLAINT_STATUS_CHANGED',
+          entityType: 'MaintenanceRequest',
+          entityId: id,
+          oldValues: { status: before.status } as Prisma.InputJsonValue,
+          newValues: { status: dto.status } as Prisma.InputJsonValue,
+        },
+      }),
+    ]);
 
     // Tickets are one-way: a resident raises one and can only watch the
     // status. Until now nothing told them it had changed, so the only way to

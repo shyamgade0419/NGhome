@@ -52,6 +52,11 @@ function setup(opts: { flatInSociety?: boolean; createFails?: boolean } = {}) {
         Promise.resolve({ id: 'doc-1', storageProvider: 'sftp', fileKey: `${BASE}/${SOCIETY}/x.pdf`, ...data }),
       ),
     },
+    auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
+    // softDelete's row update and its audit record run together via the
+    // array form of $transaction — Promise.all over the same ops mirrors
+    // how Prisma resolves it, without a real database underneath.
+    $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
   } as unknown as PrismaService;
 
   const service = new DocumentsService(prisma, storage, new StoragePathService(storage));
@@ -347,6 +352,34 @@ describe('DocumentsService — a stored path is never taken from the client', ()
 
     await service.softDelete(SOCIETY, 'doc-1', 'user-1', false);
     expect(storage.remove).toHaveBeenCalledWith(fileKey);
+  });
+
+  it('writes an audit record for the deletion, atomically with the row update', async () => {
+    const { service, prisma } = setup();
+    (prisma.document.findFirst as jest.Mock).mockResolvedValue({
+      id: 'doc-1',
+      storageProvider: 'sftp',
+      fileKey: `${BASE}/${SOCIETY}/residents/${MY_FLAT}/documents/x.pdf`,
+      uploadedById: 'user-1',
+      accessLevel: DocumentAccessLevel.FLAT_PRIVATE,
+      title: 'Aadhar Card',
+      category: 'OTHER',
+    });
+
+    await service.softDelete(SOCIETY, 'doc-1', 'user-1', false);
+
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        societyId: SOCIETY,
+        actorId: 'user-1',
+        action: 'DOCUMENT_DELETED',
+        entityType: 'Document',
+        entityId: 'doc-1',
+      }),
+    });
+    // Same transaction as the row update — never one without the other.
+    expect(prisma.document.update).toHaveBeenCalled();
+    expect((prisma.$transaction as jest.Mock).mock.calls[0][0]).toHaveLength(2);
   });
 });
 

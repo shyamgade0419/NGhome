@@ -99,8 +99,9 @@ export class HelpdeskController {
   updateStatus(
     @SocietyId() societyId: string,
     @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateRequestStatusDto,
   ) {
-    return this.service.updateStatus(societyId, id, dto);
+    return this.service.updateStatus(societyId, id, user.id, dto);
   }
 }

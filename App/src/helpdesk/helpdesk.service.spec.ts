@@ -32,7 +32,12 @@ function makeRequest(overrides: Record<string, unknown> = {}) {
 
 function makeService(request: unknown = makeRequest()) {
   const prisma = {
-    maintenanceRequest: { findFirst: jest.fn().mockResolvedValue(request) },
+    maintenanceRequest: {
+      findFirst: jest.fn().mockResolvedValue(request),
+      update: jest.fn().mockImplementation(({ data }: any) =>
+        Promise.resolve({ ...(request as Record<string, unknown>), ...data, residentId: OWNER.id }),
+      ),
+    },
     maintenanceRequestComment: {
       findMany: jest.fn().mockResolvedValue([
         { id: 'c1', authorId: OWNER.id, body: 'Still dripping', author: {} },
@@ -45,6 +50,8 @@ function makeService(request: unknown = makeRequest()) {
     societyMembership: {
       findMany: jest.fn().mockResolvedValue([{ userId: ADMIN.id }]),
     },
+    auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
+    $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
   } as unknown as PrismaService;
 
   const notifications = {
@@ -159,5 +166,32 @@ describe('HelpdeskService — who gets told about a reply', () => {
 
     const [, recipients] = (notifications.sendToUsers as jest.Mock).mock.calls[0];
     expect(recipients).not.toContain(ADMIN.id);
+  });
+});
+
+describe('HelpdeskService.updateStatus — audit trail', () => {
+  it('records who changed the status, and the before/after values', async () => {
+    const { service, prisma } = makeService(makeRequest({ status: 'OPEN' }));
+    await service.updateStatus(SOCIETY_ID, REQUEST_ID, ADMIN.id, { status: 'RESOLVED' } as any);
+
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        societyId: SOCIETY_ID,
+        actorId: ADMIN.id,
+        action: 'COMPLAINT_STATUS_CHANGED',
+        entityType: 'MaintenanceRequest',
+        entityId: REQUEST_ID,
+        oldValues: { status: 'OPEN' },
+        newValues: { status: 'RESOLVED' },
+      }),
+    });
+  });
+
+  it('writes the status update and its audit record in the same transaction', async () => {
+    const { service, prisma } = makeService();
+    await service.updateStatus(SOCIETY_ID, REQUEST_ID, ADMIN.id, { status: 'IN_PROGRESS' } as any);
+
+    expect(prisma.maintenanceRequest.update).toHaveBeenCalled();
+    expect((prisma.$transaction as jest.Mock).mock.calls[0][0]).toHaveLength(2);
   });
 });

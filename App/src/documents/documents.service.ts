@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from './sftp-storage.service';
 import { assertAllowedUpload, assertSafeLinkUrl } from './file-safety';
 import { StoragePathService } from './storage-path.service';
-import { DocumentAccessLevel } from '@prisma/client';
+import { DocumentAccessLevel, Prisma } from '@prisma/client';
 
 export interface CreateDocumentDto {
   title: string;
@@ -293,12 +293,28 @@ export class DocumentsService {
     if (doc.storageProvider === 'sftp' && this.paths.isSocietyKey(societyId, doc.fileKey)) {
       await this.storage.remove(doc.fileKey);
     }
-    return toClient(
-      await this.prisma.document.update({
+
+    // The SFTP removal above is a slow network call and stays outside this
+    // transaction on purpose (a DB transaction should never hold open across
+    // one) — only the row update and its audit record need to be atomic
+    // with each other.
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.document.update({
         where: { id },
         data: { isActive: false },
       }),
-    );
+      this.prisma.auditLog.create({
+        data: {
+          societyId,
+          actorId: callerId,
+          action: 'DOCUMENT_DELETED',
+          entityType: 'Document',
+          entityId: id,
+          oldValues: { title: doc.title, accessLevel: doc.accessLevel, category: doc.category } as Prisma.InputJsonValue,
+        },
+      }),
+    ]);
+    return toClient(updated);
   }
 }
 
