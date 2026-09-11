@@ -134,6 +134,16 @@ export class AuthController {
     );
   }
 
+  // Deliberately more generous than login/register: this is called
+  // automatically by every legitimate session (web tabs, the mobile app,
+  // more than one device at once) roughly every access-token lifetime, not
+  // just once per human action, so the same tight limit would risk
+  // breaking real usage. Still well under the global 100/min — a value
+  // this high pointed at one IP is refresh-token guessing, not normal
+  // traffic, and the token itself is a 64-byte random value (effectively
+  // unguessable) so the throttle here is defense in depth, not the primary
+  // protection.
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)

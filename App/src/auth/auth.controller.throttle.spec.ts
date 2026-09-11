@@ -29,6 +29,7 @@ describe('AuthController — auth-sensitive routes carry a tighter throttle than
     ['joinSociety', 5],
     ['forgotPassword', 3],
     ['resetPassword', 5],
+    ['refresh', 20],
   ])('%s is limited to %d requests per window, well under the global 100/min', (method, expectedLimit) => {
     const { limit, ttl } = throttleFor(method as keyof AuthController);
     expect(limit).toBe(expectedLimit);
