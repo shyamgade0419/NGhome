@@ -452,13 +452,33 @@ export class AuthService {
       this.configService.get<string>('jwt.refreshExpiration') ?? '7d',
     );
 
-    // Atomic rotation: revoke old and create new in a single transaction
-    await this.prisma.$transaction([
-      this.prisma.refreshToken.update({
-        where: { id: stored.id },
+    /**
+     * The findUnique check above is a fast, cheap rejection for the common
+     * case (an actually expired or already-used token) — it is not what
+     * makes rotation safe. Two requests presenting the identical refresh
+     * token concurrently both pass that check before either has written
+     * anything; without a conditional update here, both would go on to
+     * revoke the (already-revoked-by-the-other) row and each mint their own
+     * successor token, so two valid sessions come out of one refresh token
+     * — the exact thing single-use rotation exists to prevent.
+     *
+     * updateMany's WHERE clause (id + isRevoked: false) is the actual lock:
+     * Postgres serializes two concurrent UPDATEs against the same row, and
+     * the second one to run re-evaluates its WHERE clause against the
+     * first's already-committed isRevoked: true — so at most one of the two
+     * ever reports count === 1. Whichever one doesn't is rejected here,
+     * inside the same transaction, before it can create a successor token.
+     */
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.refreshToken.updateMany({
+        where: { id: stored.id, isRevoked: false },
         data: { isRevoked: true },
-      }),
-      this.prisma.refreshToken.create({
+      });
+      if (claimed.count !== 1) {
+        throw new UnauthorizedException('Refresh token is invalid or expired');
+      }
+
+      return tx.refreshToken.create({
         data: {
           userId: stored.user.id,
           tokenHash: newTokenHash,
@@ -470,8 +490,8 @@ export class AuthService {
           role: stored.role,
           flatId: stored.flatId,
         },
-      }),
-    ]);
+      });
+    });
 
     return { accessToken, refreshToken: newRefreshRaw };
   }
