@@ -16,6 +16,7 @@ import {
   ApiResponse,
 } from '@nestjs/swagger';
 import { Request } from 'express';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
@@ -35,6 +36,15 @@ import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  // The global limit (100 req/min/IP — app.module.ts) is shared by every
+  // endpoint in the API and was never meant to be brute-force protection on
+  // its own; 100 password guesses/minute is not a meaningful barrier. This
+  // overrides just the 'default' throttler's limit for this route — everyone
+  // else keeps the global 100/min, login gets its own much tighter one.
+  // Per-IP, not per-account: locking out an *account* based on failed
+  // attempts would let an attacker lock a known victim out of their own
+  // login by deliberately failing it — worse than the problem it solves.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -54,6 +64,7 @@ export class AuthController {
     );
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Public()
   @Post('register-society')
   @HttpCode(HttpStatus.CREATED)
@@ -74,6 +85,7 @@ export class AuthController {
     );
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Public()
   @Post('join-society')
   @HttpCode(HttpStatus.CREATED)
@@ -176,6 +188,10 @@ export class AuthController {
     return { message: 'Password changed successfully' };
   }
 
+  // Strict: each call sends a real email (or, in dev, writes a live token to
+  // the log) — beyond brute-force, an unthrottled version of this is a way
+  // to spam a victim's inbox or burn the SMTP account's send quota.
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @Public()
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
@@ -188,6 +204,7 @@ export class AuthController {
     return { message: 'If that email is registered, a reset link has been sent.' };
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Public()
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
