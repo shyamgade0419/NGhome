@@ -21,7 +21,18 @@ export class ExpensesService {
     societyId: string,
     dto: CreateExpenseDto,
   ): Promise<string | undefined> {
-    if (dto.categoryId) return dto.categoryId;
+    if (dto.categoryId) {
+      // A normal foreign key only guarantees the category row exists
+      // somewhere — never trust a client-supplied id to already belong to
+      // this society. The name-based path just below is safe by
+      // construction (societyId_name is scoped to the caller's own
+      // society); this is the one place a raw id skips that.
+      const category = await this.prisma.expenseCategory.findFirst({
+        where: { id: dto.categoryId, societyId },
+      });
+      if (!category) throw new NotFoundException('Category not found in this society');
+      return category.id;
+    }
 
     const name = dto.category?.trim();
     if (!name) return undefined;
@@ -36,6 +47,11 @@ export class ExpensesService {
 
   async create(societyId: string, createdById: string, dto: CreateExpenseDto) {
     const categoryId = await this.resolveCategoryId(societyId, dto);
+
+    if (dto.accountId) {
+      const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId } });
+      if (!account) throw new NotFoundException('Account not found in this society');
+    }
 
     return this.prisma.expense.create({
       data: {

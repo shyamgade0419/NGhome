@@ -218,3 +218,38 @@ describe('FundsService — contribute', () => {
     ).rejects.toThrow(NotFoundException);
   });
 });
+
+describe('FundsService.create/update — cross-society accountId is rejected', () => {
+  function makePrismaForWrite(accountResult: unknown) {
+    return {
+      account: { findFirst: jest.fn().mockResolvedValue(accountResult) },
+      fund: {
+        create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: FUND_ID, ...data })),
+        update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: FUND_ID, ...data })),
+        findFirst: jest.fn().mockResolvedValue(makeFund(true)),
+      },
+    } as unknown as PrismaService;
+  }
+
+  it('create(): refuses an accountId from another society, and never creates the fund', async () => {
+    const prisma = makePrismaForWrite(null);
+    await expect(
+      new FundsService(prisma).create(SOCIETY_ID, { name: 'Corpus Fund', accountId: 'account-from-society-b' }),
+    ).rejects.toThrow(NotFoundException);
+    expect(prisma.fund.create).not.toHaveBeenCalled();
+  });
+
+  it('create(): accepts an accountId that genuinely belongs to this society', async () => {
+    const prisma = makePrismaForWrite({ id: 'account-1', societyId: SOCIETY_ID });
+    await new FundsService(prisma).create(SOCIETY_ID, { name: 'Corpus Fund', accountId: 'account-1' });
+    expect(prisma.fund.create).toHaveBeenCalled();
+  });
+
+  it('update(): refuses an accountId from another society, and never updates the fund', async () => {
+    const prisma = makePrismaForWrite(null);
+    await expect(
+      new FundsService(prisma).update(SOCIETY_ID, FUND_ID, { accountId: 'account-from-society-b' }),
+    ).rejects.toThrow(NotFoundException);
+    expect(prisma.fund.update).not.toHaveBeenCalled();
+  });
+});

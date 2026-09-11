@@ -11,6 +11,11 @@ export class FundsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(societyId: string, dto: CreateFundDto) {
+    if (dto.accountId) {
+      const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId } });
+      if (!account) throw new NotFoundException('Account not found in this society');
+    }
+
     return this.prisma.fund.create({
       data: {
         societyId,
@@ -140,6 +145,10 @@ export class FundsService {
 
   async update(societyId: string, id: string, dto: Partial<CreateFundDto>) {
     await this.findOne(societyId, id);
+    if (dto.accountId) {
+      const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId } });
+      if (!account) throw new NotFoundException('Account not found in this society');
+    }
     return this.prisma.fund.update({
       where: { id },
       data: {

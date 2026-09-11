@@ -9,6 +9,7 @@
  * everything as "Uncategorized".
  */
 
+import { NotFoundException } from '@nestjs/common';
 import { ExpensesService } from './expenses.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -26,6 +27,12 @@ function makePrisma() {
   const prisma = {
     expenseCategory: {
       upsert: jest.fn().mockResolvedValue({ id: CATEGORY_ID, name: 'MAINTENANCE' }),
+      // A client-supplied categoryId must belong to the caller's own
+      // society — see ExpensesService.resolveCategoryId.
+      findFirst: jest.fn().mockImplementation(({ where }: any) => Promise.resolve({ id: where.id, societyId: where.societyId })),
+    },
+    account: {
+      findFirst: jest.fn().mockImplementation(({ where }: any) => Promise.resolve({ id: where.id, societyId: where.societyId })),
     },
     expense: {
       create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'e1', ...data })),
@@ -102,5 +109,25 @@ describe('ExpensesService — create category resolution', () => {
 
     const [upsertArg] = (prisma.expenseCategory.upsert as jest.Mock).mock.calls[0];
     expect(upsertArg.where.societyId_name.name).toBe('MAINTENANCE');
+  });
+});
+
+describe('ExpensesService.create — cross-society foreign keys are rejected', () => {
+  it("refuses a categoryId that belongs to a different society, and never creates the expense", async () => {
+    const prisma = makePrisma();
+    (prisma.expenseCategory.findFirst as jest.Mock).mockResolvedValue(null); // not found in THIS society
+    await expect(
+      new ExpensesService(prisma).create(SOCIETY_ID, ACTOR_ID, { ...baseDto, categoryId: 'category-from-society-b' }),
+    ).rejects.toThrow(NotFoundException);
+    expect(prisma.expense.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses an accountId that belongs to a different society, and never creates the expense', async () => {
+    const prisma = makePrisma();
+    (prisma.account.findFirst as jest.Mock).mockResolvedValue(null);
+    await expect(
+      new ExpensesService(prisma).create(SOCIETY_ID, ACTOR_ID, { ...baseDto, accountId: 'account-from-society-b' }),
+    ).rejects.toThrow(NotFoundException);
+    expect(prisma.expense.create).not.toHaveBeenCalled();
   });
 });
