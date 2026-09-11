@@ -1,5 +1,6 @@
-import { Controller, Get } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import {
   HealthCheck,
   HealthCheckService,
@@ -9,6 +10,7 @@ import {
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
+import { PlatformAdminGuard } from '../common/guards/platform-admin.guard';
 import { SftpStorageService } from '../documents/sftp-storage.service';
 
 @Injectable()
@@ -58,13 +60,36 @@ export class HealthController {
   // above) — always 200, the body itself says ok/error. Reuses
   // SftpStorageService.checkStorage(), the same probe the boot log already
   // runs, so this reflects real connect+write capability, not just whether
-  // env vars are set. Never returns the private key or password — only what
-  // checkStorage() itself already returns (ok, home, base, or a
-  // human-readable reason with no credential material in it).
+  // env vars are set.
+  //
+  // Public, but deliberately thin and rate-limited: checkStorage() opens a
+  // real SFTP connection and does a write+delete round trip, so an
+  // unthrottled public endpoint would let anyone hammer ServerByt for free
+  // just by polling this. The public body is intentionally just ok/error —
+  // checkStorage()'s failure `reason` can include the account's actual home
+  // directory path (the remediation hint suggests a corrected
+  // SFTP_BASE_PATH using it), which has no business being visible to an
+  // unauthenticated caller. The full reason is available to a platform
+  // admin below.
   @Get('storage')
   @Public()
-  @ApiOperation({ summary: 'SFTP storage connectivity — informational, does not affect overall health status' })
+  @Throttle({ default: { limit: 6, ttl: 60_000 } })
+  @ApiOperation({ summary: 'SFTP storage connectivity (ok/error only) — does not affect overall health status' })
   async storageStatus() {
+    const result = await this.storage.checkStorage();
+    return { status: result.ok ? 'ok' : 'error', provider: 'sftp' };
+  }
+
+  // The detailed version of the same probe — base path and, on failure, the
+  // actual reason (which may include the SFTP account's home directory) —
+  // for whoever is actually debugging a storage outage. Platform-admin
+  // only, same throttle: this still opens a real SFTP connection.
+  @Get('storage/detail')
+  @UseGuards(PlatformAdminGuard)
+  @ApiBearerAuth()
+  @Throttle({ default: { limit: 6, ttl: 60_000 } })
+  @ApiOperation({ summary: 'SFTP storage connectivity, full diagnostic detail — platform admin only' })
+  async storageStatusDetail() {
     const result = await this.storage.checkStorage();
     return result.ok
       ? { status: 'ok', provider: 'sftp', base: result.base }
