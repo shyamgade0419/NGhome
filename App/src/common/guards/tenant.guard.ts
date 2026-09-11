@@ -43,6 +43,18 @@ export class TenantGuard implements CanActivate {
     // DB revalidation: membership must still be active and society must still be active.
     // This catches revoked memberships, deactivated accounts, and inactive societies
     // even when a valid JWT is still in circulation.
+    //
+    // The same lookup also makes flatId and role authoritative from the
+    // database rather than the token's snapshot at login/refresh time. An
+    // access token is good for JWT_ACCESS_EXPIRATION (minutes) and a
+    // refresh token for JWT_REFRESH_EXPIRATION (days) — without this, a
+    // resident moved from flat 101 to flat 202, or an admin demoted to
+    // resident, keeps their old flatId/role for however much of that window
+    // remains, because nothing before this guard ever re-reads the
+    // membership row. request.user is overwritten in place (not just
+    // checked) specifically so every @CurrentUser()/@SocietyId() consumer
+    // downstream — controllers included — sees the current values, not
+    // what was true when the token was issued.
     if (user.membershipId) {
       const membership = await this.prisma.societyMembership.findFirst({
         where: {
@@ -58,6 +70,9 @@ export class TenantGuard implements CanActivate {
       if (!membership) {
         throw new ForbiddenException('Membership is no longer active');
       }
+
+      user.flatId = membership.flatId ?? undefined;
+      user.currentRole = membership.role;
     }
 
     // Attach to request so controllers/services can read it via @SocietyId()
