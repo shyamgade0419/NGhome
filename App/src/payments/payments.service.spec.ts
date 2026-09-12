@@ -175,7 +175,7 @@ describe('PaymentsService.submit — proof attachment', () => {
  * balance and no ledger, and nothing surfaced the drift.
  */
 
-import { Prisma } from '@prisma/client';
+import { Prisma, PaymentStatus } from '@prisma/client';
 
 const FLAT_ID = 'flat-1';
 const BILL_ID = 'bill-1';
@@ -199,12 +199,21 @@ function makeSubmitServices(opts: { accounts: { id: string }[]; verificationRequ
   const tx = {
     paymentSubmission: {
       create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: PAYMENT_ID, ...data })),
+      // creditAndApprove's atomic claim — a no-op guard for the create
+      // path (nothing else can see this just-created row yet), so it
+      // always succeeds here.
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       // A real Prisma update() returns the full row, not just the changed
       // fields — the mock merges over a realistic base row so fields the
       // service reads afterwards (amount, for the notification body) are
-      // there, the same as they'd be in production.
+      // there, the same as they'd be in production. status: APPROVED here
+      // reflects reality: by the time creditAndApprove's own update() call
+      // runs (linking transactionId), the earlier atomic claim (updateMany)
+      // already committed that status change within this same transaction.
       update: jest.fn().mockImplementation(({ data }: any) =>
-        Promise.resolve({ id: PAYMENT_ID, amount: new Prisma.Decimal(2500), flatId: FLAT_ID, ...data }),
+        Promise.resolve({
+          id: PAYMENT_ID, status: PaymentStatus.APPROVED, amount: new Prisma.Decimal(2500), flatId: FLAT_ID, ...data,
+        }),
       ),
     },
     document: { create: jest.fn().mockResolvedValue({ id: 'doc-1' }) },
@@ -213,6 +222,10 @@ function makeSubmitServices(opts: { accounts: { id: string }[]; verificationRequ
     },
     transaction: { create: jest.fn().mockResolvedValue({ id: 'txn-1' }) },
     maintenanceBill: {
+      // tryAutoApproveExisting's own bill lookup, inside its transaction —
+      // separate from the top-level prisma.maintenanceBill.findFirst used
+      // by the create path's pre-transaction validation.
+      findFirst: jest.fn().mockResolvedValue(bill),
       // The atomic conditional claim (WHERE pendingAmount >= amount) — see
       // PaymentsService.submit. submitDto's amount (2500) never exceeds
       // this mock bill's pendingAmount (2500), so this always claims.
@@ -242,10 +255,18 @@ function makeSubmitServices(opts: { accounts: { id: string }[]; verificationRequ
       // the top-level client (outside the rolled-back transaction).
       create: jest.fn(),
     },
+    // attachProofIfMissing's "does this payment already have a proof"
+    // check, when a resume path runs — no document unless a test says
+    // otherwise.
+    document: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({ id: 'doc-resume-1' }) },
     $transaction: jest.fn(async (cb: any) => cb(tx)),
   } as unknown as PrismaService;
 
-  const storage = { upload: jest.fn().mockResolvedValue(undefined) } as unknown as SftpStorageService;
+  const storage = {
+    upload: jest.fn().mockResolvedValue(undefined),
+    remove: jest.fn().mockResolvedValue(undefined),
+    getBasePath: jest.fn().mockReturnValue('/ng-home-documents'),
+  } as unknown as SftpStorageService;
   const notifications = notificationsStub();
   return {
     service: new PaymentsService(prisma, storage, notifications, new StoragePathService(storage)),
@@ -349,15 +370,32 @@ describe('PaymentsService — auto-approve lands the money', () => {
     expect(billArg.data).toEqual({ paidAmount: { increment: expect.anything() } });
   });
 
-  it('is created PENDING and only flipped to APPROVED after the account/transaction/bill writes, never before', async () => {
-    const { service, tx } = makeSubmitServices({ accounts: [{ id: 'account-1' }] });
-    await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
+  it(
+    'is created PENDING, then atomically claimed (status → APPROVED) before the account/transaction/bill writes ' +
+      '— never durably visible as APPROVED without them, since a later failure rolls back the whole transaction',
+    async () => {
+      const { service, tx } = makeSubmitServices({ accounts: [{ id: 'account-1' }] });
+      await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
 
-    const [createArg] = tx.paymentSubmission.create.mock.calls[0];
-    expect(createArg.data.status).toBe('PENDING');
-    const [updateArg] = tx.paymentSubmission.update.mock.calls[0];
-    expect(updateArg.data.status).toBe('APPROVED');
-  });
+      const [createArg] = tx.paymentSubmission.create.mock.calls[0];
+      expect(createArg.data.status).toBe('PENDING');
+
+      // creditAndApprove's atomic claim — the same conditional transition
+      // approve() uses, run here too even though nothing else can see this
+      // just-created row yet within the same still-open transaction; see
+      // creditAndApprove's own doc comment for why.
+      const [claimArg] = tx.paymentSubmission.updateMany.mock.calls[0];
+      expect(claimArg.where).toMatchObject({ status: { in: [PaymentStatus.PENDING, PaymentStatus.UNDER_REVIEW] }, transactionId: null });
+      expect(claimArg.data.status).toBe('APPROVED');
+
+      // The claim happens before any money moves — but that's provable
+      // safety, not merely ordering, because a thrown failure anywhere
+      // after it (see the "never leaves a false APPROVED payment" test
+      // below) rolls back this ENTIRE transaction, claim included.
+      expect(tx.paymentSubmission.updateMany.mock.invocationCallOrder[0])
+        .toBeLessThan(tx.account.update.mock.invocationCallOrder[0]);
+    },
+  );
 
   it('links transactionId onto the payment — an APPROVED payment is never left without one', async () => {
     const { service, tx } = makeSubmitServices({ accounts: [{ id: 'account-1' }] });
@@ -415,28 +453,112 @@ describe('PaymentsService — auto-approve lands the money', () => {
  * point would leave a payment behind while telling the resident it failed.
  */
 describe('PaymentsService.submit — idempotency (same flat, same UTR)', () => {
-  it('returns the existing payment instead of creating a second one when a resident double-taps Submit', async () => {
-    const existing = { id: 'payment-original', status: 'PENDING' };
-    const { service, prisma } = makeSubmitServices({ accounts: [] });
+  it('an already-APPROVED payment is returned exactly as-is — no new row, no new financial event', async () => {
+    const existing = { id: 'payment-original', status: PaymentStatus.APPROVED, transactionId: 'txn-original' };
+    const { service, prisma, tx } = makeSubmitServices({ accounts: [{ id: 'account-1' }] });
     (prisma.paymentSubmission.findFirst as jest.Mock).mockResolvedValue(existing);
 
     const result = await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
 
     expect(result).toBe(existing);
     expect(prisma.paymentSubmission.create).not.toHaveBeenCalled();
+    expect(tx.account.update).not.toHaveBeenCalled();
+    expect(tx.transaction.create).not.toHaveBeenCalled();
   });
 
-  it('does not touch storage on the deduplicated (second) submission, even if a proof file is attached again', async () => {
-    const { service, prisma, storage } = (() => {
-      const s = makeSubmitServices({ accounts: [] });
-      (s.prisma.paymentSubmission.findFirst as jest.Mock).mockResolvedValue({ id: 'payment-original' });
-      return { ...s, storage: { upload: jest.fn() } as unknown as SftpStorageService };
-    })();
+  it.each([PaymentStatus.REJECTED, PaymentStatus.CANCELLED])(
+    'an already-%s payment is returned exactly as-is — never silently reopened by a resubmission',
+    async (status) => {
+      const existing = { id: 'payment-original', status };
+      const { service, prisma, tx } = makeSubmitServices({ accounts: [{ id: 'account-1' }] });
+      (prisma.paymentSubmission.findFirst as jest.Mock).mockResolvedValue(existing);
+
+      const result = await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
+
+      expect(result).toBe(existing);
+      expect(prisma.paymentSubmission.create).not.toHaveBeenCalled();
+      expect(tx.account.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it("PENDING + missing proof: a retry that supplies one attaches it to the EXISTING payment, never a new row", async () => {
+    const existing = { id: 'payment-original', status: PaymentStatus.PENDING, transactionId: null, maintenanceBillId: null };
+    const { service, prisma } = makeSubmitServices({ accounts: [] });
+    (prisma.paymentSubmission.findFirst as jest.Mock).mockResolvedValue(existing);
+    (prisma.document.findFirst as jest.Mock).mockResolvedValue(null); // no proof attached yet
+
     await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto, {
       originalname: 'receipt.jpg', size: 10, mimetype: 'image/jpeg', buffer: JPEG_BYTES,
     });
-    expect((storage.upload as jest.Mock)).not.toHaveBeenCalled();
+
     expect(prisma.paymentSubmission.create).not.toHaveBeenCalled();
+    expect(prisma.document.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ linkedEntityId: 'payment-original' }) }),
+    );
+  });
+
+  it('PENDING + already has a proof: a retry that supplies another one is not attached again', async () => {
+    const existing = { id: 'payment-original', status: PaymentStatus.PENDING, transactionId: null, maintenanceBillId: null };
+    const { service, prisma } = makeSubmitServices({ accounts: [] });
+    (prisma.paymentSubmission.findFirst as jest.Mock).mockResolvedValue(existing);
+    (prisma.document.findFirst as jest.Mock).mockResolvedValue({ id: 'doc-existing' }); // already has one
+
+    await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto, {
+      originalname: 'receipt.jpg', size: 10, mimetype: 'image/jpeg', buffer: JPEG_BYTES,
+    });
+
+    expect(prisma.document.create).not.toHaveBeenCalled();
+  });
+
+  it(
+    'PENDING + incomplete financial processing: a resume that now qualifies for auto-approval completes it exactly once',
+    async () => {
+      const existing = {
+        id: 'payment-original',
+        status: PaymentStatus.PENDING,
+        transactionId: null,
+        maintenanceBillId: BILL_ID,
+        utrNumber: submitDto.utrNumber,
+        amount: new Prisma.Decimal(2500),
+        paymentDate: new Date('2026-09-09'),
+      };
+      const { service, prisma, tx, notifications } = makeSubmitServices({ accounts: [{ id: 'account-1' }] });
+      (prisma.paymentSubmission.findFirst as jest.Mock).mockResolvedValue(existing);
+
+      const result: any = await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
+
+      expect(prisma.paymentSubmission.create).not.toHaveBeenCalled(); // never a second row
+      expect(tx.paymentSubmission.updateMany).toHaveBeenCalledTimes(1); // exactly one atomic claim
+      expect(tx.account.update).toHaveBeenCalledTimes(1); // exactly one credit
+      expect(tx.transaction.create).toHaveBeenCalledTimes(1); // exactly one ledger row
+      expect(result.autoApproved).toBe(true);
+      expect(notifications.sendToUsers).toHaveBeenCalledWith(
+        SOCIETY_ID, [OWNER_ID], expect.objectContaining({ type: 'PAYMENT_APPROVED' }),
+      );
+    },
+  );
+
+  it('PENDING but no longer eligible (verification now required) resumes to exactly the same PENDING state, no error, no financial touch', async () => {
+    const existing = {
+      id: 'payment-original',
+      status: PaymentStatus.PENDING,
+      transactionId: null,
+      maintenanceBillId: BILL_ID,
+      utrNumber: submitDto.utrNumber,
+      amount: new Prisma.Decimal(2500),
+      paymentDate: new Date('2026-09-09'),
+    };
+    const { service, prisma, tx } = makeSubmitServices({
+      accounts: [{ id: 'account-1' }],
+      verificationRequired: true, // no longer auto-approve-eligible
+    });
+    (prisma.paymentSubmission.findFirst as jest.Mock).mockResolvedValue(existing);
+
+    const result = await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
+
+    expect(result).toBe(existing);
+    expect(tx.account.update).not.toHaveBeenCalled();
+    expect(tx.transaction.create).not.toHaveBeenCalled();
   });
 
   it('creates a new payment as normal when no UTR is given (cash/cheque are never deduplicated)', async () => {

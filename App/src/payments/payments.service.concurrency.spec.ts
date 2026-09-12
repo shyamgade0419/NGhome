@@ -415,3 +415,117 @@ describe('PaymentsService.submit — the overpayment guard under a genuine joint
     },
   );
 });
+
+/**
+ * The resume path (resumeExistingSubmission / tryAutoApproveExisting /
+ * creditAndApprove) is the newer of the two ways a payment gets
+ * auto-approved — a retry against a row that already exists, rather than
+ * the fresh-creation path above. It shares creditAndApprove's atomic claim
+ * with the create path, but unlike the create path (where nothing else can
+ * see the row until the transaction commits), a resume's target row is
+ * already visible to every other concurrent caller — an admin's manual
+ * approve(), or another concurrent resume of the identical UTR. These
+ * tests are the direct proof for the requirement that retrying/racing a
+ * payment submission can never create a second financial Transaction.
+ */
+describe('PaymentsService.submit — concurrent resume of an existing PENDING payment', () => {
+  it(
+    'two concurrent retries of the same (flat, UTR) against an existing PENDING, auto-approve-eligible payment: ' +
+      'exactly one account credit, one Transaction, one APPROVED payment — never two',
+    async () => {
+      const { service, accounts, transactions, payments, configApi, seedAccount, seedBill, seedPayment } =
+        makeStatefulServices();
+      seedAccount(ACCOUNT_ID, { currentBalance: new Prisma.Decimal(100000) });
+      seedBill(BILL_ID);
+      seedPayment('payment-resume-1', {
+        amount: new Prisma.Decimal(2500),
+        status: PaymentStatus.PENDING,
+        utrNumber: 'utr-resume-race',
+        maintenanceBillId: BILL_ID,
+        transactionId: null,
+        paymentDate: new Date('2026-09-09'),
+      });
+      configApi.findUnique.mockResolvedValue({ paymentVerificationRequired: false });
+
+      const dto = {
+        maintenanceBillId: BILL_ID, amount: 2500, paymentDate: '2026-09-09', paymentMethod: 'UPI' as any,
+        utrNumber: 'utr-resume-race',
+      };
+
+      const results = await Promise.allSettled([
+        service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, dto),
+        service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, dto),
+      ]);
+
+      expect(results.every((r) => r.status === 'fulfilled')).toBe(true); // the loser just gets the same (now-approved) row back, not an error
+      expect(accounts.get(ACCOUNT_ID).currentBalance.toString()).toBe('102500'); // NOT 105000
+      expect(transactions).toHaveLength(1); // NOT 2
+      expect(payments.get('payment-resume-1').status).toBe(PaymentStatus.APPROVED);
+      expect(payments.get('payment-resume-1').transactionId).toBe(transactions[0].id);
+      // Still exactly the one payment row — the resume path never creates a second.
+      expect([...payments.values()].filter((p) => p.utrNumber === 'utr-resume-race')).toHaveLength(1);
+    },
+  );
+
+  it('five concurrent retries of the same eligible PENDING payment: still exactly one credit and one Transaction', async () => {
+    const { service, accounts, transactions, configApi, seedAccount, seedBill, seedPayment } = makeStatefulServices();
+    seedAccount(ACCOUNT_ID, { currentBalance: new Prisma.Decimal(100000) });
+    seedBill(BILL_ID);
+    seedPayment('payment-resume-2', {
+      amount: new Prisma.Decimal(2500),
+      status: PaymentStatus.PENDING,
+      utrNumber: 'utr-resume-race-2',
+      maintenanceBillId: BILL_ID,
+      transactionId: null,
+      paymentDate: new Date('2026-09-09'),
+    });
+    configApi.findUnique.mockResolvedValue({ paymentVerificationRequired: false });
+
+    const dto = {
+      maintenanceBillId: BILL_ID, amount: 2500, paymentDate: '2026-09-09', paymentMethod: 'UPI' as any,
+      utrNumber: 'utr-resume-race-2',
+    };
+
+    await Promise.allSettled(Array.from({ length: 5 }, () => service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, dto)));
+
+    expect(accounts.get(ACCOUNT_ID).currentBalance.toString()).toBe('102500');
+    expect(transactions).toHaveLength(1);
+  });
+
+  it(
+    "a resident's retry racing an admin's manual approve() of the SAME payment: exactly one of the two effects " +
+      'wins, never both — the loser sees the winner\'s already-committed result, not a second credit',
+    async () => {
+      const { service, accounts, transactions, payments, configApi, seedAccount, seedBill, seedPayment } =
+        makeStatefulServices();
+      seedAccount(ACCOUNT_ID, { currentBalance: new Prisma.Decimal(100000) });
+      seedBill(BILL_ID);
+      seedPayment('payment-resume-3', {
+        amount: new Prisma.Decimal(2500),
+        status: PaymentStatus.PENDING,
+        utrNumber: 'utr-resume-vs-approve',
+        maintenanceBillId: BILL_ID,
+        transactionId: null,
+        paymentDate: new Date('2026-09-09'),
+      });
+      configApi.findUnique.mockResolvedValue({ paymentVerificationRequired: false });
+
+      const dto = {
+        maintenanceBillId: BILL_ID, amount: 2500, paymentDate: '2026-09-09', paymentMethod: 'UPI' as any,
+        utrNumber: 'utr-resume-vs-approve',
+      };
+
+      await Promise.allSettled([
+        service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, dto), // resident's retry (resume path)
+        service.approve(SOCIETY_ID, 'payment-resume-3', ADMIN_ID, ACCOUNT_ID), // admin's manual approve()
+      ]);
+
+      // Both may fulfil — a resume that lost the claim returns the
+      // already-approved row rather than erroring — but the money only
+      // ever moved once.
+      expect(accounts.get(ACCOUNT_ID).currentBalance.toString()).toBe('102500');
+      expect(transactions).toHaveLength(1);
+      expect(payments.get('payment-resume-3').status).toBe(PaymentStatus.APPROVED);
+    },
+  );
+});

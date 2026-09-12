@@ -49,12 +49,20 @@ export class PaymentsService {
      * one was actually submitted); the unique index below is the same
      * check enforced at the database level for the case where two retries
      * race each other past this lookup.
+     *
+     * A found row isn't just handed back as-is — see resumeExistingSubmission
+     * for the explicit rule per status: an early version of this just
+     * returned whatever it found, which silently dropped a retry's proof
+     * file and never gave a PENDING payment eligible for auto-approval a
+     * second chance to actually get approved.
      */
     if (dto.utrNumber) {
       const existing = await this.prisma.paymentSubmission.findFirst({
         where: { societyId, flatId, utrNumber: dto.utrNumber },
       });
-      if (existing) return existing;
+      if (existing) {
+        return this.resumeAndReturn(societyId, flatId, userId, proofFile, existing);
+      }
     }
 
     let bill: Awaited<ReturnType<typeof this.prisma.maintenanceBill.findFirst>> = null;
@@ -135,7 +143,6 @@ export class PaymentsService {
     }
 
     const amount = new Prisma.Decimal(dto.amount);
-    const now = new Date();
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
@@ -195,106 +202,22 @@ export class PaymentsService {
         // Everything approve() does, minus the human — the account credit,
         // the Transaction, and linking transactionId back onto the payment,
         // all inside this same transaction, so the money always lands
-        // somewhere before the payment can read as APPROVED.
+        // somewhere before the payment can read as APPROVED. creditAndApprove
+        // is shared with the resume path below (a retry against an existing
+        // PENDING payment) — see it for why a claim runs here too even
+        // though nothing else can see this just-created row yet.
         if (autoApprove && bill && soleAccountId) {
-          const updatedAccount = await tx.account.update({
-            where: { id: soleAccountId },
-            data: { currentBalance: { increment: amount } },
-          });
-
-          const transaction = await tx.transaction.create({
-            data: {
-              societyId,
-              accountId: soleAccountId,
-              transactionType: 'CREDIT',
-              amount,
-              transactionDate: new Date(dto.paymentDate),
-              description: `Payment received (auto-approved)${dto.utrNumber ? ` — UTR ${dto.utrNumber}` : ''}`,
-              linkedEntityType: 'PaymentSubmission',
-              linkedEntityId: payment.id,
-              balanceAfter: updatedAccount.currentBalance,
-              createdById: userId,
-            },
-          });
-
-          /**
-           * Atomically claims the right to apply this amount, not just an
-           * increment. A plain `paidAmount: { increment: amount }` is
-           * itself atomic against losing an update, but says nothing about
-           * whether the bill can still absorb this amount — two different
-           * payments for the same bill, each individually within the
-           * outstanding balance at the moment they were checked, can both
-           * pass a separate "read pending, then increment" check and still
-           * jointly push paidAmount past totalAmount, because neither
-           * check accounts for the other's concurrent write. Folding the
-           * check into the WHERE clause of the increment itself closes
-           * that: Postgres serializes two concurrent UPDATEs against the
-           * same row, so the second one's WHERE (pendingAmount >= amount)
-           * is evaluated against the first's already-committed, already-
-           * reduced pendingAmount — at most one of two such payments that
-           * would jointly overpay ever reports count === 1.
-           */
-          const claimed = await tx.maintenanceBill.updateMany({
-            where: { id: bill.id, pendingAmount: { gte: amount } },
-            data: { paidAmount: { increment: amount } },
-          });
-          if (claimed.count !== 1) {
-            throw new BadRequestException(
-              'Payment amount exceeds the outstanding balance on this bill.',
-            );
-          }
-          const updatedBill = await tx.maintenanceBill.findUnique({ where: { id: bill.id } });
-          if (!updatedBill) throw new NotFoundException('Bill not found');
-          const pending = updatedBill.totalAmount.minus(updatedBill.paidAmount);
-          await tx.maintenanceBill.update({
-            where: { id: bill.id },
-            data: {
-              pendingAmount: pending.lessThan(0) ? new Prisma.Decimal(0) : pending,
-              isPaid: pending.lessThanOrEqualTo(0),
-            },
-          });
-
-          payment = await tx.paymentSubmission.update({
-            where: { id: payment.id },
-            data: {
-              status: PaymentStatus.APPROVED,
-              reviewedAt: now,
-              approvedAt: now,
-              transactionId: transaction.id,
-            },
-          });
-
-          // Same audit trail a manual approve() gets — this payment was
-          // approved by the auto-approve rule, not left silently unlogged.
-          await tx.auditLog.create({
-            data: {
-              societyId,
-              actorId: userId,
-              action: 'PAYMENT_APPROVED',
-              entityType: 'PaymentSubmission',
-              entityId: payment.id,
-              newValues: { status: 'APPROVED', transactionId: transaction.id, method: 'auto' } as Prisma.InputJsonValue,
-            },
-          });
+          const approved = await this.creditAndApprove(
+            tx, societyId, payment, bill.id, soleAccountId, userId, 'auto',
+          );
+          if (approved) payment = approved;
         }
 
         return payment;
       });
 
       if (result.status === PaymentStatus.APPROVED) {
-        // Outside the transaction, and best-effort — the same pattern
-        // approve() uses: a notification failing must never undo an
-        // approval that already committed.
-        await this.notifications.notifyQuietly(
-          () =>
-            this.notifications.sendToUsers(societyId, [userId], {
-              title: 'Payment approved',
-              body: `Your payment of ₹${result.amount.toString()} has been received and recorded.`,
-              type: 'PAYMENT_APPROVED',
-              data: { paymentId: result.id },
-            }),
-          `payment ${result.id} auto-approved`,
-        );
+        await this.notifyAutoApproved(societyId, userId, result);
         return { ...result, autoApproved: true };
       }
       return result;
@@ -318,10 +241,330 @@ export class PaymentsService {
         const existing = await this.prisma.paymentSubmission.findFirst({
           where: { societyId, flatId, utrNumber: dto.utrNumber },
         });
-        if (existing) return existing;
+        // Same resume rule as the pre-check above — the loser of this race
+        // still gets a chance to hand off whatever it uniquely had (a proof
+        // file the winner's own attempt never supplied) to the row that
+        // actually won, rather than that proof simply being deleted a few
+        // lines above and never seen again.
+        if (existing) return this.resumeAndReturn(societyId, flatId, userId, proofFile, existing);
       }
       throw err;
     }
+  }
+
+  /**
+   * What a resubmission of an already-known (flatId, UTR) pair does,
+   * broken out by the existing row's status — an explicit rule per state,
+   * not "return whatever's there":
+   *
+   *  - APPROVED / REJECTED / CANCELLED: the outcome for this UTR is
+   *    already decided. Return the existing record as-is. Never create a
+   *    second PaymentSubmission or a second financial Transaction for a
+   *    UTR that already has one (REJECTED/CANCELLED intentionally do NOT
+   *    get a fresh attempt — a resident whose payment was rejected raises
+   *    a new payment with a new UTR if they pay again; silently reopening
+   *    a rejected UTR would let a resubmission bypass the reviewer who
+   *    rejected it).
+   *  - PENDING / UNDER_REVIEW: still open. Two things the *first* attempt
+   *    may not have finished get a chance to complete now, without ever
+   *    creating a second row or a second Transaction:
+   *      (a) missing proof — if this retry supplies one and the existing
+   *          row has none yet, attach it.
+   *      (b) incomplete financial processing — if the row was never
+   *          linked to a Transaction and it still qualifies for
+   *          auto-approval, finish that now via the exact same atomic
+   *          claim approve() itself uses, so a concurrent admin approve()
+   *          or another concurrent resume can never both apply it.
+   */
+  private async resumeExistingSubmission(
+    societyId: string,
+    flatId: string,
+    userId: string,
+    proofFile: { originalname: string; size: number; mimetype: string; buffer: Buffer } | undefined,
+    existing: NonNullable<Awaited<ReturnType<typeof this.prisma.paymentSubmission.findFirst>>>,
+  ): Promise<{ payment: typeof existing; justAutoApproved: boolean }> {
+    if (
+      existing.status === PaymentStatus.APPROVED
+      || existing.status === PaymentStatus.REJECTED
+      || existing.status === PaymentStatus.CANCELLED
+    ) {
+      return { payment: existing, justAutoApproved: false };
+    }
+
+    let attachedProof = false;
+    if (proofFile) {
+      try {
+        await this.attachProofIfMissing(societyId, flatId, userId, existing.id, proofFile);
+        attachedProof = true;
+      } catch {
+        // Best-effort. A resident retrying "did my payment go through?"
+        // must still get their existing payment back even if attaching the
+        // proof this time around failed (SFTP unavailable, say) — that's
+        // no worse than the original attempt's own proof having failed.
+      }
+    }
+
+    if (!existing.transactionId) {
+      const approved = await this.tryAutoApproveExisting(societyId, userId, existing);
+      if (approved) return { payment: approved, justAutoApproved: true };
+    }
+
+    if (attachedProof) {
+      // Something actually changed in the DB (a new Document is now
+      // linked) — re-read so the caller's response reflects it, rather
+      // than the stale snapshot taken before this call.
+      return { payment: await this.findOne(societyId, existing.id), justAutoApproved: false };
+    }
+
+    return { payment: existing, justAutoApproved: false };
+  }
+
+  /** submit()'s two resume call sites share this: run the state machine
+   *  above, send the same "payment approved" notification a fresh
+   *  auto-approve gets if this resume is what finally completed it, and
+   *  shape the return value the same way the create path does. */
+  private async resumeAndReturn(
+    societyId: string,
+    flatId: string,
+    userId: string,
+    proofFile: { originalname: string; size: number; mimetype: string; buffer: Buffer } | undefined,
+    existing: NonNullable<Awaited<ReturnType<typeof this.prisma.paymentSubmission.findFirst>>>,
+  ) {
+    const { payment, justAutoApproved } = await this.resumeExistingSubmission(
+      societyId, flatId, userId, proofFile, existing,
+    );
+    if (justAutoApproved) {
+      await this.notifyAutoApproved(societyId, userId, payment);
+      return { ...payment, autoApproved: true };
+    }
+    return payment;
+  }
+
+  /**
+   * Attempts to finish auto-approving an EXISTING PENDING/UNDER_REVIEW
+   * payment that was never linked to a Transaction — re-evaluating
+   * eligibility against current config/account state, not whatever was
+   * true when it was first submitted. Returns null (never throws) if it
+   * doesn't currently qualify, or if it loses a race to something else
+   * that got there first (a concurrent admin approve(), or another
+   * concurrent resume of the same UTR) — either way the payment is simply
+   * left exactly as it was, safe to try again later.
+   */
+  private async tryAutoApproveExisting(
+    societyId: string,
+    actorId: string,
+    payment: {
+      id: string;
+      amount: Prisma.Decimal;
+      utrNumber: string | null;
+      paymentDate: Date;
+      maintenanceBillId: string | null;
+    },
+  ) {
+    if (!payment.maintenanceBillId || !payment.utrNumber) return null;
+
+    const config = await this.prisma.societyConfiguration.findUnique({
+      where: { societyId },
+      select: { paymentVerificationRequired: true },
+    });
+    if (config?.paymentVerificationRequired !== false) return null;
+
+    const accounts = await this.prisma.account.findMany({
+      where: { societyId, isActive: true },
+      select: { id: true },
+    });
+    if (accounts.length !== 1) return null;
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const bill = await tx.maintenanceBill.findFirst({
+          where: { id: payment.maintenanceBillId!, societyId },
+        });
+        if (!bill || bill.isPaid) return null;
+        return this.creditAndApprove(tx, societyId, payment, bill.id, accounts[0].id, actorId, 'auto-resume');
+      });
+    } catch {
+      // Including the overpayment guard inside creditAndApprove — a bill
+      // that no longer has room for this amount is not this caller's
+      // problem to surface as an error; the payment just stays PENDING for
+      // manual review, exactly as if this resume attempt hadn't run.
+      return null;
+    }
+  }
+
+  /**
+   * Shared financial mechanics for approving a payment: atomically claim
+   * it, credit the account, write the ledger Transaction, atomically claim
+   * and update the linked bill, and audit-log it. Used by both submit()'s
+   * create-path auto-approve (where the claim is a no-op — the row was
+   * just created in this same still-open transaction, so nothing else can
+   * have touched it yet) and tryAutoApproveExisting's resume-path (where
+   * the claim is the actual safety mechanism, since the row already
+   * exists and a concurrent approve() or another concurrent resume could
+   * be racing this one). Returns null if the claim is lost; throws (and so
+   * rolls back everything this call already did, including the claim) if
+   * the bill can no longer absorb the amount.
+   */
+  private async creditAndApprove(
+    tx: Prisma.TransactionClient,
+    societyId: string,
+    payment: { id: string; amount: Prisma.Decimal; utrNumber: string | null; paymentDate: Date },
+    billId: string,
+    accountId: string,
+    actorId: string,
+    method: 'auto' | 'auto-resume',
+  ) {
+    const now = new Date();
+
+    const claimed = await tx.paymentSubmission.updateMany({
+      where: {
+        id: payment.id,
+        status: { in: [PaymentStatus.PENDING, PaymentStatus.UNDER_REVIEW] },
+        transactionId: null,
+      },
+      data: { status: PaymentStatus.APPROVED, reviewedAt: now, approvedAt: now },
+    });
+    if (claimed.count !== 1) return null;
+
+    const updatedAccount = await tx.account.update({
+      where: { id: accountId },
+      data: { currentBalance: { increment: payment.amount } },
+    });
+
+    const transaction = await tx.transaction.create({
+      data: {
+        societyId,
+        accountId,
+        transactionType: 'CREDIT',
+        amount: payment.amount,
+        transactionDate: payment.paymentDate,
+        description: `Payment received (auto-approved)${payment.utrNumber ? ` — UTR ${payment.utrNumber}` : ''}`,
+        linkedEntityType: 'PaymentSubmission',
+        linkedEntityId: payment.id,
+        balanceAfter: updatedAccount.currentBalance,
+        createdById: actorId,
+      },
+    });
+
+    /**
+     * Atomically claims the right to apply this amount, not just an
+     * increment. A plain `paidAmount: { increment: amount }` is itself
+     * atomic against losing an update, but says nothing about whether the
+     * bill can still absorb this amount — two different payments for the
+     * same bill, each individually within the outstanding balance at the
+     * moment they were checked, can both pass a separate "read pending,
+     * then increment" check and still jointly push paidAmount past
+     * totalAmount, because neither check accounts for the other's
+     * concurrent write. Folding the check into the WHERE clause of the
+     * increment itself closes that: Postgres serializes two concurrent
+     * UPDATEs against the same row, so the second one's WHERE
+     * (pendingAmount >= amount) is evaluated against the first's already-
+     * committed, already-reduced pendingAmount — at most one of two such
+     * payments that would jointly overpay ever reports count === 1.
+     */
+    const billClaim = await tx.maintenanceBill.updateMany({
+      where: { id: billId, pendingAmount: { gte: payment.amount } },
+      data: { paidAmount: { increment: payment.amount } },
+    });
+    if (billClaim.count !== 1) {
+      throw new BadRequestException('Payment amount exceeds the outstanding balance on this bill.');
+    }
+    const updatedBill = await tx.maintenanceBill.findUnique({ where: { id: billId } });
+    if (!updatedBill) throw new NotFoundException('Bill not found');
+    const pending = updatedBill.totalAmount.minus(updatedBill.paidAmount);
+    await tx.maintenanceBill.update({
+      where: { id: billId },
+      data: {
+        pendingAmount: pending.lessThan(0) ? new Prisma.Decimal(0) : pending,
+        isPaid: pending.lessThanOrEqualTo(0),
+      },
+    });
+
+    const updatedPayment = await tx.paymentSubmission.update({
+      where: { id: payment.id },
+      data: { transactionId: transaction.id },
+    });
+
+    // Same audit trail a manual approve() gets — this payment was approved
+    // by the auto-approve rule, not left silently unlogged.
+    await tx.auditLog.create({
+      data: {
+        societyId,
+        actorId,
+        action: 'PAYMENT_APPROVED',
+        entityType: 'PaymentSubmission',
+        entityId: payment.id,
+        newValues: { status: 'APPROVED', transactionId: transaction.id, method } as Prisma.InputJsonValue,
+      },
+    });
+
+    return updatedPayment;
+  }
+
+  /**
+   * Attaches a proof file to an already-existing payment (a resume, not a
+   * fresh submission). Best-effort race guard, same tolerance the rest of
+   * this file accepts for pre-transaction network I/O: a genuinely
+   * simultaneous double-resume could still both pass the "does one already
+   * exist" check and both upload a proof for the same payment. That's a
+   * harmless redundant file, never a financial duplicate — getProofFile()
+   * already returns the most recent when more than one exists.
+   */
+  private async attachProofIfMissing(
+    societyId: string,
+    flatId: string,
+    userId: string,
+    paymentId: string,
+    proofFile: { originalname: string; size: number; mimetype: string; buffer: Buffer },
+  ) {
+    const already = await this.prisma.document.findFirst({
+      where: { linkedEntityType: 'PaymentSubmission', linkedEntityId: paymentId },
+    });
+    if (already) return already;
+
+    const remotePath = this.paths.paymentProof(societyId, flatId, this.paths.storedFileName(proofFile.originalname));
+    await this.storage.upload(proofFile.buffer, remotePath);
+    try {
+      return await this.prisma.document.create({
+        data: {
+          societyId,
+          uploadedById: userId,
+          title: `Payment proof — ${paymentId}`,
+          fileName: proofFile.originalname,
+          fileKey: remotePath,
+          fileSize: proofFile.size,
+          mimeType: proofFile.mimetype,
+          storageProvider: 'sftp',
+          accessLevel: DocumentAccessLevel.ADMIN_ONLY,
+          linkedEntityType: 'PaymentSubmission',
+          linkedEntityId: paymentId,
+          payments: { connect: { id: paymentId } },
+        },
+      });
+    } catch (err) {
+      await this.storage.remove(remotePath);
+      throw err;
+    }
+  }
+
+  /** Outside any transaction, and best-effort — the same pattern approve()
+   *  uses: a notification failing must never undo an approval that
+   *  already committed. */
+  private async notifyAutoApproved(
+    societyId: string,
+    userId: string,
+    payment: { id: string; amount: Prisma.Decimal },
+  ) {
+    await this.notifications.notifyQuietly(
+      () =>
+        this.notifications.sendToUsers(societyId, [userId], {
+          title: 'Payment approved',
+          body: `Your payment of ₹${payment.amount.toString()} has been received and recorded.`,
+          type: 'PAYMENT_APPROVED',
+          data: { paymentId: payment.id },
+        }),
+      `payment ${payment.id} auto-approved`,
+    );
   }
 
   async approve(societyId: string, paymentId: string, reviewedById: string, accountId: string, notes?: string) {
