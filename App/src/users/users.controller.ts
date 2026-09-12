@@ -6,6 +6,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { SystemRole } from '@prisma/client';
 import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { AddMemberDto } from './dto/add-member.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -49,7 +50,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Add an existing user to the current society' })
   async addMember(
     @SocietyId() societyId: string,
-    @Body() body: { userId: string; flatId?: string; role: SystemRole; isPrimary?: boolean },
+    @Body() body: AddMemberDto,
   ) {
     return this.usersService.addToSociety(
       societyId,

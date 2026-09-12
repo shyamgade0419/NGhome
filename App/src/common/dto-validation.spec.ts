@@ -18,6 +18,13 @@ import { CreateEventDto } from '../events/dto/create-event.dto';
 import { SubmitPaymentDto } from '../payments/dto/submit-payment.dto';
 import { CreateEmployeeDto } from '../salaries/dto/create-employee.dto';
 import { ProcessSalaryDto } from '../salaries/dto/process-salary.dto';
+import { AdjustBillDto } from '../billing/dto/adjust-bill.dto';
+import { ApprovePaymentDto } from '../payments/dto/approve-payment.dto';
+import { RejectPaymentDto } from '../payments/dto/reject-payment.dto';
+import { RejectExpenseDto } from '../expenses/dto/reject-expense.dto';
+import { MarkExpensePaidDto } from '../expenses/dto/mark-expense-paid.dto';
+import { AddMemberDto } from '../users/dto/add-member.dto';
+import { SystemRole } from '@prisma/client';
 
 // Mirrors main.ts exactly — testing against different settings proves nothing.
 const pipe = new ValidationPipe({
@@ -234,6 +241,97 @@ describe('Money DTO validation', () => {
 
     it('rejects an unknown field rather than silently dropping it', async () => {
       await expect(run({ ...valid, totallyMadeUp: 'value' }, ProcessSalaryDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+});
+
+/**
+ * These were plain `{ ... }` inline object types on admin/approval routes —
+ * same invisible-to-ValidationPipe problem as the DTOs above, found by
+ * auditing every other @Body() in the controllers for the same shape
+ * (interfaces/object-literal types used directly as a DTO). The underlying
+ * financial/tenancy safety for accountId fields was already enforced
+ * server-side in each service (re-validated against the caller's own
+ * society before any money moves) — what was missing was a clean 400 at
+ * the API boundary instead of a malformed/missing field reaching the
+ * service unchecked.
+ */
+describe('Admin action DTO validation', () => {
+  describe('AdjustBillDto', () => {
+    it('accepts a genuine adjustment', async () => {
+      await expect(run({ adjustment: -500, note: 'Late fee waived' }, AdjustBillDto)).resolves.toMatchObject({
+        adjustment: -500,
+      });
+    });
+
+    it('rejects a non-numeric adjustment', async () => {
+      await expect(run({ adjustment: 'a lot', note: 'x' }, AdjustBillDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a missing note', async () => {
+      await expect(run({ adjustment: 100 }, AdjustBillDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('ApprovePaymentDto', () => {
+    it('accepts the payload the apps send', async () => {
+      await expect(
+        run({ accountId: 'account-1', notes: 'Verified against bank statement' }, ApprovePaymentDto),
+      ).resolves.toMatchObject({ accountId: 'account-1' });
+    });
+
+    it('rejects a missing accountId', async () => {
+      await expect(run({ notes: 'x' }, ApprovePaymentDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('RejectPaymentDto / RejectExpenseDto', () => {
+    it('accepts a genuine reason', async () => {
+      await expect(run({ reason: 'Amount does not match bank statement' }, RejectPaymentDto)).resolves.toMatchObject({
+        reason: expect.any(String),
+      });
+      await expect(run({ reason: 'Missing invoice' }, RejectExpenseDto)).resolves.toMatchObject({
+        reason: expect.any(String),
+      });
+    });
+
+    it('rejects an empty reason', async () => {
+      await expect(run({ reason: '' }, RejectPaymentDto)).rejects.toThrow(BadRequestException);
+      await expect(run({ reason: '' }, RejectExpenseDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('MarkExpensePaidDto', () => {
+    it('accepts a genuine accountId', async () => {
+      await expect(run({ accountId: 'account-1' }, MarkExpensePaidDto)).resolves.toMatchObject({
+        accountId: 'account-1',
+      });
+    });
+
+    it('rejects a missing accountId', async () => {
+      await expect(run({}, MarkExpensePaidDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('AddMemberDto', () => {
+    it('accepts the payload the admin UI sends', async () => {
+      await expect(
+        run({ userId: 'user-1', flatId: 'flat-1', role: SystemRole.RESIDENT, isPrimary: true }, AddMemberDto),
+      ).resolves.toMatchObject({ role: SystemRole.RESIDENT });
+    });
+
+    it('accepts a role-only change with no flatId', async () => {
+      await expect(run({ userId: 'user-1', role: SystemRole.SOCIETY_STAFF }, AddMemberDto)).resolves.toMatchObject({
+        role: SystemRole.SOCIETY_STAFF,
+      });
+    });
+
+    it('rejects a role outside the SystemRole enum — the exact bug class this closes', async () => {
+      await expect(run({ userId: 'user-1', role: 'SUPER_ADMIN' }, AddMemberDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a missing role', async () => {
+      await expect(run({ userId: 'user-1' }, AddMemberDto)).rejects.toThrow(BadRequestException);
     });
   });
 });

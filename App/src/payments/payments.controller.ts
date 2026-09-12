@@ -8,6 +8,8 @@ import { SystemRole, PaymentStatus } from '@prisma/client';
 import type { Response } from 'express';
 import { PaymentsService } from './payments.service';
 import { SubmitPaymentDto } from './dto/submit-payment.dto';
+import { ApprovePaymentDto } from './dto/approve-payment.dto';
+import { RejectPaymentDto } from './dto/reject-payment.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -107,7 +109,7 @@ export class PaymentsController {
     @SocietyId() societyId: string,
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
-    @Body() body: { accountId: string; notes?: string },
+    @Body() body: ApprovePaymentDto,
   ) {
     return this.paymentsService.approve(societyId, id, user.id, body.accountId, body.notes);
   }
@@ -120,7 +122,7 @@ export class PaymentsController {
     @SocietyId() societyId: string,
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
-    @Body() body: { reason: string },
+    @Body() body: RejectPaymentDto,
   ) {
     return this.paymentsService.reject(societyId, id, user.id, body.reason);
   }

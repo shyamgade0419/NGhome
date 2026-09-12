@@ -5,6 +5,8 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { SystemRole, ExpenseStatus } from '@prisma/client';
 import { ExpensesService, CreateExpenseDto } from './expenses.service';
 import { UpdateExpenseDto } from './dto/create-expense.dto';
+import { RejectExpenseDto } from './dto/reject-expense.dto';
+import { MarkExpensePaidDto } from './dto/mark-expense-paid.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -102,7 +104,7 @@ export class ExpensesController {
     @SocietyId() societyId: string,
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
-    @Body() body: { reason: string },
+    @Body() body: RejectExpenseDto,
   ) {
     return this.expensesService.reject(societyId, id, body.reason, user.id);
   }
@@ -114,7 +116,7 @@ export class ExpensesController {
     @SocietyId() societyId: string,
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
-    @Body() body: { accountId: string },
+    @Body() body: MarkExpensePaidDto,
   ) {
     return this.expensesService.markPaid(societyId, id, body.accountId, user.id);
   }

@@ -5,6 +5,8 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { SystemRole } from '@prisma/client';
 import { BillingService } from './billing.service';
 import { CreateBillingPeriodDto } from './dto/create-billing-period.dto';
+import { AdjustBillDto } from './dto/adjust-bill.dto';
+import { BillNotesDto } from './dto/bill-notes.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -144,7 +146,7 @@ export class BillingController {
   updateBillNotes(
     @SocietyId() societyId: string,
     @Param('billId') billId: string,
-    @Body() body: { notes: string },
+    @Body() body: BillNotesDto,
   ) {
     return this.billingService.updateBillNotes(societyId, billId, body.notes);
   }
@@ -156,7 +158,7 @@ export class BillingController {
   adjustBill(
     @SocietyId() societyId: string,
     @Param('billId') billId: string,
-    @Body() body: { adjustment: number; note: string },
+    @Body() body: AdjustBillDto,
   ) {
     return this.billingService.adjustBill(societyId, billId, body.adjustment, body.note);
   }
