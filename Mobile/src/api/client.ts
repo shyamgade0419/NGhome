@@ -60,6 +60,22 @@ apiClient.interceptors.response.use(
     }
 
     if (isRefreshing) {
+      // Mark this queued request as already-retried too, not just the one
+      // that actually triggers the refresh. Without this, a request that
+      // waits in the queue and then gets retried with the fresh token has
+      // no `_retry` flag: if that retry somehow 401s again (the new token
+      // turns out to already be stale, a race with a refresh triggered
+      // elsewhere, a transient server hiccup), the check above sees a
+      // "fresh" 401 and walks straight back into another refresh cycle —
+      // isRefreshing has by then been reset to false by the original
+      // refresh's own `finally`, so this looks like a brand new failure
+      // rather than a retry that already happened. Setting it here closes
+      // that: a second 401 on a queued request's retry fails cleanly
+      // instead of triggering a redundant refresh (which, against a
+      // single-use rotating refresh token, is not merely wasteful — it can
+      // outright fail if another legitimate refresh already rotated the
+      // token this one still thinks is current).
+      originalRequest._retry = true;
       return new Promise<string>((resolve, reject) => {
         failedQueue.push({ resolve, reject });
       }).then((token) => {
