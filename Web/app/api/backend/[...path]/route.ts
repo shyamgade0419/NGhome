@@ -1,14 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchBackendWithRefresh, applyTokenRotation } from '@/lib/server/backend-request';
+import { rejectIfTooLarge, JSON_BODY_MAX_BYTES } from '@/lib/server/request-size';
 
 async function proxy(req: NextRequest): Promise<NextResponse> {
   const pathSegments = req.nextUrl.pathname.replace('/api/backend', '');
   const search = req.nextUrl.search;
 
+  const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
+
+  // Reject an oversized body by its declared Content-Length before
+  // buffering it — req.text() below reads the entire body into memory
+  // with no size cap of its own. Every call through this proxy is a small
+  // JSON control-plane payload; see lib/server/request-size.ts.
+  if (hasBody) {
+    const tooLarge = rejectIfTooLarge(req, JSON_BODY_MAX_BYTES);
+    if (tooLarge) return tooLarge;
+  }
+
   // Read body once; reused for both the initial attempt and any retry —
   // a plain string is safe to send twice, unlike a body stream.
-  const body =
-    req.method !== 'GET' && req.method !== 'HEAD' ? await req.text() : undefined;
+  const body = hasBody ? await req.text() : undefined;
 
   const { res: backendRes, rotatedTokens, hadRefreshToken } = await fetchBackendWithRefresh(
     `${pathSegments}${search}`,

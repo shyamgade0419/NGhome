@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchBackendWithRefresh, applyTokenRotation } from '@/lib/server/backend-request';
+import { rejectIfTooLarge, MULTIPART_UPLOAD_MAX_BYTES } from '@/lib/server/request-size';
 
 /**
  * Forwards a multipart payment submission (fields + an optional receipt
@@ -23,6 +24,13 @@ export async function POST(req: NextRequest) {
   if (!cookies().get('ng_access')?.value) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
   }
+
+  // Reject an oversized submission by its declared Content-Length before
+  // buffering it — req.formData() below reads the entire body into memory
+  // with no size cap of its own, well before the backend's Multer limit
+  // ever gets a chance to run. See lib/server/request-size.ts.
+  const tooLarge = rejectIfTooLarge(req, MULTIPART_UPLOAD_MAX_BYTES);
+  if (tooLarge) return tooLarge;
 
   const incoming = await req.formData();
 
