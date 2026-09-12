@@ -1,12 +1,10 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
-import {
-  WaterService,
-  CreateWaterConfigDto,
-  RecordReadingDto,
-  AllocateWaterCostsDto,
-} from './water.service';
+import { WaterService } from './water.service';
+import { CreateWaterConfigDto } from './dto/create-water-config.dto';
+import { RecordReadingDto } from './dto/record-reading.dto';
+import { AllocateWaterCostsDto } from './dto/allocate-water-costs.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';

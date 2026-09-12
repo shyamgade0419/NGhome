@@ -2,16 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, AnnouncementPriority, AnnouncementAudience } from '@prisma/client';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
-
-export interface CreateAnnouncementDto {
-  title: string;
-  content: string;
-  priority?: AnnouncementPriority;
-  audience?: AnnouncementAudience;
-  publishAt?: string;
-  expiresAt?: string;
-  isPublished?: boolean;
-}
+import { CreateAnnouncementDto } from './dto/create-announcement.dto';
+export { CreateAnnouncementDto } from './dto/create-announcement.dto';
 
 @Injectable()
 export class AnnouncementsService {

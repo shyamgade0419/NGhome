@@ -1,13 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
-
-export interface CreateMeetingDto {
-  title: string;
-  meetingDate: string;
-  location?: string;
-  agenda?: string;
-}
+import { CreateMeetingDto } from './dto/create-meeting.dto';
+export { CreateMeetingDto } from './dto/create-meeting.dto';
 
 @Injectable()
 export class MeetingsService {

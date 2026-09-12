@@ -24,7 +24,14 @@ import { RejectPaymentDto } from '../payments/dto/reject-payment.dto';
 import { RejectExpenseDto } from '../expenses/dto/reject-expense.dto';
 import { MarkExpensePaidDto } from '../expenses/dto/mark-expense-paid.dto';
 import { AddMemberDto } from '../users/dto/add-member.dto';
-import { SystemRole } from '@prisma/client';
+import { CreateAnnouncementDto } from '../announcements/dto/create-announcement.dto';
+import { CreateMeetingDto } from '../meetings/dto/create-meeting.dto';
+import { AddAttendeesDto } from '../meetings/dto/add-attendees.dto';
+import { CreateDocumentDto } from '../documents/dto/create-document.dto';
+import { CreateWaterConfigDto } from '../water/dto/create-water-config.dto';
+import { RecordReadingDto } from '../water/dto/record-reading.dto';
+import { AllocateWaterCostsDto } from '../water/dto/allocate-water-costs.dto';
+import { SystemRole, AnnouncementPriority, WaterBillingModel } from '@prisma/client';
 
 // Mirrors main.ts exactly — testing against different settings proves nothing.
 const pipe = new ValidationPipe({
@@ -332,6 +339,145 @@ describe('Admin action DTO validation', () => {
 
     it('rejects a missing role', async () => {
       await expect(run({ userId: 'user-1' }, AddMemberDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+});
+
+/**
+ * These four modules' DTOs were also plain interfaces — found by
+ * mechanically auditing every remaining @Body()/service-parameter type in
+ * the repo for the same shape, not just the financial/security-sensitive
+ * ones fixed above. None carry money or a privilege assignment, but an
+ * invalid enum/date still reached the database as an opaque error instead
+ * of a clean 400, and AllocateWaterCostsDto's cost fields (municipal bill,
+ * tanker cost, electricity %) had no numeric validation at all despite
+ * feeding directly into a per-flat billing calculation.
+ */
+describe('Non-financial DTO validation (found via the full @Body() sweep)', () => {
+  describe('CreateAnnouncementDto', () => {
+    it('accepts a genuine announcement', async () => {
+      await expect(
+        run({ title: 'AGM Notice', content: 'The AGM will be held...', priority: AnnouncementPriority.HIGH }, CreateAnnouncementDto),
+      ).resolves.toMatchObject({ title: 'AGM Notice' });
+    });
+
+    it('rejects a priority outside the enum', async () => {
+      await expect(
+        run({ title: 'x', content: 'y', priority: 'SUPER_URGENT' }, CreateAnnouncementDto),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a malformed publishAt', async () => {
+      await expect(
+        run({ title: 'x', content: 'y', publishAt: 'not-a-date' }, CreateAnnouncementDto),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('CreateMeetingDto', () => {
+    it('accepts a genuine meeting', async () => {
+      await expect(
+        run({ title: 'Monthly Committee Meeting', meetingDate: '2026-10-01' }, CreateMeetingDto),
+      ).resolves.toMatchObject({ title: 'Monthly Committee Meeting' });
+    });
+
+    it('rejects a malformed meetingDate', async () => {
+      await expect(run({ title: 'x', meetingDate: 'next tuesday' }, CreateMeetingDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('AddAttendeesDto', () => {
+    it('accepts a genuine attendee list', async () => {
+      await expect(
+        run({ attendees: [{ name: 'Ramesh Kumar', flatCode: 'A-101' }] }, AddAttendeesDto),
+      ).resolves.toMatchObject({ attendees: [{ name: 'Ramesh Kumar' }] });
+    });
+
+    it('rejects an empty attendee list', async () => {
+      await expect(run({ attendees: [] }, AddAttendeesDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects an attendee missing a name', async () => {
+      await expect(run({ attendees: [{ flatCode: 'A-101' }] }, AddAttendeesDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('CreateDocumentDto', () => {
+    const valid = { title: 'Fire safety certificate', fileName: 'cert.pdf', fileKey: 'https://example.com/cert.pdf', fileSize: 12345, mimeType: 'application/pdf' };
+
+    it('accepts the payload the admin UI sends', async () => {
+      await expect(run(valid, CreateDocumentDto)).resolves.toMatchObject({ title: valid.title });
+    });
+
+    it('rejects a blank title', async () => {
+      await expect(run({ ...valid, title: '' }, CreateDocumentDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a non-integer fileSize', async () => {
+      await expect(run({ ...valid, fileSize: 12.5 }, CreateDocumentDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects an accessLevel outside the enum', async () => {
+      await expect(run({ ...valid, accessLevel: 'EVERYONE' }, CreateDocumentDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('CreateWaterConfigDto', () => {
+    it('accepts a genuine config', async () => {
+      await expect(
+        run(
+          { name: 'Block A', billingModel: WaterBillingModel.PER_KL, effectiveFrom: '2026-04-01', config: { rate: 25 } },
+          CreateWaterConfigDto,
+        ),
+      ).resolves.toMatchObject({ name: 'Block A' });
+    });
+
+    it('rejects a billingModel outside the enum', async () => {
+      await expect(
+        run({ name: 'x', billingModel: 'PER_BUCKET', effectiveFrom: '2026-04-01', config: {} }, CreateWaterConfigDto),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('RecordReadingDto', () => {
+    const valid = { flatId: 'flat-1', readingDate: '2026-09-01', openingReading: 100, closingReading: 150 };
+
+    it('accepts a genuine reading', async () => {
+      await expect(run(valid, RecordReadingDto)).resolves.toMatchObject({ flatId: 'flat-1' });
+    });
+
+    it('rejects a negative reading', async () => {
+      await expect(run({ ...valid, openingReading: -5 }, RecordReadingDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('AllocateWaterCostsDto', () => {
+    const valid = {
+      billingPeriodId: 'period-1', readingDate: '2026-09-01',
+      municipalWaterBill: 5000, tankerCost: 1000, commonElectricityBill: 3000, electricityWaterPercent: 20,
+      readings: [{ flatId: 'flat-1', openingReading: 100, closingReading: 150 }],
+    };
+
+    it('accepts a genuine allocation', async () => {
+      await expect(run(valid, AllocateWaterCostsDto)).resolves.toMatchObject({ tankerCost: 1000 });
+    });
+
+    it('rejects a negative cost field', async () => {
+      await expect(run({ ...valid, tankerCost: -1000 }, AllocateWaterCostsDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects an electricityWaterPercent outside 0-100', async () => {
+      await expect(run({ ...valid, electricityWaterPercent: 150 }, AllocateWaterCostsDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects an empty readings array', async () => {
+      await expect(run({ ...valid, readings: [] }, AllocateWaterCostsDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a reading with a non-numeric closingReading', async () => {
+      await expect(
+        run({ ...valid, readings: [{ flatId: 'flat-1', openingReading: 100, closingReading: 'a lot' }] }, AllocateWaterCostsDto),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });

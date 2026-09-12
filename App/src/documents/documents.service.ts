@@ -4,35 +4,14 @@ import { SftpStorageService } from './sftp-storage.service';
 import { assertAllowedUpload, assertSafeLinkUrl } from './file-safety';
 import { StoragePathService } from './storage-path.service';
 import { DocumentAccessLevel, Prisma } from '@prisma/client';
+import { CreateDocumentDto } from './dto/create-document.dto';
+import { UploadDocumentMetaDto } from './dto/upload-document-meta.dto';
+export { CreateDocumentDto } from './dto/create-document.dto';
+export { UploadDocumentMetaDto } from './dto/upload-document-meta.dto';
 
-export interface CreateDocumentDto {
-  title: string;
-  description?: string;
-  fileName: string;
-  fileKey: string;
-  fileSize: number;
-  mimeType: string;
-  storageProvider?: string;
-  accessLevel?: DocumentAccessLevel;
-  category?: string;
-  linkedEntityType?: string;
-  linkedEntityId?: string;
-  // Only meaningful for admin/staff registering a private link on a
-  // resident's behalf; a resident's own flatId is always used instead.
-  flatId?: string;
-}
-
-export interface UploadDocumentMeta {
-  title: string;
-  description?: string;
-  category?: string;
-  // Only meaningful for admin/staff/accountant/committee — a resident's
-  // upload is always forced to FLAT_PRIVATE regardless of what's sent here.
-  accessLevel?: string;
-  // Only meaningful for admin/staff uploading a private doc on a
-  // resident's behalf; a resident's own flatId is always used instead.
-  flatId?: string;
-}
+// upload()'s own historical parameter name — kept as an alias so its
+// (many) internal references don't all need renaming for this DTO move.
+type UploadDocumentMeta = UploadDocumentMetaDto;
 
 const ADMIN_SELECTABLE_LEVELS: string[] = [
   DocumentAccessLevel.PUBLIC,

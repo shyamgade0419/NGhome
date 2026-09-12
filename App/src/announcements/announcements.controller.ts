@@ -4,7 +4,8 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
-import { AnnouncementsService, CreateAnnouncementDto } from './announcements.service';
+import { AnnouncementsService } from './announcements.service';
+import { CreateAnnouncementDto, UpdateAnnouncementDto } from './dto/create-announcement.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -62,7 +63,7 @@ export class AnnouncementsController {
   update(
     @SocietyId() societyId: string,
     @Param('id') id: string,
-    @Body() dto: Partial<CreateAnnouncementDto>,
+    @Body() dto: UpdateAnnouncementDto,
   ) {
     return this.announcementsService.update(societyId, id, dto);
   }

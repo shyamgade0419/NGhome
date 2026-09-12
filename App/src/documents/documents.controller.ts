@@ -6,7 +6,9 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
 import type { Response } from 'express';
-import { DocumentsService, CreateDocumentDto } from './documents.service';
+import { DocumentsService } from './documents.service';
+import { CreateDocumentDto } from './dto/create-document.dto';
+import { UploadDocumentMetaDto } from './dto/upload-document-meta.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -51,7 +53,7 @@ export class DocumentsController {
     @SocietyId() societyId: string,
     @CurrentUser() user: AuthenticatedUser,
     @UploadedFile() file: Express.Multer.File,
-    @Body() body: { title: string; description?: string; category?: string; accessLevel?: string; flatId?: string },
+    @Body() body: UploadDocumentMetaDto,
   ) {
     if (!file) throw new BadRequestException('No file was uploaded — attach it under the "file" field.');
     if (!body?.title?.trim()) throw new BadRequestException('title is required');

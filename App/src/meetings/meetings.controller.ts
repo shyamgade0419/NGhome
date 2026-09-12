@@ -1,7 +1,10 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
-import { MeetingsService, CreateMeetingDto } from './meetings.service';
+import { MeetingsService } from './meetings.service';
+import { CreateMeetingDto } from './dto/create-meeting.dto';
+import { AddMinutesDto } from './dto/add-minutes.dto';
+import { AddAttendeesDto } from './dto/add-attendees.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -57,7 +60,7 @@ export class MeetingsController {
   addMinutes(
     @SocietyId() societyId: string,
     @Param('id') id: string,
-    @Body() body: { content: string; summary?: string },
+    @Body() body: AddMinutesDto,
   ) {
     return this.meetingsService.addMinutes(societyId, id, body.content, body.summary);
   }
@@ -77,7 +80,7 @@ export class MeetingsController {
   addAttendees(
     @SocietyId() societyId: string,
     @Param('id') id: string,
-    @Body() body: { attendees: { name: string; flatCode?: string; role?: string }[] },
+    @Body() body: AddAttendeesDto,
   ) {
     return this.meetingsService.addAttendees(societyId, id, body.attendees);
   }

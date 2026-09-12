@@ -1,47 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, WaterBillingModel } from '@prisma/client';
-
-export interface CreateWaterConfigDto {
-  name: string;
-  billingModel: WaterBillingModel;
-  effectiveFrom: string;
-  effectiveTo?: string;
-  config: Record<string, unknown>;
-}
-
-export interface RecordReadingDto {
-  flatId: string;
-  waterConfigId?: string;
-  billingPeriodId?: string;
-  readingDate: string;
-  openingReading: number;
-  closingReading: number;
-  unit?: string;
-  notes?: string;
-}
-
-export interface FlatReadingInput {
-  flatId: string;
-  openingReading: number;
-  closingReading: number;
-  notes?: string;
-}
-
-export interface AllocateWaterCostsDto {
-  billingPeriodId: string;
-  readingDate: string;
-  /** Municipal water board bill for the month */
-  municipalWaterBill: number;
-  /** Tanker water charges for the month */
-  tankerCost: number;
-  /** Total common electricity bill (all usage) */
-  commonElectricityBill: number;
-  /** Percentage (0–100) of common electricity attributed to water motor/pump */
-  electricityWaterPercent: number;
-  /** Per-flat readings */
-  readings: FlatReadingInput[];
-}
+import { CreateWaterConfigDto } from './dto/create-water-config.dto';
+import { RecordReadingDto } from './dto/record-reading.dto';
+import { AllocateWaterCostsDto } from './dto/allocate-water-costs.dto';
+export { CreateWaterConfigDto } from './dto/create-water-config.dto';
+export { RecordReadingDto } from './dto/record-reading.dto';
+export { AllocateWaterCostsDto, FlatReadingInputDto as FlatReadingInput } from './dto/allocate-water-costs.dto';
 
 @Injectable()
 export class WaterService {
