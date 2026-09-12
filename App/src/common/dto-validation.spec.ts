@@ -31,7 +31,8 @@ import { CreateDocumentDto } from '../documents/dto/create-document.dto';
 import { CreateWaterConfigDto } from '../water/dto/create-water-config.dto';
 import { RecordReadingDto } from '../water/dto/record-reading.dto';
 import { AllocateWaterCostsDto } from '../water/dto/allocate-water-costs.dto';
-import { SystemRole, AnnouncementPriority, WaterBillingModel } from '@prisma/client';
+import { SendNotificationDto } from '../notifications/dto/send-notification.dto';
+import { SystemRole, AnnouncementPriority, WaterBillingModel, NotificationChannel } from '@prisma/client';
 
 // Mirrors main.ts exactly — testing against different settings proves nothing.
 const pipe = new ValidationPipe({
@@ -477,6 +478,35 @@ describe('Non-financial DTO validation (found via the full @Body() sweep)', () =
     it('rejects a reading with a non-numeric closingReading', async () => {
       await expect(
         run({ ...valid, readings: [{ flatId: 'flat-1', openingReading: 100, closingReading: 'a lot' }] }, AllocateWaterCostsDto),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('SendNotificationDto', () => {
+    it('accepts a genuine notification', async () => {
+      await expect(
+        run({ title: 'Water outage', body: 'Water will be off 10am-2pm', type: 'ANNOUNCEMENT' }, SendNotificationDto),
+      ).resolves.toMatchObject({ title: 'Water outage' });
+    });
+
+    it('accepts explicit channels and audience', async () => {
+      await expect(
+        run(
+          { title: 'x', body: 'y', type: 'z', channels: [NotificationChannel.PUSH, NotificationChannel.EMAIL], audience: 'STAFF' },
+          SendNotificationDto,
+        ),
+      ).resolves.toMatchObject({ channels: [NotificationChannel.PUSH, NotificationChannel.EMAIL] });
+    });
+
+    it('rejects a channel outside the enum', async () => {
+      await expect(
+        run({ title: 'x', body: 'y', type: 'z', channels: ['CARRIER_PIGEON'] }, SendNotificationDto),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects an audience outside the enum', async () => {
+      await expect(
+        run({ title: 'x', body: 'y', type: 'z', audience: 'EVERYONE_EVER' }, SendNotificationDto),
       ).rejects.toThrow(BadRequestException);
     });
   });

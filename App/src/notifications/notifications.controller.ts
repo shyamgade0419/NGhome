@@ -1,7 +1,8 @@
 import { Controller, Get, Post, Delete, Patch, Body, Param, Query, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
-import { NotificationsService, SendNotificationDto } from './notifications.service';
+import { NotificationsService } from './notifications.service';
+import { SendNotificationDto } from './dto/send-notification.dto';
 import { PushService } from './push.service';
 import { RegisterPushTokenDto } from './dto/register-push-token.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';

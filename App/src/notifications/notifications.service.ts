@@ -4,15 +4,8 @@ import {
   AnnouncementAudience, NotificationChannel, NotificationStatus, SystemRole, Prisma,
 } from '@prisma/client';
 import { PushService } from './push.service';
-
-export interface SendNotificationDto {
-  title: string;
-  body: string;
-  type: string;
-  data?: Record<string, unknown>;
-  channels?: NotificationChannel[];
-  audience?: AnnouncementAudience;
-}
+import { SendNotificationDto } from './dto/send-notification.dto';
+export { SendNotificationDto } from './dto/send-notification.dto';
 
 /**
  * Notification abstraction layer.
