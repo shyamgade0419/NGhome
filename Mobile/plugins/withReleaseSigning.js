@@ -22,17 +22,42 @@ const { withAppBuildGradle } = require('expo/config-plugins');
  * signing, so a plain `./gradlew bundleRelease` still works for anyone
  * without the keystore -- useful for checking things like native library
  * page alignment, which don't care who signed the bundle.
+ *
+ * Anchors are matched by CONTENT, tolerant of whitespace -- a literal
+ * multi-line string match here previously broke a real EAS production
+ * build (SDK 54, ubuntu-24.04 / Node 20 worker image) even though a local
+ * prebuild on the same commit succeeded: the generated build.gradle's
+ * indentation/line-endings evidently aren't byte-identical across every
+ * environment that runs `expo prebuild`, even for the exact same Expo SDK
+ * version, and this plugin's job is to find "the debug signingConfigs
+ * block", not to assert a specific formatting of it. toFlexibleRegex below
+ * turns each literal anchor into a regex that requires the same tokens in
+ * the same order, separated by any run of whitespace -- so a real template
+ * change (the actual failure mode this is meant to catch) still fails
+ * loudly, but incidental reformatting no longer does.
  */
 
-const SIGNING_CONFIGS_ANCHOR = `        debug {
-            storeFile file('debug.keystore')
-            storePassword 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
-        }
-    }`;
+function toFlexibleRegex(literal) {
+  const pattern = literal
+    .trim()
+    .split(/\s+/)
+    .map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('\\s+');
+  return new RegExp(pattern);
+}
 
-const SIGNING_CONFIGS_REPLACEMENT = `        debug {
+const SIGNING_CONFIGS_ANCHOR = `debug {
+    storeFile file('debug.keystore')
+    storePassword 'android'
+    keyAlias 'androiddebugkey'
+    keyPassword 'android'
+}`;
+
+// Deliberately no leading whitespace on each replacement's first line: the
+// regex match starts right at the anchor's first token, so whatever
+// indentation preceded it in the original file is still there, immediately
+// before this string gets spliced in.
+const SIGNING_CONFIGS_REPLACEMENT = `debug {
             storeFile file('debug.keystore')
             storePassword 'android'
             keyAlias 'androiddebugkey'
@@ -45,14 +70,17 @@ const SIGNING_CONFIGS_REPLACEMENT = `        debug {
                 keyAlias NGHOME_UPLOAD_KEY_ALIAS
                 keyPassword NGHOME_UPLOAD_KEY_PASSWORD
             }
-        }
-    }`;
+        }`;
 
-const RELEASE_BUILDTYPE_ANCHOR = `            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug`;
+// Includes the two comment lines specifically to disambiguate this from the
+// debug buildType's own, textually identical `signingConfig
+// signingConfigs.debug` line -- without them this would match (and patch)
+// the wrong buildType.
+const RELEASE_BUILDTYPE_ANCHOR = `// Caution! In production, you need to generate your own keystore file.
+// see https://reactnative.dev/docs/signed-apk-android.
+signingConfig signingConfigs.debug`;
 
-const RELEASE_BUILDTYPE_REPLACEMENT = `            // Signed with the Play upload key when its properties are present
+const RELEASE_BUILDTYPE_REPLACEMENT = `// Signed with the Play upload key when its properties are present
             // (see plugins/withReleaseSigning.js); debug-signed otherwise, so
             // a build without the keystore still succeeds.
             signingConfig project.hasProperty('NGHOME_UPLOAD_STORE_FILE') ? signingConfigs.release : signingConfigs.debug`;
@@ -61,17 +89,20 @@ module.exports = function withReleaseSigning(config) {
   return withAppBuildGradle(config, (cfg) => {
     let gradle = cfg.modResults.contents;
 
+    const signingConfigsRegex = toFlexibleRegex(SIGNING_CONFIGS_ANCHOR);
+    const releaseBuildTypeRegex = toFlexibleRegex(RELEASE_BUILDTYPE_ANCHOR);
+
     // Fail loudly rather than quietly emitting a debug-signed release: if the
     // Expo template changes shape, we want the build to stop here, not to
     // discover it when Play rejects the upload.
-    if (!gradle.includes(SIGNING_CONFIGS_ANCHOR)) {
+    if (!signingConfigsRegex.test(gradle)) {
       throw new Error(
         'withReleaseSigning: could not find the debug signingConfigs block in ' +
           'app/build.gradle. The Expo template likely changed -- update the ' +
           'anchor in plugins/withReleaseSigning.js.',
       );
     }
-    if (!gradle.includes(RELEASE_BUILDTYPE_ANCHOR)) {
+    if (!releaseBuildTypeRegex.test(gradle)) {
       throw new Error(
         'withReleaseSigning: could not find the release buildType signingConfig ' +
           'line in app/build.gradle. The Expo template likely changed -- update ' +
@@ -79,8 +110,8 @@ module.exports = function withReleaseSigning(config) {
       );
     }
 
-    gradle = gradle.replace(SIGNING_CONFIGS_ANCHOR, SIGNING_CONFIGS_REPLACEMENT);
-    gradle = gradle.replace(RELEASE_BUILDTYPE_ANCHOR, RELEASE_BUILDTYPE_REPLACEMENT);
+    gradle = gradle.replace(signingConfigsRegex, SIGNING_CONFIGS_REPLACEMENT);
+    gradle = gradle.replace(releaseBuildTypeRegex, RELEASE_BUILDTYPE_REPLACEMENT);
 
     cfg.modResults.contents = gradle;
     return cfg;
