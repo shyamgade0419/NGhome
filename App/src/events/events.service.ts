@@ -16,6 +16,11 @@ export class EventsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(societyId: string, createdById: string, dto: CreateEventDto) {
+    if (dto.fundId) {
+      const fund = await this.prisma.fund.findFirst({ where: { id: dto.fundId, societyId } });
+      if (!fund) throw new NotFoundException('Fund not found in this society');
+    }
+
     return this.prisma.event.create({
       data: {
         societyId,
@@ -90,6 +95,12 @@ export class EventsService {
   async update(societyId: string, id: string, dto: Partial<CreateEventDto>) {
     // findOne (admin context — forResident=false) enforces society scope before updating
     await this.findOne(societyId, id);
+
+    if (dto.fundId) {
+      const fund = await this.prisma.fund.findFirst({ where: { id: dto.fundId, societyId } });
+      if (!fund) throw new NotFoundException('Fund not found in this society');
+    }
+
     return this.prisma.event.update({
       where: { id },
       data: {

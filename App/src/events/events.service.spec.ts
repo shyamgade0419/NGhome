@@ -268,3 +268,50 @@ describe('EventsService — unrecordExpense', () => {
     });
   });
 });
+
+describe('EventsService.create/update — cross-society fundId is rejected', () => {
+  function makeWritePrisma(fundResult: unknown) {
+    return {
+      fund: { findFirst: jest.fn().mockResolvedValue(fundResult) },
+      event: {
+        create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: EVENT_ID, ...data })),
+        update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: EVENT_ID, ...data })),
+        findFirst: jest.fn().mockResolvedValue(makeEvent()),
+      },
+      // update() calls findOne() first, which also flags whether the event's
+      // cost has already been turned into an Expense — irrelevant here, but
+      // findOne would throw on a missing mock method without this.
+      expense: { findMany: jest.fn().mockResolvedValue([]) },
+    } as unknown as PrismaService;
+  }
+
+  it('create(): refuses a fundId from another society, and never creates the event', async () => {
+    const prisma = makeWritePrisma(null);
+    await expect(
+      new EventsService(prisma).create(SOCIETY_ID, ACTOR_ID, {
+        title: 'AGM',
+        eventDate: '2026-11-01',
+        fundId: 'fund-from-society-b',
+      } as any),
+    ).rejects.toThrow(NotFoundException);
+    expect(prisma.event.create).not.toHaveBeenCalled();
+  });
+
+  it('create(): accepts a fundId that genuinely belongs to this society', async () => {
+    const prisma = makeWritePrisma({ id: FUND_ID, societyId: SOCIETY_ID });
+    await new EventsService(prisma).create(SOCIETY_ID, ACTOR_ID, {
+      title: 'AGM',
+      eventDate: '2026-11-01',
+      fundId: FUND_ID,
+    } as any);
+    expect(prisma.event.create).toHaveBeenCalled();
+  });
+
+  it('update(): refuses a fundId from another society, and never updates the event', async () => {
+    const prisma = makeWritePrisma(null);
+    await expect(
+      new EventsService(prisma).update(SOCIETY_ID, EVENT_ID, { fundId: 'fund-from-society-b' } as any),
+    ).rejects.toThrow(NotFoundException);
+    expect(prisma.event.update).not.toHaveBeenCalled();
+  });
+});

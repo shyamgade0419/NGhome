@@ -15,6 +15,18 @@ export class FlatsService {
     });
     if (!building) throw new NotFoundException('Building not found in this society');
 
+    // A Floor's own scoping is by buildingId, not societyId directly — so
+    // "belongs to this society" isn't enough on its own; it must belong to
+    // the specific building this flat is being created under, or a flat
+    // could end up carrying another building's (and via that, potentially
+    // another society's) floor name/number in every findOne/findAll response.
+    if (dto.floorId) {
+      const floor = await this.prisma.floor.findFirst({
+        where: { id: dto.floorId, buildingId: dto.buildingId },
+      });
+      if (!floor) throw new NotFoundException('Floor not found in this building');
+    }
+
     return this.prisma.flat.create({
       data: {
         societyId,
@@ -133,11 +145,21 @@ export class FlatsService {
   }
 
   async update(societyId: string, id: string, dto: Partial<CreateFlatDto>) {
-    await this.findOne(societyId, id);
+    const existing = await this.findOne(societyId, id);
     // buildingId is deliberately excluded — moving a flat to a different
     // building is not supported by this generic update.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { buildingId, ...rest } = dto;
+
+    // Same reasoning as create(): a floorId must belong to this flat's own
+    // (unchangeable via this method) building, never trusted as-is.
+    if (rest.floorId) {
+      const floor = await this.prisma.floor.findFirst({
+        where: { id: rest.floorId, buildingId: existing.buildingId },
+      });
+      if (!floor) throw new NotFoundException('Floor not found in this building');
+    }
+
     return this.prisma.flat.update({ where: { id }, data: rest });
   }
 

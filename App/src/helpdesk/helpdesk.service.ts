@@ -28,6 +28,11 @@ export class HelpdeskService {
   ) {}
 
   async create(societyId: string, residentId: string, dto: CreateMaintenanceRequestDto) {
+    if (dto.flatId) {
+      const flat = await this.prisma.flat.findFirst({ where: { id: dto.flatId, societyId } });
+      if (!flat) throw new NotFoundException('Flat not found in this society');
+    }
+
     return this.prisma.maintenanceRequest.create({
       data: {
         societyId,
@@ -195,6 +200,19 @@ export class HelpdeskService {
 
   async updateStatus(societyId: string, id: string, actorId: string, dto: UpdateRequestStatusDto) {
     const before = await this.findOne(societyId, id);
+
+    // An assignee must be an active, non-resident member of this same
+    // society — never trust a client-supplied userId as-is. Without this, a
+    // typo'd or malicious id could assign a ticket (title, description, the
+    // resident's contact details) to an arbitrary account, including one in
+    // a different society entirely.
+    if (dto.assignedToId) {
+      const assignee = await this.prisma.societyMembership.findFirst({
+        where: { societyId, userId: dto.assignedToId, status: 'ACTIVE', role: { not: SystemRole.RESIDENT } },
+      });
+      if (!assignee) throw new NotFoundException('Assignee is not an active staff member of this society');
+    }
+
     const resolvedAt =
       dto.status === 'RESOLVED' || dto.status === 'CLOSED' ? new Date() : undefined;
 

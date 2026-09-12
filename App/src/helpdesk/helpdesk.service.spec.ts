@@ -30,14 +30,22 @@ function makeRequest(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeService(request: unknown = makeRequest()) {
+function makeService(
+  request: unknown = makeRequest(),
+  opts: { flat?: unknown; assignee?: unknown } = {},
+) {
   const prisma = {
     maintenanceRequest: {
+      create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'new-req', ...data })),
       findFirst: jest.fn().mockResolvedValue(request),
       update: jest.fn().mockImplementation(({ data }: any) =>
         Promise.resolve({ ...(request as Record<string, unknown>), ...data, residentId: OWNER.id }),
       ),
     },
+    // Only consulted when a request's flatId or an assignee is actually
+    // checked (create() / updateStatus() with those fields set) — a value
+    // here of `undefined` is fine for every test that never sets them.
+    flat: { findFirst: jest.fn().mockResolvedValue(opts.flat) },
     maintenanceRequestComment: {
       findMany: jest.fn().mockResolvedValue([
         { id: 'c1', authorId: OWNER.id, body: 'Still dripping', author: {} },
@@ -49,6 +57,7 @@ function makeService(request: unknown = makeRequest()) {
     },
     societyMembership: {
       findMany: jest.fn().mockResolvedValue([{ userId: ADMIN.id }]),
+      findFirst: jest.fn().mockResolvedValue(opts.assignee),
     },
     auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
     $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
@@ -193,5 +202,58 @@ describe('HelpdeskService.updateStatus — audit trail', () => {
 
     expect(prisma.maintenanceRequest.update).toHaveBeenCalled();
     expect((prisma.$transaction as jest.Mock).mock.calls[0][0]).toHaveLength(2);
+  });
+});
+
+describe('HelpdeskService.create — cross-society flatId is rejected', () => {
+  it('refuses a flatId that does not belong to this society, and never creates the request', async () => {
+    const { service, prisma } = makeService(makeRequest(), { flat: null }); // not found in this society
+    await expect(
+      service.create(SOCIETY_ID, OWNER.id, { title: 'Leak', flatId: 'flat-from-society-b' } as any),
+    ).rejects.toThrow(NotFoundException);
+    expect(prisma.maintenanceRequest.create).not.toHaveBeenCalled();
+  });
+
+  it('accepts a flatId that genuinely belongs to this society', async () => {
+    const { service, prisma } = makeService(makeRequest(), { flat: { id: 'flat-1', societyId: SOCIETY_ID } });
+    await service.create(SOCIETY_ID, OWNER.id, { title: 'Leak', flatId: 'flat-1' } as any);
+    expect(prisma.maintenanceRequest.create).toHaveBeenCalled();
+  });
+
+  it('skips the flat lookup entirely when no flatId is given', async () => {
+    const { service, prisma } = makeService();
+    await service.create(SOCIETY_ID, OWNER.id, { title: 'General question' } as any);
+    expect(prisma.flat.findFirst).not.toHaveBeenCalled();
+    expect(prisma.maintenanceRequest.create).toHaveBeenCalled();
+  });
+});
+
+describe('HelpdeskService.updateStatus — assignedToId must be active, non-resident staff of this society', () => {
+  it('refuses an assignedToId with no active non-resident membership in this society, and never updates', async () => {
+    const { service, prisma } = makeService(makeRequest(), { assignee: null });
+    await expect(
+      service.updateStatus(SOCIETY_ID, REQUEST_ID, ADMIN.id, {
+        status: 'IN_PROGRESS',
+        assignedToId: 'user-from-society-b',
+      } as any),
+    ).rejects.toThrow(NotFoundException);
+    expect(prisma.maintenanceRequest.update).not.toHaveBeenCalled();
+  });
+
+  it('accepts an assignedToId that is genuinely active staff in this society', async () => {
+    const { service, prisma } = makeService(makeRequest(), {
+      assignee: { id: 'm-1', societyId: SOCIETY_ID, userId: STAFF.id, status: 'ACTIVE', role: 'SOCIETY_STAFF' },
+    });
+    await service.updateStatus(SOCIETY_ID, REQUEST_ID, ADMIN.id, {
+      status: 'IN_PROGRESS',
+      assignedToId: STAFF.id,
+    } as any);
+    expect(prisma.maintenanceRequest.update).toHaveBeenCalled();
+  });
+
+  it('skips the assignee lookup entirely when assignedToId is not being changed', async () => {
+    const { service, prisma } = makeService();
+    await service.updateStatus(SOCIETY_ID, REQUEST_ID, ADMIN.id, { status: 'RESOLVED' } as any);
+    expect(prisma.societyMembership.findFirst).not.toHaveBeenCalled();
   });
 });
