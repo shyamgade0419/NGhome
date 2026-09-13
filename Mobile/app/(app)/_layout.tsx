@@ -23,6 +23,9 @@ export default function AppLayout() {
       <Stack.Screen name="notifications" />
       <Stack.Screen name="documents" />
       <Stack.Screen name="my-bills" />
+      <Stack.Screen name="directory" />
+      <Stack.Screen name="forum" />
+      <Stack.Screen name="chat" />
     </Stack>
   );
 }

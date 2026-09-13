@@ -239,6 +239,44 @@ export default function ResidentDashboard() {
           </TouchableOpacity>
         </View>
 
+        {/* Community — directory, forum, chat. A second row rather than
+            widening the first: seven equal-width tiles across one row
+            would squeeze every label onto too little space to stay
+            legible. */}
+        <View style={styles.quickLinksRow}>
+          <TouchableOpacity
+            style={styles.quickLink}
+            activeOpacity={0.8}
+            onPress={() => router.push('/(app)/directory' as any)}
+          >
+            <View style={[styles.quickLinkIcon, { backgroundColor: colors.warningLight }]}>
+              <Ionicons name="people-outline" size={20} color={colors.warning} />
+            </View>
+            <Text style={styles.quickLinkText} numberOfLines={2}>Directory</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickLink}
+            activeOpacity={0.8}
+            onPress={() => router.push('/(app)/forum' as any)}
+          >
+            <View style={[styles.quickLinkIcon, { backgroundColor: colors.successLight }]}>
+              <Ionicons name="chatbubbles-outline" size={20} color={colors.success} />
+            </View>
+            <Text style={styles.quickLinkText} numberOfLines={2}>Community{'\n'}Board</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickLink}
+            activeOpacity={0.8}
+            onPress={() => router.push('/(app)/chat' as any)}
+          >
+            <View style={[styles.quickLinkIcon, { backgroundColor: colors.infoLight }]}>
+              <Ionicons name="chatbox-ellipses-outline" size={20} color={colors.info} />
+            </View>
+            <Text style={styles.quickLinkText} numberOfLines={2}>Messages</Text>
+          </TouchableOpacity>
+          <View style={[styles.quickLink, { opacity: 0 }]} pointerEvents="none" />
+        </View>
+
         {/* Announcements preview */}
         <SectionHeader
           title="Announcements"
