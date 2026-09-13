@@ -36,6 +36,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { EventsModule } from './events/events.module';
 import { ForumModule } from './forum/forum.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { ForumModule } from './forum/forum.module';
     ReportsModule,
     EventsModule,
     ForumModule,
+    ChatModule,
     HealthModule,
   ],
   providers: [

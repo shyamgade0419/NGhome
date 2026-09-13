@@ -34,6 +34,8 @@ import { AllocateWaterCostsDto } from '../water/dto/allocate-water-costs.dto';
 import { SendNotificationDto } from '../notifications/dto/send-notification.dto';
 import { CreateForumTopicDto } from '../forum/dto/create-forum-topic.dto';
 import { CreateForumReplyDto } from '../forum/dto/create-forum-reply.dto';
+import { StartConversationDto } from '../chat/dto/start-conversation.dto';
+import { SendMessageDto } from '../chat/dto/send-message.dto';
 import { SystemRole, AnnouncementPriority, WaterBillingModel, NotificationChannel } from '@prisma/client';
 
 // Mirrors main.ts exactly — testing against different settings proves nothing.
@@ -538,6 +540,28 @@ describe('Community forum DTO validation', () => {
 
     it('rejects an empty reply', async () => {
       await expect(run({ body: '' }, CreateForumReplyDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+});
+
+describe('Chat DTO validation', () => {
+  describe('StartConversationDto', () => {
+    it('accepts a genuine partner id', async () => {
+      await expect(run({ userId: 'user-1' }, StartConversationDto)).resolves.toMatchObject({ userId: 'user-1' });
+    });
+
+    it('rejects a missing userId', async () => {
+      await expect(run({}, StartConversationDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('SendMessageDto', () => {
+    it('accepts a genuine message', async () => {
+      await expect(run({ body: 'Hello!' }, SendMessageDto)).resolves.toMatchObject({ body: 'Hello!' });
+    });
+
+    it('rejects an empty message', async () => {
+      await expect(run({ body: '' }, SendMessageDto)).rejects.toThrow(BadRequestException);
     });
   });
 });
