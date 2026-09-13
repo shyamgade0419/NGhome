@@ -255,6 +255,10 @@ model User {
   requestComments      MaintenanceRequestComment[] @relation("RequestCommentAuthor")
   createdEvents        Event[]
   pushTokens           PushToken[]
+  createdForumTopics   ForumTopic[]                 @relation("ForumTopicCreator")
+  forumReplies         ForumReply[]                 @relation("ForumReplyAuthor")
+  sentMessages         DirectMessage[]               @relation("MessageSender")
+  conversations        ConversationParticipant[]
 
   @@map("users")
 }
@@ -363,6 +367,8 @@ model Society {
   transactions        Transaction[]
   maintenanceRequests MaintenanceRequest[]
   events              Event[]
+  forumTopics         ForumTopic[]
+  conversations       Conversation[]
 
   @@map("societies")
 }
@@ -1223,4 +1229,101 @@ model MaintenanceRequestComment {
 
   @@index([requestId, createdAt])
   @@map("maintenance_request_comments")
+}
+
+// ─── COMMUNITY FORUM ──────────────────────────────────────────────────────────
+//
+// Any active member of a society can start a topic and reply to one — unlike
+// Announcement (admin/staff-authored, one-way broadcast), a forum topic can be
+// raised by any resident. isPinned/isLocked are moderation-only: only an
+// admin/committee member can set them (enforced in ForumService, not here).
+
+model ForumTopic {
+  id          String   @id @default(uuid())
+  societyId   String
+  createdById String
+  title       String
+  body        String
+  isPinned    Boolean  @default(false)
+  isLocked    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  society   Society      @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  createdBy User         @relation("ForumTopicCreator", fields: [createdById], references: [id])
+  replies   ForumReply[]
+
+  @@index([societyId])
+  @@index([societyId, isPinned, createdAt])
+  @@map("forum_topics")
+}
+
+model ForumReply {
+  id        String   @id @default(uuid())
+  topicId   String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  topic  ForumTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  author User       @relation("ForumReplyAuthor", fields: [authorId], references: [id])
+
+  @@index([topicId, createdAt])
+  @@map("forum_replies")
+}
+
+// ─── DIRECT MESSAGING ─────────────────────────────────────────────────────────
+//
+// Resident-to-resident chat, refresh-based rather than a live socket — a
+// message is a normal row the recipient's client picks up on its next poll,
+// with a push notification (existing NotificationsService) so they know to
+// look. One Conversation per pair of participants within a society;
+// ConversationParticipant is a join table (rather than two nullable user
+// columns on Conversation) so this can hold more than two participants later
+// without a schema change. lastReadAt is a per-participant marker, not a
+// read flag per message — unread counts are derived by comparing each
+// message's createdAt against it, which scales to more than two people and
+// needs no write on every single message read.
+
+model Conversation {
+  id        String   @id @default(uuid())
+  societyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  society      Society                   @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  participants ConversationParticipant[]
+  messages     DirectMessage[]
+
+  @@index([societyId])
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id             String    @id @default(uuid())
+  conversationId String
+  userId         String
+  lastReadAt     DateTime?
+  joinedAt       DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@map("conversation_participants")
+}
+
+model DirectMessage {
+  id             String   @id @default(uuid())
+  conversationId String
+  senderId       String
+  body           String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation("MessageSender", fields: [senderId], references: [id])
+
+  @@index([conversationId, createdAt])
+  @@map("direct_messages")
 }

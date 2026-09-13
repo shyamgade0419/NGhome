@@ -32,6 +32,8 @@ import { CreateWaterConfigDto } from '../water/dto/create-water-config.dto';
 import { RecordReadingDto } from '../water/dto/record-reading.dto';
 import { AllocateWaterCostsDto } from '../water/dto/allocate-water-costs.dto';
 import { SendNotificationDto } from '../notifications/dto/send-notification.dto';
+import { CreateForumTopicDto } from '../forum/dto/create-forum-topic.dto';
+import { CreateForumReplyDto } from '../forum/dto/create-forum-reply.dto';
 import { SystemRole, AnnouncementPriority, WaterBillingModel, NotificationChannel } from '@prisma/client';
 
 // Mirrors main.ts exactly — testing against different settings proves nothing.
@@ -508,6 +510,34 @@ describe('Non-financial DTO validation (found via the full @Body() sweep)', () =
       await expect(
         run({ title: 'x', body: 'y', type: 'z', audience: 'EVERYONE_EVER' }, SendNotificationDto),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+});
+
+describe('Community forum DTO validation', () => {
+  describe('CreateForumTopicDto', () => {
+    it('accepts a genuine topic', async () => {
+      await expect(
+        run({ title: 'Gym equipment vote', body: 'Should we get a new treadmill?' }, CreateForumTopicDto),
+      ).resolves.toMatchObject({ title: 'Gym equipment vote' });
+    });
+
+    it('rejects a title that is too short', async () => {
+      await expect(run({ title: 'Hi', body: 'x' }, CreateForumTopicDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a missing body', async () => {
+      await expect(run({ title: 'A real title here' }, CreateForumTopicDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('CreateForumReplyDto', () => {
+    it('accepts a genuine reply', async () => {
+      await expect(run({ body: 'Yes please!' }, CreateForumReplyDto)).resolves.toMatchObject({ body: 'Yes please!' });
+    });
+
+    it('rejects an empty reply', async () => {
+      await expect(run({ body: '' }, CreateForumReplyDto)).rejects.toThrow(BadRequestException);
     });
   });
 });

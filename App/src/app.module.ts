@@ -35,6 +35,7 @@ import { HealthModule } from './health/health.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { EventsModule } from './events/events.module';
+import { ForumModule } from './forum/forum.module';
 
 @Module({
   imports: [
@@ -75,6 +76,7 @@ import { EventsModule } from './events/events.module';
     NotificationsModule,
     ReportsModule,
     EventsModule,
+    ForumModule,
     HealthModule,
   ],
   providers: [
