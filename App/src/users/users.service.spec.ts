@@ -232,6 +232,95 @@ describe('UsersService — addToSociety flat validation (DEFECT-1)', () => {
 });
 
 /**
+ * The resident directory (getDirectory) is deliberately a much narrower
+ * projection than findBySociety: every active member of the society can
+ * call it, not just admin/staff, so it must never leak email or phone —
+ * only identity and flat. These tests pin both the privacy boundary and
+ * the search/scoping behaviour.
+ */
+describe('UsersService.getDirectory', () => {
+  function makeDirectoryPrisma(rows: unknown[] = [], total = rows.length) {
+    return {
+      user: {
+        findMany: jest.fn().mockResolvedValue(rows),
+        count: jest.fn().mockResolvedValue(total),
+      },
+    } as unknown as PrismaService;
+  }
+
+  it('scopes to active members of the given society only, excluding soft-deleted users', async () => {
+    const prisma = makeDirectoryPrisma();
+    const service = new UsersService(prisma);
+    await service.getDirectory(SOCIETY_ID, undefined, 1, 20);
+
+    const [findManyArg] = (prisma.user.findMany as jest.Mock).mock.calls[0];
+    expect(findManyArg.where).toMatchObject({
+      deletedAt: null,
+      memberships: { some: { societyId: SOCIETY_ID, status: 'ACTIVE' } },
+    });
+    expect((prisma.user.count as jest.Mock).mock.calls[0][0].where).toMatchObject({
+      memberships: { some: { societyId: SOCIETY_ID, status: 'ACTIVE' } },
+    });
+  });
+
+  it('never selects email or phone — directory is visible to every resident, not just staff', async () => {
+    const prisma = makeDirectoryPrisma();
+    const service = new UsersService(prisma);
+    await service.getDirectory(SOCIETY_ID, undefined, 1, 20);
+
+    const [findManyArg] = (prisma.user.findMany as jest.Mock).mock.calls[0];
+    expect(findManyArg.select).not.toHaveProperty('email');
+    expect(findManyArg.select).not.toHaveProperty('phone');
+    expect(findManyArg.select).toMatchObject({ id: true, firstName: true, lastName: true });
+  });
+
+  it('matches a search term against first name, last name, or flat code', async () => {
+    const prisma = makeDirectoryPrisma();
+    const service = new UsersService(prisma);
+    await service.getDirectory(SOCIETY_ID, 'Rao', 1, 20);
+
+    const [findManyArg] = (prisma.user.findMany as jest.Mock).mock.calls[0];
+    expect(findManyArg.where.OR).toEqual([
+      { firstName: { contains: 'Rao', mode: 'insensitive' } },
+      { lastName: { contains: 'Rao', mode: 'insensitive' } },
+      {
+        memberships: {
+          some: { societyId: SOCIETY_ID, status: 'ACTIVE', flat: { flatCode: { contains: 'Rao', mode: 'insensitive' } } },
+        },
+      },
+    ]);
+  });
+
+  it('adds no OR filter when no search term is given', async () => {
+    const prisma = makeDirectoryPrisma();
+    const service = new UsersService(prisma);
+    await service.getDirectory(SOCIETY_ID, undefined, 1, 20);
+
+    const [findManyArg] = (prisma.user.findMany as jest.Mock).mock.calls[0];
+    expect(findManyArg.where).not.toHaveProperty('OR');
+  });
+
+  it('trims whitespace-only search to "no search"', async () => {
+    const prisma = makeDirectoryPrisma();
+    const service = new UsersService(prisma);
+    await service.getDirectory(SOCIETY_ID, '   ', 1, 20);
+
+    const [findManyArg] = (prisma.user.findMany as jest.Mock).mock.calls[0];
+    expect(findManyArg.where).not.toHaveProperty('OR');
+  });
+
+  it('returns paginated results with meta reflecting the true total', async () => {
+    const rows = [{ id: 'u1', firstName: 'Asha', lastName: 'Rao', memberships: [] }];
+    const prisma = makeDirectoryPrisma(rows, 42);
+    const service = new UsersService(prisma);
+
+    const result = await service.getDirectory(SOCIETY_ID, undefined, 2, 20);
+    expect(result.data).toBe(rows);
+    expect(result.meta).toMatchObject({ total: 42, page: 2, limit: 20 });
+  });
+});
+
+/**
  * Occupied-flat join approval gate: joinSociety() (auth.service.ts) creates a
  * PENDING membership when someone joins a flat that already has an active
  * resident. These methods are the admin's only way to review it.

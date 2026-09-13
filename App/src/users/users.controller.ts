@@ -36,6 +36,24 @@ export class UsersController {
     return this.usersService.findBySociety(societyId, +page, +limit);
   }
 
+  // Registered before :id — a static segment declared after a param route
+  // would otherwise be swallowed by it (Nest/Express match in declaration
+  // order, not by specificity), the same reason 'society' above precedes it.
+  @Get('directory')
+  @UseGuards(TenantGuard)
+  @ApiOperation({ summary: 'Browse active residents/staff in the current society — name and flat only, never contact info' })
+  @ApiQuery({ name: 'search', required: false, description: 'Matches first name, last name, or flat code' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  async getDirectory(
+    @SocietyId() societyId: string,
+    @Query('search') search?: string,
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+  ) {
+    return this.usersService.getDirectory(societyId, search, +page, +limit);
+  }
+
   @Get(':id')
   @UseGuards(TenantGuard, RolesGuard)
   @Roles(SystemRole.SOCIETY_ADMIN)

@@ -100,6 +100,67 @@ export class UsersService {
     });
   }
 
+  /**
+   * The resident directory: browse who else lives in the society, by name
+   * or flat. Deliberately a much narrower projection than findBySociety
+   * (which is admin/staff-only and includes email/phone) — every active
+   * member can see this one, so it never returns contact details, only
+   * identity + flat, the same restraint Helpdesk already applies when a
+   * resident's info would otherwise be visible to someone other than
+   * staff reviewing their own request.
+   */
+  async getDirectory(societyId: string, search: string | undefined, page: number, limit: number) {
+    const { skip, take } = getPaginationParams({ page, limit });
+    const term = search?.trim();
+
+    const where = {
+      deletedAt: null,
+      memberships: { some: { societyId, status: 'ACTIVE' as const } },
+      ...(term
+        ? {
+            OR: [
+              { firstName: { contains: term, mode: 'insensitive' as const } },
+              { lastName: { contains: term, mode: 'insensitive' as const } },
+              {
+                memberships: {
+                  some: {
+                    societyId,
+                    status: 'ACTIVE' as const,
+                    flat: { flatCode: { contains: term, mode: 'insensitive' as const } },
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const [data, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        skip,
+        take,
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          memberships: {
+            where: { societyId, status: 'ACTIVE' },
+            select: {
+              role: true,
+              isPrimary: true,
+              flat: { select: { id: true, flatCode: true, unitNumber: true } },
+            },
+          },
+        },
+        orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return { data, meta: buildPaginationMeta(total, page, limit) };
+  }
+
   // Get users belonging to a specific society
   async findBySociety(societyId: string, page: number, limit: number) {
     const { skip, take } = getPaginationParams({ page, limit });
