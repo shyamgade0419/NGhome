@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import {
   View,
@@ -13,6 +13,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -80,8 +81,11 @@ function AddExpenseModal({ visible, onClose }: { visible: boolean; onClose: () =
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['expenses'] });
-      Alert.alert('Added', 'Expense recorded successfully.');
+      // Close the sheet first and raise the alert once its slide-out has
+      // finished — showing both in the same instant is what could wedge
+      // Android's native modal layer for whatever opened next.
       onClose();
+      setTimeout(() => Alert.alert('Added', 'Expense recorded successfully.'), 400);
       setForm({
         description: '', amount: '', category: CATEGORIES[0],
         expenseDate: new Date().toISOString().slice(0, 10),
@@ -205,6 +209,38 @@ function AddExpenseModal({ visible, onClose }: { visible: boolean; onClose: () =
       </SafeAreaView>
     </Modal>
   );
+}
+
+/**
+ * A bottom sheet drawn inside this screen's own view tree instead of a
+ * native <Modal>. The reject and mark-paid sheets are opened right after
+ * "Add Expense", which closes its own native Modal and pops an Alert in
+ * the same instant — on Android that can leave the native modal layer in
+ * a state where later Modals silently never present (the Mark Paid sheet
+ * simply didn't open). An in-tree overlay has no native window to get
+ * stuck, and behaves identically on both platforms. The hardware back
+ * button still dismisses it, as a Modal's onRequestClose did.
+ */
+function InlineSheet({
+  visible,
+  onRequestClose,
+  children,
+}: {
+  visible: boolean;
+  onRequestClose: () => void;
+  children: React.ReactNode;
+}) {
+  useEffect(() => {
+    if (!visible) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onRequestClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [visible, onRequestClose]);
+
+  if (!visible) return null;
+  return <View style={rejectModal.inline}>{children}</View>;
 }
 
 // ── Main screen ───────────────────────────────────────────────────────────────
@@ -442,12 +478,7 @@ export default function ExpensesScreen() {
       <AddExpenseModal visible={showAdd} onClose={() => setShowAdd(false)} />
 
       {/* Cross-platform rejection reason modal (replaces Alert.prompt) */}
-      <Modal
-        visible={!!rejectingExpense}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setRejectingExpense(null)}
-      >
+      <InlineSheet visible={!!rejectingExpense} onRequestClose={() => setRejectingExpense(null)}>
         <View style={rejectModal.overlay}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
             <View style={rejectModal.card}>
@@ -490,16 +521,11 @@ export default function ExpensesScreen() {
             </View>
           </KeyboardAvoidingView>
         </View>
-      </Modal>
+      </InlineSheet>
 
       {/* Which account the money actually leaves. Reuses the rejection modal's
           shape rather than a full page sheet — it's one choice and a confirm. */}
-      <Modal
-        visible={!!payingExpense}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setPayingExpense(null)}
-      >
+      <InlineSheet visible={!!payingExpense} onRequestClose={() => setPayingExpense(null)}>
         <View style={rejectModal.overlay}>
           <View style={rejectModal.card}>
             <View style={rejectModal.header}>
@@ -557,7 +583,7 @@ export default function ExpensesScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      </InlineSheet>
     </SafeAreaView>
   );
 }
@@ -629,6 +655,8 @@ const styles = StyleSheet.create({
 });
 
 const rejectModal = StyleSheet.create({
+  // Above the list and header, below nothing — the sheet is part of the screen.
+  inline: { ...StyleSheet.absoluteFillObject, zIndex: 100, elevation: 100 },
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
