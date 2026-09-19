@@ -261,11 +261,40 @@ export default function ExpensesScreen() {
       qc.invalidateQueries({ queryKey: ['expenses'] });
       qc.invalidateQueries({ queryKey: ['accounts'] });
       setPayingExpense(null);
+      setPayAccountId(null);
       Alert.alert('Marked Paid', 'The account balance has been updated.');
     },
     onError: (e: any) =>
       Alert.alert('Error', e?.response?.data?.message ?? 'Failed to mark paid.'),
   });
+
+  // Opening the sheet always starts from a clean choice. With exactly one
+  // account there is nothing to choose between, so it is preselected — the
+  // same "only when it isn't a guess" rule payment auto-approval applies;
+  // with several, the admin has to pick, and the sheet says so.
+  const openPayModal = (item: Expense) => {
+    setPayAccountId(accounts && accounts.length === 1 ? accounts[0].id : null);
+    setPayingExpense(item);
+  };
+
+  // The confirm button used to be `disabled` until an account was tapped,
+  // and only dimmed slightly — pressing it did nothing, with no message,
+  // which read as the feature being broken. It now always responds.
+  const confirmMarkPaid = () => {
+    if (!payingExpense || markPaidMutation.isPending) return;
+    if (!accounts || accounts.length === 0) {
+      Alert.alert(
+        'No account to pay from',
+        'Add a bank account or cash box under Accounts first — marking an expense paid deducts it from an account.',
+      );
+      return;
+    }
+    if (!payAccountId) {
+      Alert.alert('Choose an account', 'Tap the account this expense was paid from, then confirm.');
+      return;
+    }
+    markPaidMutation.mutate({ id: payingExpense.id, accountId: payAccountId });
+  };
 
   const handleApprove = (item: Expense) => {
     Alert.alert(
@@ -343,7 +372,7 @@ export default function ExpensesScreen() {
         <View style={styles.actions}>
           <TouchableOpacity
             style={[styles.actionBtn, styles.approveBtn]}
-            onPress={() => setPayingExpense(item)}
+            onPress={() => openPayModal(item)}
           >
             <Ionicons name="cash-outline" size={15} color={colors.success} />
             <Text style={[styles.actionText, { color: colors.success }]}>Mark Paid</Text>
@@ -485,6 +514,11 @@ export default function ExpensesScreen() {
               </Text>
             )}
             <Text style={payModal.label}>Pay from account</Text>
+            {(accounts ?? []).length === 0 ? (
+              <Text style={payModal.emptyAccounts}>
+                No accounts yet. Add a bank account or cash box under Accounts, then come back to mark this paid.
+              </Text>
+            ) : null}
             <ScrollView style={payModal.accountList}>
               {(accounts ?? []).map((a) => (
                 <TouchableOpacity
@@ -512,16 +546,9 @@ export default function ExpensesScreen() {
                 <Text style={rejectModal.cancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[
-                  payModal.confirmBtn,
-                  (markPaidMutation.isPending || !payAccountId) && { opacity: 0.6 },
-                ]}
-                onPress={() =>
-                  payingExpense &&
-                  payAccountId &&
-                  markPaidMutation.mutate({ id: payingExpense.id, accountId: payAccountId })
-                }
-                disabled={markPaidMutation.isPending || !payAccountId}
+                style={[payModal.confirmBtn, markPaidMutation.isPending && { opacity: 0.6 }]}
+                onPress={confirmMarkPaid}
+                disabled={markPaidMutation.isPending}
               >
                 <Text style={payModal.confirmText}>
                   {markPaidMutation.isPending ? 'Saving…' : 'Mark Paid'}
@@ -549,6 +576,7 @@ const payModal = StyleSheet.create({
   accountName: { ...typography.bodyMedium, color: colors.text },
   accountBal: { ...typography.bodySmall, color: colors.textSecondary },
   hint: { ...typography.bodySmall, color: colors.textTertiary, marginTop: spacing.sm },
+  emptyAccounts: { ...typography.bodySmall, color: colors.warning },
   confirmBtn: {
     flex: 1, paddingVertical: 11, borderRadius: radius.md,
     backgroundColor: colors.primary, alignItems: 'center',
