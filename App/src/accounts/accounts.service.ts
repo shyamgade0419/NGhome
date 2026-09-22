@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { buildPaginationMeta } from '../common/utils/pagination';
 
 import { CreateAccountDto } from './dto/create-account.dto';
 export { CreateAccountDto } from './dto/create-account.dto';
@@ -69,6 +70,13 @@ export class AccountsService {
       }),
       this.prisma.transaction.count({ where: { societyId, accountId } }),
     ]);
-    return { data, total, page, limit };
+    // Must be {data, meta}: TransformInterceptor only auto-unwraps a
+    // pagination result shaped this way. The old {data, total, page, limit}
+    // shape had no `meta` key, so the interceptor treated the whole object
+    // as opaque payload and wrapped it a second time — every client's
+    // PaginatedResponse.data ended up holding this object instead of the
+    // transaction array, rendering as an empty ledger no matter how many
+    // transactions actually existed.
+    return { data, meta: buildPaginationMeta(total, page, limit) };
   }
 }
