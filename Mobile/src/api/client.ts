@@ -5,6 +5,17 @@ import { tokenService } from '@/auth/token.service';
 export const API_BASE_URL =
   Constants.expoConfig?.extra?.apiBaseUrl ?? 'https://nghome-api.novagade.in/api/v1';
 
+// The refresh call below uses bare axios, not apiClient, so it does not
+// inherit apiClient's own 30s timeout — it would otherwise have none at
+// all. A hung refresh (a dropped connection that never errors, common on
+// flaky mobile data) left isRefreshing stuck true forever: every other
+// request that hit a 401 in that window queued behind it and never
+// settled either, since processQueue only runs once this call resolves
+// or rejects. On screen that reads as a button stuck on "Saving…"
+// indefinitely, for an action that has nothing to do with the request
+// that actually stalled.
+const REFRESH_TIMEOUT_MS = 15_000;
+
 let authLogoutCallback: (() => void) | null = null;
 
 export function setAuthLogoutCallback(cb: () => void) {
@@ -91,7 +102,11 @@ apiClient.interceptors.response.use(
       const refreshToken = await tokenService.getRefreshToken();
       if (!refreshToken) throw new Error('No refresh token');
 
-      const response = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken });
+      const response = await axios.post(
+        `${API_BASE_URL}/auth/refresh`,
+        { refreshToken },
+        { timeout: REFRESH_TIMEOUT_MS },
+      );
       const { accessToken, refreshToken: newRefresh } = response.data.data;
 
       await tokenService.setTokens(accessToken, newRefresh);

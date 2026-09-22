@@ -108,7 +108,15 @@ describe('apiClient response interceptor — single 401', () => {
 
     expect(res.status).toBe(200);
     expect(axios.post).toHaveBeenCalledTimes(1);
-    expect(axios.post).toHaveBeenCalledWith(`${API_BASE_URL}/auth/refresh`, { refreshToken: 'refresh-1' });
+    // Must carry an explicit timeout: this call uses bare axios, not
+    // apiClient, so without one it has no timeout at all (apiClient's own
+    // 30s timeout does not apply here) and a dropped connection would hang
+    // isRefreshing — and every request queued behind it — forever.
+    expect(axios.post).toHaveBeenCalledWith(
+      `${API_BASE_URL}/auth/refresh`,
+      { refreshToken: 'refresh-1' },
+      expect.objectContaining({ timeout: expect.any(Number) }),
+    );
     expect(tokenService.setTokens).toHaveBeenCalledWith('access-2', 'refresh-2');
     // The retry re-runs the request interceptor, which re-reads the (now
     // updated) access token — proving the retry actually used the new one,
