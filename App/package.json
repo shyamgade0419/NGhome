@@ -25,6 +25,8 @@
     "prisma:studio": "prisma studio",
     "prisma:seed": "ts-node prisma/seed.ts",
     "prisma:seed:prod": "node -e \"require('./dist/prisma/seed.js')\"",
+    "platform-admin:create": "ts-node prisma/create-platform-admin.ts",
+    "platform-admin:create:prod": "node dist/prisma/create-platform-admin.js",
     "db:push": "prisma db push"
   },
   "dependencies": {

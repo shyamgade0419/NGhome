@@ -53,6 +53,15 @@ const nextConfig = {
   async headers() {
     return [{ source: '/:path*', headers: SECURITY_HEADERS }];
   },
+  // /Admin is the address the NovaGade team uses for the platform console;
+  // the page itself lives at /platform. Route paths are case-sensitive, so
+  // both spellings are listed.
+  async redirects() {
+    return [
+      { source: '/Admin', destination: '/platform', permanent: false },
+      { source: '/admin', destination: '/platform', permanent: false },
+    ];
+  },
 };
 
 export default nextConfig;
