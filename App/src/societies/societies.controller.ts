@@ -102,6 +102,27 @@ export class SocietiesController {
     return this.societiesService.getPlatformStats();
   }
 
+  @Get('platform/users')
+  @UseGuards(PlatformAdminGuard)
+  @ApiOperation({ summary: '[Platform Admin] All users across every society' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'search', required: false })
+  async platformUsers(
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+    @Query('search') search?: string,
+  ) {
+    return this.societiesService.listPlatformUsers({ page: +page, limit: +limit, search });
+  }
+
+  @Get(':id/overview')
+  @UseGuards(PlatformAdminGuard)
+  @ApiOperation({ summary: '[Platform Admin] Flats, members, billing and activity for one society' })
+  async platformOverview(@Param('id') id: string) {
+    return this.societiesService.getPlatformOverview(id);
+  }
+
   @Get(':id')
   @UseGuards(PlatformAdminGuard)
   @ApiOperation({ summary: '[Platform Admin] Get society by ID, with its admin contacts' })

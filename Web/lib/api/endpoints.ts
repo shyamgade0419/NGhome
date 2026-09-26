@@ -516,4 +516,55 @@ export const platformApi = {
    *  bills and history are untouched, so reinstating restores it as it was. */
   setSocietyStatus: (id: string, isActive: boolean) =>
     api.patch(`/societies/${id}/status`, { isActive }),
+
+  listUsers: (params?: { page?: number; limit?: number; search?: string }): Promise<{ data: PaginatedResponse<PlatformUser> }> =>
+    api.get('/societies/platform/users', { params }),
+
+  overview: (id: string): Promise<{ data: PlatformSocietyOverview }> =>
+    api.get(`/societies/${id}/overview`),
 };
+
+export interface PlatformUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string | null;
+  isActive: boolean;
+  isPlatformAdmin: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+  memberships: {
+    role: string;
+    society: { id: string; name: string; displayName: string | null };
+    flat: { flatCode: string } | null;
+  }[];
+}
+
+export interface PlatformSocietyOverview {
+  society: PlatformSociety;
+  flats: { total: number; byStatus: Record<string, number> };
+  members: {
+    total: number;
+    byRole: Record<string, number>;
+    activeLast30Days: number;
+    lastLoginAt: string | null;
+  };
+  // Money values are Decimal strings.
+  billing: {
+    billsPublished: number;
+    totalBilled: string;
+    totalCollected: string;
+    totalPending: string;
+    overdueBills: number;
+    paymentsAwaitingReview: number;
+  };
+  accounts: { count: number; totalBalance: string };
+  recentActivity: {
+    id: string;
+    action: string;
+    entityType: string | null;
+    createdAt: string;
+    actor: { firstName: string; lastName: string };
+  }[];
+}

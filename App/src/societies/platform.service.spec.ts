@@ -119,3 +119,172 @@ describe('SocietiesService.setActive', () => {
     expect((prisma.society as any).update).not.toHaveBeenCalled();
   });
 });
+
+describe('SocietiesService.listPlatformUsers', () => {
+  function usersPrisma(rows: unknown[] = [], total = 0) {
+    return {
+      user: {
+        findMany: jest.fn().mockResolvedValue(rows),
+        count: jest.fn().mockResolvedValue(total),
+      },
+    } as unknown as PrismaService;
+  }
+
+  it('returns {data, meta} so the response interceptor unwraps it', async () => {
+    const result = await new SocietiesService(usersPrisma([{ id: 'u1' }], 41)).listPlatformUsers({
+      page: 2,
+      limit: 20,
+    });
+
+    expect(result.data).toEqual([{ id: 'u1' }]);
+    expect(result.meta).toMatchObject({ total: 41, page: 2, limit: 20, totalPages: 3 });
+    expect(result).not.toHaveProperty('total');
+  });
+
+  it('never selects passwordHash', async () => {
+    const prisma = usersPrisma();
+    await new SocietiesService(prisma).listPlatformUsers({ page: 1, limit: 20 });
+
+    const [args] = (prisma.user.findMany as jest.Mock).mock.calls[0];
+    expect(args.select).toBeDefined();
+    expect(args.select.passwordHash).toBeUndefined();
+    expect(args.include).toBeUndefined();
+  });
+
+  it('excludes soft-deleted users and only lists active memberships', async () => {
+    const prisma = usersPrisma();
+    await new SocietiesService(prisma).listPlatformUsers({ page: 1, limit: 20 });
+
+    const [args] = (prisma.user.findMany as jest.Mock).mock.calls[0];
+    expect(args.where).toMatchObject({ deletedAt: null });
+    expect(args.select.memberships.where).toEqual({ status: 'ACTIVE' });
+  });
+
+  it('searches name, email and phone, and applies the same filter to the count', async () => {
+    const prisma = usersPrisma();
+    await new SocietiesService(prisma).listPlatformUsers({ page: 1, limit: 20, search: '  ramesh ' });
+
+    const [args] = (prisma.user.findMany as jest.Mock).mock.calls[0];
+    expect(args.where.OR).toHaveLength(4);
+    expect(args.where.OR[0]).toEqual({ firstName: { contains: 'ramesh', mode: 'insensitive' } });
+    const [countArgs] = (prisma.user.count as jest.Mock).mock.calls[0];
+    expect(countArgs.where).toEqual(args.where);
+  });
+
+  it('adds no search filter when the term is blank', async () => {
+    const prisma = usersPrisma();
+    await new SocietiesService(prisma).listPlatformUsers({ page: 1, limit: 20, search: '   ' });
+
+    const [args] = (prisma.user.findMany as jest.Mock).mock.calls[0];
+    expect(args.where.OR).toBeUndefined();
+  });
+});
+
+describe('SocietiesService.getPlatformOverview', () => {
+  function overviewPrisma() {
+    return {
+      society: {
+        findUnique: jest.fn().mockResolvedValue({ id: SOCIETY_ID, name: 'Horizon', isActive: true }),
+      },
+      societyMembership: {
+        findMany: jest.fn().mockResolvedValue([]),
+        groupBy: jest.fn().mockResolvedValue([
+          { role: 'SOCIETY_ADMIN', _count: { _all: 1 } },
+          { role: 'RESIDENT', _count: { _all: 9 } },
+        ]),
+      },
+      flat: {
+        groupBy: jest.fn().mockResolvedValue([
+          { status: 'ACTIVE', _count: { _all: 8 } },
+          { status: 'VACANT', _count: { _all: 2 } },
+        ]),
+      },
+      maintenanceBill: {
+        aggregate: jest.fn().mockResolvedValue({
+          _count: { _all: 10 },
+          _sum: { totalAmount: '50000', paidAmount: '30000', pendingAmount: '20000' },
+        }),
+        count: jest.fn().mockResolvedValue(3),
+      },
+      paymentSubmission: { count: jest.fn().mockResolvedValue(2) },
+      account: {
+        aggregate: jest.fn().mockResolvedValue({ _count: { _all: 2 }, _sum: { currentBalance: '12345' } }),
+      },
+      user: {
+        findFirst: jest.fn().mockResolvedValue({ lastLoginAt: new Date('2026-09-20T10:00:00Z') }),
+        count: jest.fn().mockResolvedValue(6),
+      },
+      auditLog: { findMany: jest.fn().mockResolvedValue([{ id: 'a1' }]) },
+    } as unknown as PrismaService;
+  }
+
+  it('summarises flats, members, billing, accounts and activity', async () => {
+    const overview = await new SocietiesService(overviewPrisma()).getPlatformOverview(SOCIETY_ID);
+
+    expect(overview.flats).toEqual({ total: 10, byStatus: { ACTIVE: 8, VACANT: 2 } });
+    expect(overview.members).toMatchObject({
+      total: 10,
+      byRole: { SOCIETY_ADMIN: 1, RESIDENT: 9 },
+      activeLast30Days: 6,
+      lastLoginAt: new Date('2026-09-20T10:00:00Z'),
+    });
+    expect(overview.billing).toEqual({
+      billsPublished: 10,
+      totalBilled: '50000',
+      totalCollected: '30000',
+      totalPending: '20000',
+      overdueBills: 3,
+      paymentsAwaitingReview: 2,
+    });
+    expect(overview.accounts).toEqual({ count: 2, totalBalance: '12345' });
+    expect(overview.recentActivity).toEqual([{ id: 'a1' }]);
+  });
+
+  it('scopes every query to the requested society', async () => {
+    const prisma = overviewPrisma();
+    await new SocietiesService(prisma).getPlatformOverview(SOCIETY_ID);
+
+    expect((prisma.flat.groupBy as jest.Mock).mock.calls[0][0].where.societyId).toBe(SOCIETY_ID);
+    expect((prisma.maintenanceBill.aggregate as jest.Mock).mock.calls[0][0].where.societyId).toBe(SOCIETY_ID);
+    expect((prisma.paymentSubmission.count as jest.Mock).mock.calls[0][0].where.societyId).toBe(SOCIETY_ID);
+    expect((prisma.account.aggregate as jest.Mock).mock.calls[0][0].where.societyId).toBe(SOCIETY_ID);
+    expect((prisma.auditLog.findMany as jest.Mock).mock.calls[0][0].where.societyId).toBe(SOCIETY_ID);
+  });
+
+  it('counts only published bills, so unpublished drafts do not inflate what is owed', async () => {
+    const prisma = overviewPrisma();
+    await new SocietiesService(prisma).getPlatformOverview(SOCIETY_ID);
+
+    expect((prisma.maintenanceBill.aggregate as jest.Mock).mock.calls[0][0].where.isPublished).toBe(true);
+  });
+
+  it('ignores never-logged-in users when finding the last login', async () => {
+    const prisma = overviewPrisma();
+    await new SocietiesService(prisma).getPlatformOverview(SOCIETY_ID);
+
+    expect((prisma.user.findFirst as jest.Mock).mock.calls[0][0].where.lastLoginAt).toEqual({ not: null });
+  });
+
+  it('reports zero, not null, when a society has no bills or accounts yet', async () => {
+    const prisma = overviewPrisma();
+    (prisma.maintenanceBill.aggregate as jest.Mock).mockResolvedValue({
+      _count: { _all: 0 },
+      _sum: { totalAmount: null, paidAmount: null, pendingAmount: null },
+    });
+    (prisma.account.aggregate as jest.Mock).mockResolvedValue({ _count: { _all: 0 }, _sum: { currentBalance: null } });
+    (prisma.user.findFirst as jest.Mock).mockResolvedValue(null);
+
+    const overview = await new SocietiesService(prisma).getPlatformOverview(SOCIETY_ID);
+
+    expect(overview.billing.totalBilled).toBe('0');
+    expect(overview.accounts.totalBalance).toBe('0');
+    expect(overview.members.lastLoginAt).toBeNull();
+  });
+
+  it('refuses a society that does not exist', async () => {
+    const prisma = overviewPrisma();
+    (prisma.society.findUnique as jest.Mock).mockResolvedValue(null);
+
+    await expect(new SocietiesService(prisma).getPlatformOverview('nope')).rejects.toThrow(NotFoundException);
+  });
+});

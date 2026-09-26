@@ -163,6 +163,165 @@ export class SocietiesService {
   }
 
   /**
+   * Everything the console's per-society page shows, in one call. Read-only
+   * and platform-admin only: it exposes bill totals and member activity for
+   * a society the caller doesn't belong to.
+   *
+   * Money fields are Decimal sums and travel as strings, like every other
+   * money value in the API.
+   */
+  async getPlatformOverview(id: string) {
+    const society = await this.findOneForPlatform(id);
+
+    const activeMember = { memberships: { some: { societyId: id, status: 'ACTIVE' as const } } };
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    const [
+      flatsByStatus,
+      membersByRole,
+      billTotals,
+      overdueBills,
+      pendingPayments,
+      accountTotals,
+      lastLogin,
+      activeLast30Days,
+      recentActivity,
+    ] = await Promise.all([
+      this.prisma.flat.groupBy({
+        by: ['status'],
+        where: { societyId: id, deletedAt: null },
+        _count: { _all: true },
+      }),
+      this.prisma.societyMembership.groupBy({
+        by: ['role'],
+        where: { societyId: id, status: 'ACTIVE' },
+        _count: { _all: true },
+      }),
+      this.prisma.maintenanceBill.aggregate({
+        where: { societyId: id, isPublished: true },
+        _count: { _all: true },
+        _sum: { totalAmount: true, paidAmount: true, pendingAmount: true },
+      }),
+      this.prisma.maintenanceBill.count({
+        where: { societyId: id, isPublished: true, isPaid: false, dueDate: { lt: new Date() } },
+      }),
+      this.prisma.paymentSubmission.count({
+        where: { societyId: id, status: { in: ['PENDING', 'UNDER_REVIEW'] } },
+      }),
+      this.prisma.account.aggregate({
+        where: { societyId: id, isActive: true },
+        _count: { _all: true },
+        _sum: { currentBalance: true },
+      }),
+      // Nulls sort first on a descending Postgres order, so exclude them or
+      // "last login" would be a user who has never logged in.
+      this.prisma.user.findFirst({
+        where: { ...activeMember, lastLoginAt: { not: null } },
+        orderBy: { lastLoginAt: 'desc' },
+        select: { lastLoginAt: true },
+      }),
+      this.prisma.user.count({ where: { ...activeMember, lastLoginAt: { gte: thirtyDaysAgo } } }),
+      this.prisma.auditLog.findMany({
+        where: { societyId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 15,
+        select: {
+          id: true,
+          action: true,
+          entityType: true,
+          createdAt: true,
+          actor: { select: { firstName: true, lastName: true } },
+        },
+      }),
+    ]);
+
+    const flatCounts = Object.fromEntries(flatsByStatus.map((r) => [r.status, r._count._all]));
+    const roleCounts = Object.fromEntries(membersByRole.map((r) => [r.role, r._count._all]));
+
+    return {
+      society,
+      flats: {
+        total: flatsByStatus.reduce((n, r) => n + r._count._all, 0),
+        byStatus: flatCounts,
+      },
+      members: {
+        total: membersByRole.reduce((n, r) => n + r._count._all, 0),
+        byRole: roleCounts,
+        activeLast30Days,
+        lastLoginAt: lastLogin?.lastLoginAt ?? null,
+      },
+      billing: {
+        billsPublished: billTotals._count._all,
+        totalBilled: billTotals._sum.totalAmount ?? '0',
+        totalCollected: billTotals._sum.paidAmount ?? '0',
+        totalPending: billTotals._sum.pendingAmount ?? '0',
+        overdueBills,
+        paymentsAwaitingReview: pendingPayments,
+      },
+      accounts: {
+        count: accountTotals._count._all,
+        totalBalance: accountTotals._sum.currentBalance ?? '0',
+      },
+      recentActivity,
+    };
+  }
+
+  /**
+   * Every user across every society, for the console's Users tab. Never
+   * selects passwordHash — an explicit select, not an include, so a column
+   * added to User later doesn't start leaking through here.
+   */
+  async listPlatformUsers(params: { page: number; limit: number; search?: string }) {
+    const { skip, take, page, limit } = getPaginationParams({ page: params.page, limit: params.limit });
+    const term = params.search?.trim().slice(0, 100);
+
+    const where: Prisma.UserWhereInput = {
+      deletedAt: null,
+      ...(term
+        ? {
+            OR: [
+              { firstName: { contains: term, mode: 'insensitive' } },
+              { lastName: { contains: term, mode: 'insensitive' } },
+              { email: { contains: term, mode: 'insensitive' } },
+              { phone: { contains: term } },
+            ],
+          }
+        : {}),
+    };
+
+    const [data, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          isActive: true,
+          isPlatformAdmin: true,
+          lastLoginAt: true,
+          createdAt: true,
+          memberships: {
+            where: { status: 'ACTIVE' },
+            select: {
+              role: true,
+              society: { select: { id: true, name: true, displayName: true } },
+              flat: { select: { flatCode: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return { data, meta: buildPaginationMeta(total, page, limit) };
+  }
+
+  /**
    * Suspend or reinstate a society.
    *
    * isActive has existed on Society since the beginning with nothing able to
