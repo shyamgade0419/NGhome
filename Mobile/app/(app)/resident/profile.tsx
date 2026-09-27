@@ -18,6 +18,7 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { SupportLink } from '@/components/ui/SupportLink';
 import { colors, spacing, typography, radius } from '@/theme';
 
 export default function ResidentProfileScreen() {
@@ -156,6 +157,8 @@ export default function ResidentProfileScreen() {
             </TouchableOpacity>
           ))}
         </Card>
+
+        <SupportLink />
 
         <Button
           label="Sign Out"

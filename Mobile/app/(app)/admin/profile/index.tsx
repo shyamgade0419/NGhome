@@ -16,6 +16,7 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { SupportLink } from '@/components/ui/SupportLink';
 import { colors, spacing, typography } from '@/theme';
 
 export default function AdminProfileScreen() {
@@ -92,6 +93,8 @@ export default function AdminProfileScreen() {
             </View>
           ) : null}
         </Card>
+
+        <SupportLink />
 
         {/* Actions */}
         <Card style={styles.actionsCard}>
