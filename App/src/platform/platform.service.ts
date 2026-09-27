@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { AuditAction, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from '../documents/sftp-storage.service';
+import { PricingMode, UpdatePlatformSettingsDto } from './dto/update-platform-settings.dto';
 
 export type FileKind = 'images' | 'pdf' | 'office' | 'other';
 
@@ -18,6 +19,10 @@ export function fileKind(mimeType: string): FileKind {
   }
   return 'other';
 }
+
+const SETTINGS_ID = 'singleton';
+const DEFAULT_SUPPORT_MESSAGE = "If NG Home helps you, you can buy me a coffee — it's completely optional.";
+const DEFAULT_PAYEE_NAME = 'NG Home';
 
 /**
  * Platform-console features that don't belong to any one society: how much
@@ -106,6 +111,87 @@ export class PlatformService {
     return result.ok
       ? { ok: true as const, base: result.base, home: result.home }
       : { ok: false as const, reason: result.reason };
+  }
+
+  /** The single settings row; the defaults (free, no support prompt) until one is saved. */
+  async getSettings() {
+    const row = await this.prisma.platformSettings.findUnique({ where: { id: SETTINGS_ID } });
+    return {
+      pricingMode: (row?.pricingMode ?? 'FREE') as PricingMode,
+      supportEnabled: row?.supportEnabled ?? false,
+      supportUpiId: row?.supportUpiId ?? null,
+      supportPayeeName: row?.supportPayeeName ?? null,
+      supportMessage: row?.supportMessage ?? null,
+      updatedAt: row?.updatedAt ?? null,
+    };
+  }
+
+  async updateSettings(dto: UpdatePlatformSettingsDto, actorId: string) {
+    const clean = (v: string | null | undefined) => (v?.trim() ? v.trim() : null);
+    const upi = clean(dto.supportUpiId);
+
+    // The prompt is useless — and would show users a broken pay button —
+    // without somewhere to send the money.
+    if (dto.supportEnabled && !upi) {
+      throw new BadRequestException('Add your UPI ID before turning the support prompt on.');
+    }
+
+    const before = await this.getSettings();
+    const data = {
+      pricingMode: dto.pricingMode,
+      supportEnabled: dto.supportEnabled,
+      supportUpiId: upi,
+      supportPayeeName: clean(dto.supportPayeeName),
+      supportMessage: clean(dto.supportMessage),
+      updatedById: actorId,
+    };
+    await this.prisma.platformSettings.upsert({
+      where: { id: SETTINGS_ID },
+      create: { id: SETTINGS_ID, ...data },
+      update: data,
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId,
+        action: AuditAction.CONFIG_CHANGED,
+        entityType: 'PlatformSettings',
+        entityId: SETTINGS_ID,
+        oldValues: {
+          pricingMode: before.pricingMode,
+          supportEnabled: before.supportEnabled,
+          supportUpiId: before.supportUpiId,
+        } as Prisma.InputJsonValue,
+        newValues: {
+          pricingMode: data.pricingMode,
+          supportEnabled: data.supportEnabled,
+          supportUpiId: data.supportUpiId,
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    return this.getSettings();
+  }
+
+  /**
+   * What the apps show every signed-in user: whether to display the optional
+   * support prompt and where it pays. Deliberately minimal — the prompt only
+   * exists when it is switched on AND has a UPI ID, so a half-configured
+   * setting can never render a broken button.
+   */
+  async getSupportInfo() {
+    const s = await this.getSettings();
+    const active = s.supportEnabled && !!s.supportUpiId;
+    return {
+      pricingMode: s.pricingMode,
+      support: active
+        ? {
+            upiId: s.supportUpiId as string,
+            payeeName: s.supportPayeeName ?? DEFAULT_PAYEE_NAME,
+            message: s.supportMessage ?? DEFAULT_SUPPORT_MESSAGE,
+          }
+        : null,
+    };
   }
 
   async listAdmins() {

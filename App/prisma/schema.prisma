@@ -1327,3 +1327,21 @@ model DirectMessage {
   @@index([conversationId, createdAt])
   @@map("direct_messages")
 }
+
+// ─── PLATFORM SETTINGS ────────────────────────────────────────────────────────
+
+/// One row (id "singleton") of platform-wide switches the NovaGade team sets
+/// from the console: whether the product is free, and the optional "support
+/// the developer" UPI details shown to users. Not tenant data.
+model PlatformSettings {
+  id               String   @id @default("singleton")
+  pricingMode      String   @default("FREE") // FREE | PAID — PAID is recorded only; nothing enforces it yet
+  supportEnabled   Boolean  @default(false)
+  supportUpiId     String?
+  supportPayeeName String?
+  supportMessage   String?
+  updatedById      String?
+  updatedAt        DateTime @updatedAt
+
+  @@map("platform_settings")
+}

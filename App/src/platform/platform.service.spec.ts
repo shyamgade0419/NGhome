@@ -7,6 +7,9 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PlatformService, fileKind } from './platform.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from '../documents/sftp-storage.service';
+import { validate } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
+import { UpdatePlatformSettingsDto } from './dto/update-platform-settings.dto';
 
 const ACTOR = 'admin-1';
 
@@ -179,5 +182,118 @@ describe('PlatformService admins', () => {
     const [args] = (prisma.user.findFirst as jest.Mock).mock.calls[0];
     expect(args.where).toMatchObject({ isPlatformAdmin: true });
     expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('PlatformService settings', () => {
+  function settingsPrisma(row: unknown = null) {
+    return {
+      platformSettings: {
+        findUnique: jest.fn().mockResolvedValue(row),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+    } as unknown as PrismaService;
+  }
+  const svc = (prisma: PrismaService) => new PlatformService(prisma, makeStorage());
+
+  it('defaults to free with no support prompt before anything is saved', async () => {
+    const s = await svc(settingsPrisma()).getSettings();
+    expect(s).toMatchObject({ pricingMode: 'FREE', supportEnabled: false, supportUpiId: null });
+  });
+
+  it('saves the settings on the single row and records who changed them', async () => {
+    const prisma = settingsPrisma();
+    await svc(prisma).updateSettings(
+      { pricingMode: 'FREE', supportEnabled: true, supportUpiId: ' me@okhdfcbank ', supportPayeeName: 'Shyam', supportMessage: 'Thanks!' },
+      ACTOR,
+    );
+
+    const [args] = (prisma.platformSettings.upsert as jest.Mock).mock.calls[0];
+    expect(args.where).toEqual({ id: 'singleton' });
+    expect(args.update).toMatchObject({ supportUpiId: 'me@okhdfcbank', supportEnabled: true, updatedById: ACTOR });
+    const [audit] = (prisma.auditLog.create as jest.Mock).mock.calls[0];
+    expect(audit.data).toMatchObject({ actorId: ACTOR, action: 'CONFIG_CHANGED', entityType: 'PlatformSettings' });
+  });
+
+  it('refuses to turn the support prompt on without a UPI ID', async () => {
+    const prisma = settingsPrisma();
+    await expect(
+      svc(prisma).updateSettings({ pricingMode: 'FREE', supportEnabled: true, supportUpiId: '   ' }, ACTOR),
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.platformSettings.upsert).not.toHaveBeenCalled();
+  });
+
+  it('allows switching the prompt off with no UPI ID, and stores blanks as null', async () => {
+    const prisma = settingsPrisma();
+    await svc(prisma).updateSettings(
+      { pricingMode: 'FREE', supportEnabled: false, supportUpiId: '', supportPayeeName: '  ', supportMessage: null },
+      ACTOR,
+    );
+
+    const [args] = (prisma.platformSettings.upsert as jest.Mock).mock.calls[0];
+    expect(args.update).toMatchObject({ supportUpiId: null, supportPayeeName: null, supportMessage: null });
+  });
+
+  it('exposes nothing to users while the prompt is off', async () => {
+    const info = await svc(settingsPrisma({ pricingMode: 'FREE', supportEnabled: false, supportUpiId: 'me@okhdfcbank' })).getSupportInfo();
+    expect(info).toEqual({ pricingMode: 'FREE', support: null });
+  });
+
+  it('exposes nothing when switched on but the UPI ID is missing — never a broken pay button', async () => {
+    const info = await svc(settingsPrisma({ pricingMode: 'FREE', supportEnabled: true, supportUpiId: null })).getSupportInfo();
+    expect(info.support).toBeNull();
+  });
+
+  it('gives users the UPI ID, with friendly defaults for a blank name and message', async () => {
+    const info = await svc(
+      settingsPrisma({ pricingMode: 'FREE', supportEnabled: true, supportUpiId: 'me@okhdfcbank', supportPayeeName: null, supportMessage: null }),
+    ).getSupportInfo();
+
+    expect(info.support).toMatchObject({ upiId: 'me@okhdfcbank', payeeName: 'NG Home' });
+    expect(info.support?.message).toMatch(/optional/);
+  });
+
+  it('never returns internals such as who last edited it', async () => {
+    const info = await svc(
+      settingsPrisma({ pricingMode: 'FREE', supportEnabled: true, supportUpiId: 'me@okhdfcbank', updatedById: 'secret-user' }),
+    ).getSupportInfo();
+    expect(JSON.stringify(info)).not.toContain('secret-user');
+  });
+});
+
+describe('UpdatePlatformSettingsDto validation', () => {
+  const ok = { pricingMode: 'FREE', supportEnabled: true, supportUpiId: 'me@okhdfcbank' };
+  const errorsFor = async (body: Record<string, unknown>) =>
+    validate(plainToInstance(UpdatePlatformSettingsDto, body), { whitelist: true, forbidNonWhitelisted: true });
+
+  it('accepts a valid body', async () => {
+    expect(await errorsFor(ok)).toHaveLength(0);
+  });
+
+  it.each(['9876543210@ybl', 'shyam.g@okicici', 'a-b_c@paytm', 'me@okhdfcbank'])('accepts UPI ID %s', async (id) => {
+    expect(await errorsFor({ ...ok, supportUpiId: id })).toHaveLength(0);
+  });
+
+  it.each(['no-at-sign', '@bank', 'me@', 'me@bank name', 'me@bank.com', 'me@@bank', 'a@b'])('rejects UPI ID %s', async (id) => {
+    expect(await errorsFor({ ...ok, supportUpiId: id })).not.toHaveLength(0);
+  });
+
+  it('allows a null or empty UPI ID (the service decides whether one is required)', async () => {
+    expect(await errorsFor({ ...ok, supportEnabled: false, supportUpiId: null })).toHaveLength(0);
+    expect(await errorsFor({ ...ok, supportEnabled: false, supportUpiId: '' })).toHaveLength(0);
+  });
+
+  it('rejects an unknown pricing mode', async () => {
+    expect(await errorsFor({ ...ok, pricingMode: 'FREEMIUM' })).not.toHaveLength(0);
+  });
+
+  it('caps the message and payee name', async () => {
+    expect(await errorsFor({ ...ok, supportMessage: 'x'.repeat(141) })).not.toHaveLength(0);
+    expect(await errorsFor({ ...ok, supportPayeeName: 'x'.repeat(51) })).not.toHaveLength(0);
+  });
+
+  it('rejects fields it does not know about', async () => {
+    expect(await errorsFor({ ...ok, isAdmin: true })).not.toHaveLength(0);
   });
 });

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -7,6 +7,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { PlatformService } from './platform.service';
 import { SetAdminStatusDto } from './dto/set-admin-status.dto';
+import { UpdatePlatformSettingsDto } from './dto/update-platform-settings.dto';
 
 @ApiTags('Platform')
 @ApiBearerAuth()
@@ -28,6 +29,18 @@ export class PlatformController {
   @ApiOperation({ summary: '[Platform Admin] Test the SFTP connection (connect + write)' })
   checkStorage() {
     return this.platform.checkStorageConnection();
+  }
+
+  @Get('settings')
+  @ApiOperation({ summary: '[Platform Admin] Pricing mode and support-prompt settings' })
+  settings() {
+    return this.platform.getSettings();
+  }
+
+  @Put('settings')
+  @ApiOperation({ summary: '[Platform Admin] Update pricing mode and support-prompt settings' })
+  updateSettings(@Body() dto: UpdatePlatformSettingsDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.platform.updateSettings(dto, user.id);
   }
 
   @Get('admins')
