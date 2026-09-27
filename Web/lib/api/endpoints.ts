@@ -528,6 +528,10 @@ export const platformApi = {
   /** Opens a real SFTP connection — call only from an explicit button press. */
   checkStorage: (): Promise<{ data: PlatformStorageCheck }> => api.post('/platform/storage/check'),
 
+  settings: (): Promise<{ data: PlatformSettings }> => api.get('/platform/settings'),
+  updateSettings: (body: PlatformSettingsInput): Promise<{ data: PlatformSettings }> =>
+    api.put('/platform/settings', body),
+
   admins: (): Promise<{ data: PlatformAdminUser[] }> => api.get('/platform/admins'),
   setAdminStatus: (id: string, isActive: boolean) => api.patch(`/platform/admins/${id}/status`, { isActive }),
 };
@@ -600,3 +604,23 @@ export interface PlatformSocietyOverview {
     actor: { firstName: string; lastName: string };
   }[];
 }
+
+// Optional "support the developer" prompt. Readable by every signed-in user;
+// `support` is null unless the platform admin has switched it on with a UPI ID.
+export interface SupportInfo {
+  pricingMode: 'FREE' | 'PAID';
+  support: { upiId: string; payeeName: string; message: string } | null;
+}
+export const supportApi = {
+  info: (): Promise<{ data: SupportInfo }> => api.get('/support'),
+};
+
+export interface PlatformSettings {
+  pricingMode: 'FREE' | 'PAID';
+  supportEnabled: boolean;
+  supportUpiId: string | null;
+  supportPayeeName: string | null;
+  supportMessage: string | null;
+  updatedAt: string | null;
+}
+export type PlatformSettingsInput = Omit<PlatformSettings, 'updatedAt'>;

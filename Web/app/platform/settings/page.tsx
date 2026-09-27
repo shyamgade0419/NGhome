@@ -13,6 +13,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { platformApi, PlatformAdminUser } from '@/lib/api/endpoints';
 import { PlatformShell } from '@/components/platform/PlatformShell';
+import { PricingSupportCard } from '@/components/platform/PricingSupportCard';
 import { Card, DButton, DModal, DTable, Empty, Loading, PageHeader, Pill, TableWrap, Td } from '@/components/platform/ui';
 import { formatDate, formatDateTime } from '@/lib/utils';
 
@@ -42,6 +43,8 @@ export default function PlatformSettingsPage() {
       <PageHeader title="Settings" subtitle="Platform administration" />
 
       <div className="space-y-6">
+        <PricingSupportCard />
+
         <section>
           <h2 className="mb-3 text-sm font-semibold text-white">Admin users</h2>
           {isLoading ? (
