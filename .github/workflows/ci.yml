@@ -129,3 +129,116 @@ jobs:
         # moment a real spec file is added, this step starts actually
         # running and enforcing it, with no further CI change needed.
         run: npm test -- --passWithNoTests
+
+  docker:
+    name: Docker images (build + deploy smoke test)
+    runs-on: ubuntu-latest
+    # Every job above proves the code compiles; none proves the *images* build
+    # or that the container's start-up path works. Both only failed on a real
+    # deploy before — where a broken image means a rolled-back release.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: App
+          load: true
+          push: false
+          tags: nghome-api:ci
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      - name: Build Web image
+        uses: docker/build-push-action@v6
+        with:
+          context: Web
+          load: true
+          push: false
+          tags: nghome-web:ci
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+
+      # Runs the image's real start-up command — `prisma migrate deploy`, then
+      # the app — against an empty Postgres, so every migration in the repo is
+      # applied from scratch, exactly as a fresh deploy would. Only throwaway
+      # values are used; NODE_ENV=development skips the production-only config
+      # checks (real SFTP key, etc.) that a CI container cannot satisfy.
+      - name: Start API container (applies all migrations)
+        run: |
+          docker run -d --name api --network host \
+            -e NODE_ENV=development \
+            -e PORT=3000 \
+            -e DATABASE_URL=postgresql://ci:ci@localhost:5432/ci \
+            -e JWT_ACCESS_SECRET=ci-throwaway-access-secret-0123456789abcdef \
+            -e JWT_REFRESH_SECRET=ci-throwaway-refresh-secret-fedcba9876543210 \
+            nghome-api:ci
+
+      - name: Wait for the API to become healthy
+        run: |
+          for i in $(seq 1 45); do
+            if curl -fsS http://localhost:3000/health > /dev/null; then
+              echo "API healthy after ~$((i * 2))s"
+              exit 0
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' api)" != "true" ]; then
+              echo "API container exited early"; break
+            fi
+            sleep 2
+          done
+          echo "::error::API did not become healthy — container log follows"
+          docker logs api
+          exit 1
+
+      - name: Show migration output
+        if: always()
+        run: docker logs api
+
+      - name: Every migration was applied
+        run: |
+          expected=$(ls App/prisma/migrations | grep -vc '^migration_lock.toml$')
+          applied=$(docker exec -i "$(docker ps -qf ancestor=postgres:16-alpine)" \
+            psql -U ci -d ci -tAc 'SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL')
+          echo "migrations in repo: $expected, applied: $applied"
+          test "$expected" = "$applied"
+
+      # The bootstrap script from the deploy notes must exist in the built image
+      # and work against the real schema. Second run must refuse — an existing
+      # email is never silently overwritten.
+      - name: Platform-admin script works in the image
+        run: |
+          run() { docker exec \
+            -e PLATFORM_ADMIN_EMAIL=ci-admin@example.test \
+            -e PLATFORM_ADMIN_PASSWORD='ci-throwaway-password-123' \
+            api npm run --silent platform-admin:create:prod; }
+          run
+          if run; then echo "::error::second run should have refused an existing email"; exit 1; fi
+
+      - name: Web image serves the login page
+        run: |
+          docker run -d --name web --network host \
+            -e API_URL=http://localhost:3000 -e PORT=3001 nghome-web:ci
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/login || true)
+            [ "$code" = "200" ] && { echo "web login page: 200"; exit 0; }
+            sleep 2
+          done
+          echo "::error::web did not serve /login (last status $code)"
+          docker logs web
+          exit 1
