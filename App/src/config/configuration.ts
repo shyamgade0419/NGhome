@@ -1,3 +1,13 @@
+/**
+ * A URL setting pasted with a trailing slash. Browsers send an Origin with
+ * none, so a CORS entry ending in "/" can never match it, and APP_URL is
+ * joined with a leading-slash path ("${appUrl}/reset-password"), which
+ * would produce "//". Normalised here so a copy-paste slip can't cause either.
+ */
+export function stripTrailingSlashes(url: string): string {
+  return url.trim().replace(/\/+$/, '');
+}
+
 export default () => ({
   port: parseInt(process.env.PORT ?? '3000', 10),
   nodeEnv: process.env.NODE_ENV ?? 'development',
@@ -11,7 +21,10 @@ export default () => ({
     refreshExpiration: process.env.JWT_REFRESH_EXPIRATION ?? '7d',
   },
   cors: {
-    origins: (process.env.CORS_ORIGINS ?? 'http://localhost:3000').split(','),
+    origins: (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
+      .split(',')
+      .map(stripTrailingSlashes)
+      .filter(Boolean),
   },
   throttle: {
     ttl: parseInt(process.env.THROTTLE_TTL ?? '60000', 10),
@@ -43,6 +56,6 @@ export default () => ({
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
     from: process.env.SMTP_FROM ?? 'NG Home <no-reply@nghome.app>',
-    appUrl: process.env.APP_URL ?? 'http://localhost:3001',
+    appUrl: stripTrailingSlashes(process.env.APP_URL ?? 'http://localhost:3001'),
   },
 });

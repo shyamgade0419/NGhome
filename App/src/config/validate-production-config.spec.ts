@@ -74,6 +74,36 @@ describe('validateProductionConfig — secrets', () => {
     );
   });
 
+  it.each([
+    ['JWT_ACCESS_SECRET', 'jwt.accessSecret'],
+    ['JWT_REFRESH_SECRET', 'jwt.refreshSecret'],
+  ])('rejects the unfilled .env.example placeholder for %s', (name, key) => {
+    expect(() => validateProductionConfig(configWith({ [key]: '<run: openssl rand -hex 32>' }))).toThrow(
+      new RegExp(`${name}.*placeholder`),
+    );
+  });
+
+  it.each([
+    ['JWT_ACCESS_SECRET', 'jwt.accessSecret'],
+    ['JWT_REFRESH_SECRET', 'jwt.refreshSecret'],
+  ])('rejects a %s shorter than 32 characters', (name, key) => {
+    expect(() => validateProductionConfig(configWith({ [key]: 'short-secret' }))).toThrow(
+      new RegExp(`${name} must be at least 32`),
+    );
+  });
+
+  it('accepts a real openssl rand -hex 32 value (64 hex characters)', () => {
+    const hex = 'f3a91c07d2b84e56a0c1d9e8b7f6a5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8';
+    expect(() => validateProductionConfig(configWith({ 'jwt.accessSecret': hex }))).not.toThrow();
+  });
+
+  it('rejects one secret reused for both — a leaked access secret would also forge refresh tokens', () => {
+    const same = 'c'.repeat(40);
+    expect(() =>
+      validateProductionConfig(configWith({ 'jwt.accessSecret': same, 'jwt.refreshSecret': same })),
+    ).toThrow(/must differ/);
+  });
+
   it('rejects a missing DATABASE_URL', () => {
     delete process.env.DATABASE_URL; // beforeEach sets it; afterAll restores the real value
     expect(() => validateProductionConfig(configWith({}))).toThrow(/DATABASE_URL/);

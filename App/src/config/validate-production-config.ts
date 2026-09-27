@@ -1,5 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 
+const MIN_JWT_SECRET_LENGTH = 32;
+
 /**
  * Fails the boot with a clear error rather than let a production deployment
  * come up misconfigured and fail silently later — a bad JWT secret would
@@ -22,6 +24,32 @@ export function validateProductionConfig(configService: ConfigService): void {
   if (!refreshSecret || insecureDefaults.includes(refreshSecret)) {
     throw new Error('FATAL: JWT_REFRESH_SECRET must be set to a secure value in production');
   }
+  // The insecure-default list above only catches the two built-in fallbacks.
+  // Nothing stopped the .env.example placeholder ("<run: openssl rand -hex
+  // 32>") or a short guessable string being deployed as-is — the app would
+  // boot and sign every login token with a value that is public or trivial
+  // to brute-force, letting anyone forge one, platform admin included.
+  for (const [name, secret] of [
+    ['JWT_ACCESS_SECRET', accessSecret],
+    ['JWT_REFRESH_SECRET', refreshSecret],
+  ] as const) {
+    if (/[<>]/.test(secret)) {
+      throw new Error(
+        `FATAL: ${name} still contains the .env.example placeholder text — generate a real value with: openssl rand -hex 32`,
+      );
+    }
+    if (secret.length < MIN_JWT_SECRET_LENGTH) {
+      throw new Error(
+        `FATAL: ${name} must be at least ${MIN_JWT_SECRET_LENGTH} characters in production (got ${secret.length}) — generate one with: openssl rand -hex 32`,
+      );
+    }
+  }
+  if (accessSecret === refreshSecret) {
+    throw new Error(
+      'FATAL: JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must differ — a leaked access token secret would otherwise also forge refresh tokens',
+    );
+  }
+
   if (!process.env.DATABASE_URL) {
     throw new Error('FATAL: DATABASE_URL must be set in production');
   }
