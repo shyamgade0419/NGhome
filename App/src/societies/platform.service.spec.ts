@@ -288,3 +288,26 @@ describe('SocietiesService.getPlatformOverview', () => {
     await expect(new SocietiesService(prisma).getPlatformOverview('nope')).rejects.toThrow(NotFoundException);
   });
 });
+
+describe('SocietiesService.getPlatformStats — newThisMonth', () => {
+  it('counts only societies created since the start of the current month (UTC)', async () => {
+    const now = new Date();
+    const thisMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 1));
+    const lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) - 60_000);
+    const prisma = makePrisma({
+      society: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'a', isActive: true, createdAt: thisMonth },
+          { id: 'b', isActive: true, createdAt: thisMonth },
+          { id: 'c', isActive: true, createdAt: lastMonth },
+        ]),
+        findUnique: jest.fn(),
+        update: jest.fn(),
+        count: jest.fn(),
+      },
+    });
+
+    const stats = await new SocietiesService(prisma).getPlatformStats();
+    expect(stats.newThisMonth).toBe(2);
+  });
+});

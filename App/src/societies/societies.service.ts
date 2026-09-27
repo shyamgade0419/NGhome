@@ -122,9 +122,11 @@ export class SocietiesService {
     // still be counted and the totals would not match the list below.
     const live = await this.prisma.society.findMany({
       where: { deletedAt: null },
-      select: { id: true, isActive: true },
+      select: { id: true, isActive: true, createdAt: true },
     });
     const liveIds = live.map((s) => s.id);
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
     const [buildings, flats, members, admins] = await Promise.all([
       this.prisma.building.count({ where: { societyId: { in: liveIds } } }),
@@ -155,6 +157,7 @@ export class SocietiesService {
       societies,
       activeSocieties,
       suspendedSocieties: societies - activeSocieties,
+      newThisMonth: live.filter((s) => s.createdAt >= monthStart).length,
       buildings,
       flats,
       members,
