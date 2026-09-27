@@ -1,242 +1,152 @@
 'use client';
 
 /**
- * Platform-admin society directory — not part of the (dashboard) layout
- * group deliberately: that layout and its Header/Sidebar assume a society
- * context (a societyId claim on the token), which a platform-admin session
- * never has (see auth.service.ts login() — isPlatformAdmin gets a
- * society-independent token). This is a separate, standalone surface for
- * the NovaGade team, not something a society's own admin ever sees.
- *
- * Every request here hits PlatformAdminGuard-protected routes, so a
- * non-platform-admin who lands here (e.g. pasting the URL) gets nothing
- * back from the API even before PlatformShell redirects them.
+ * Platform console dashboard. Not part of the (dashboard) layout group
+ * deliberately: that layout assumes a society context (a societyId claim on
+ * the token), which a platform-admin session never has. Every request here
+ * hits PlatformAdminGuard-protected routes, so a non-admin who lands on the
+ * URL gets nothing back from the API even before PlatformShell redirects them.
  */
 
-import { useState } from 'react';
 import Link from 'next/link';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  Building2, Phone, Mail, Users, ShieldCheck, Home, Ban, RotateCcw,
-} from 'lucide-react';
-import toast from 'react-hot-toast';
+import { useQuery } from '@tanstack/react-query';
+import { Building2, Home, ShieldCheck, TrendingUp, Users } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthContext';
-import { platformApi, PlatformSociety } from '@/lib/api/endpoints';
-import { Table, Thead, Tbody, Tr, Th, Td } from '@/components/ui/Table';
-import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
-import { Modal } from '@/components/ui/Modal';
-import { PageSpinner } from '@/components/ui/Spinner';
-import { EmptyState } from '@/components/ui/EmptyState';
+import { platformApi } from '@/lib/api/endpoints';
 import { PlatformShell } from '@/components/platform/PlatformShell';
-
-function StatCard({ label, value, icon: Icon }: { label: string; value: number; icon: React.ElementType }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-      <div className="flex items-center gap-1.5 text-slate-400">
-        <Icon size={13} />
-        <p className="text-[11px] font-medium uppercase tracking-wide">{label}</p>
-      </div>
-      <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{value}</p>
-    </div>
-  );
-}
+import { Card, Empty, Loading, PageHeader, Pill, StatTile } from '@/components/platform/ui';
+import { formatDate } from '@/lib/utils';
 
 export default function PlatformDashboard() {
   const { user } = useAuth();
-  const qc = useQueryClient();
-  const [confirming, setConfirming] = useState<PlatformSociety | null>(null);
-
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['platform-societies'],
-    queryFn: () => platformApi.listSocieties({ limit: 100 }).then((r) => r.data),
-    enabled: !!user?.isPlatformAdmin,
-  });
+  const enabled = !!user?.isPlatformAdmin;
 
   const { data: stats } = useQuery({
     queryKey: ['platform-stats'],
     queryFn: () => platformApi.stats().then((r) => r.data),
-    enabled: !!user?.isPlatformAdmin,
+    enabled,
+  });
+  const { data: list, isLoading } = useQuery({
+    queryKey: ['platform-societies'],
+    queryFn: () => platformApi.listSocieties({ limit: 100 }).then((r) => r.data),
+    enabled,
   });
 
-  const setStatus = useMutation({
-    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
-      platformApi.setSocietyStatus(id, isActive),
-    onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: ['platform-societies'] });
-      qc.invalidateQueries({ queryKey: ['platform-stats'] });
-      toast.success(vars.isActive ? 'Society reinstated' : 'Society suspended');
-      setConfirming(null);
-    },
-    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to update society'),
-  });
-
-  const societies: PlatformSociety[] = data?.data ?? [];
+  const recent = (list?.data ?? []).slice(0, 8);
+  const activePct = stats && stats.societies > 0 ? Math.round((stats.activeSocieties / stats.societies) * 100) : 0;
 
   return (
-    <PlatformShell subtitle={`${societies.length} ${societies.length === 1 ? 'society' : 'societies'}`}>
-      {stats && (
-        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <StatCard label="Societies" value={stats.societies} icon={Building2} />
-          <StatCard label="Active" value={stats.activeSocieties} icon={ShieldCheck} />
-          <StatCard label="Suspended" value={stats.suspendedSocieties} icon={Ban} />
-          <StatCard label="Buildings" value={stats.buildings} icon={Building2} />
-          <StatCard label="Flats" value={stats.flats} icon={Home} />
-          <StatCard label="Members" value={stats.members} icon={Users} />
-        </div>
-      )}
+    <PlatformShell>
+      <PageHeader title="Platform Overview" subtitle="All societies across the NG Home platform" />
 
-      {isLoading ? (
-        <PageSpinner />
-      ) : isError ? (
-        <EmptyState
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatTile
+          label="Total societies"
+          value={stats?.societies ?? '—'}
+          hint={stats ? `+${stats.newThisMonth} this month` : undefined}
           icon={Building2}
-          title="Couldn't load societies"
-          description="Try refreshing the page."
         />
-      ) : societies.length === 0 ? (
-        <EmptyState
-          icon={Building2}
-          title="No societies yet"
-          description="Societies will appear here once they register."
+        <StatTile
+          label="Active"
+          value={stats?.activeSocieties ?? '—'}
+          hint={stats ? `${stats.suspendedSocieties} suspended` : undefined}
+          icon={ShieldCheck}
+          tone="blue"
         />
-      ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <Table>
-            <Thead>
-              <Tr>
-                <Th>Society</Th>
-                <Th>Admin Contact</Th>
-                <Th>Members</Th>
-                <Th>Buildings</Th>
-                <Th>Join Code</Th>
-                <Th>Status</Th>
-                <Th>Since</Th>
-                <Th className="text-right">Actions</Th>
-              </Tr>
-            </Thead>
-            <Tbody>
-              {societies.map((s) => (
-                <Tr key={s.id}>
-                  <Td>
-                    <Link
-                      href={`/platform/${s.id}`}
-                      className="font-medium text-slate-900 hover:text-primary-700 hover:underline"
-                    >
-                      {s.displayName ?? s.name}
-                    </Link>
-                    {(s.city || s.state) && (
-                      <p className="text-xs text-slate-500">{[s.city, s.state].filter(Boolean).join(', ')}</p>
-                    )}
-                  </Td>
-                  <Td>
-                    {s.admins.length === 0 ? (
-                      <span className="text-xs text-slate-400">No admin found</span>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {s.admins.map((a) => (
-                          <div key={a.id}>
-                            <p className="text-sm text-slate-800">{a.firstName} {a.lastName}</p>
-                            <div className="flex flex-col gap-0.5 text-xs text-slate-500">
-                              {a.phone && (
-                                <span className="flex items-center gap-1"><Phone size={11} /> {a.phone}</span>
-                              )}
-                              <span className="flex items-center gap-1"><Mail size={11} /> {a.email}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </Td>
-                  <Td>
-                    <span className="flex items-center gap-1 text-slate-600">
-                      <Users size={13} /> {s._count.memberships}
-                    </span>
-                  </Td>
-                  <Td className="text-slate-600">{s._count.buildings}</Td>
-                  <Td>
-                    {s.joinCode ? (
-                      <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-700">{s.joinCode}</code>
-                    ) : (
-                      <span className="text-xs text-slate-400">—</span>
-                    )}
-                  </Td>
-                  <Td>
-                    <Badge variant={s.isActive ? 'success' : 'danger'}>{s.isActive ? 'Active' : 'Suspended'}</Badge>
-                  </Td>
-                  <Td className="text-slate-500 text-xs">
-                    {new Date(s.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </Td>
-                  <Td className="text-right">
-                    {/* Confirmed rather than immediate: suspending cuts off a
-                        whole society's residents, and the row a cursor lands
-                        on is not always the one that was meant. */}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setConfirming(s)}
-                    >
-                      {s.isActive ? (
-                        <><Ban size={13} /> Suspend</>
-                      ) : (
-                        <><RotateCcw size={13} /> Reinstate</>
-                      )}
-                    </Button>
-                  </Td>
-                </Tr>
-              ))}
-            </Tbody>
-          </Table>
-        </div>
-      )}
+        <StatTile
+          label="Flats"
+          value={stats?.flats ?? '—'}
+          hint={stats ? `${stats.buildings} buildings` : undefined}
+          icon={Home}
+          tone="violet"
+        />
+        <StatTile
+          label="Members"
+          value={stats?.members ?? '—'}
+          hint={stats ? `${stats.admins} society admins` : undefined}
+          icon={Users}
+          tone="amber"
+        />
+      </div>
 
-      <Modal
-        open={!!confirming}
-        onClose={() => setConfirming(null)}
-        title={confirming?.isActive ? 'Suspend society' : 'Reinstate society'}
-      >
-        {confirming && (
-          <div className="space-y-4">
-            <p className="text-sm text-slate-700">
-              {confirming.isActive ? (
-                <>
-                  Suspend <strong>{confirming.displayName ?? confirming.name}</strong>?
-                  Its {confirming._count.memberships} member
-                  {confirming._count.memberships === 1 ? '' : 's'} will lose access.
-                </>
-              ) : (
-                <>
-                  Reinstate <strong>{confirming.displayName ?? confirming.name}</strong>? Its members
-                  get access back immediately.
-                </>
-              )}
-            </p>
-            <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-500">
-              Nothing is deleted either way. Memberships, bills and history are kept, so a
-              suspended society comes back exactly as it was.
-            </p>
-            {confirming.admins.length > 0 && confirming.isActive && (
-              <p className="text-xs text-slate-500">
-                Worth telling first: {confirming.admins.map((a) => `${a.firstName} ${a.lastName}`).join(', ')}
-                {confirming.admins[0]?.email ? ` (${confirming.admins[0].email})` : ''}.
-              </p>
-            )}
-            <div className="flex justify-end gap-3 pt-1">
-              <Button type="button" variant="outline" onClick={() => setConfirming(null)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() =>
-                  setStatus.mutate({ id: confirming.id, isActive: !confirming.isActive })
-                }
-                loading={setStatus.isPending}
-              >
-                {confirming.isActive ? 'Suspend' : 'Reinstate'}
-              </Button>
+      <div className="grid gap-6 lg:grid-cols-5">
+        <Card title="Society status" icon={TrendingUp} className="lg:col-span-2">
+          {!stats ? (
+            <Loading />
+          ) : stats.societies === 0 ? (
+            <p className="text-sm text-gray-500">No societies yet.</p>
+          ) : (
+            <div className="space-y-5">
+              <div>
+                <div className="mb-1.5 flex justify-between text-xs">
+                  <span className="text-gray-300">Active</span>
+                  <span className="tabular-nums text-gray-400">
+                    {stats.activeSocieties} ({activePct}%)
+                  </span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-gray-800">
+                  <div className="h-full rounded-full bg-teal-400" style={{ width: `${activePct}%` }} />
+                </div>
+              </div>
+              <div>
+                <div className="mb-1.5 flex justify-between text-xs">
+                  <span className="text-gray-300">Suspended</span>
+                  <span className="tabular-nums text-gray-400">
+                    {stats.suspendedSocieties} ({100 - activePct}%)
+                  </span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-gray-800">
+                  <div className="h-full rounded-full bg-red-400" style={{ width: `${100 - activePct}%` }} />
+                </div>
+              </div>
             </div>
-          </div>
-        )}
-      </Modal>
+          )}
+        </Card>
+
+        <Card
+          title="Recent signups"
+          icon={Building2}
+          className="lg:col-span-3"
+          bodyClassName="p-0"
+          action={
+            <Link href="/platform/societies" className="text-xs font-medium text-teal-400 hover:text-teal-300">
+              View all →
+            </Link>
+          }
+        >
+          {isLoading ? (
+            <Loading />
+          ) : recent.length === 0 ? (
+            <div className="p-5">
+              <Empty icon={Building2} title="No societies yet" description="Societies appear here once they register." />
+            </div>
+          ) : (
+            <ul className="divide-y divide-gray-800/70">
+              {recent.map((s) => (
+                <li key={s.id}>
+                  <Link
+                    href={`/platform/${s.id}`}
+                    className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-gray-800/40"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-800 text-sm font-bold text-gray-300">
+                        {(s.displayName ?? s.name)[0]?.toUpperCase()}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-white">{s.displayName ?? s.name}</p>
+                        <p className="truncate text-xs text-gray-500">
+                          {[s.city, s.state].filter(Boolean).join(', ') || 'No location'} · joined {formatDate(s.createdAt)}
+                        </p>
+                      </div>
+                    </div>
+                    <Pill tone={s.isActive ? 'green' : 'red'}>{s.isActive ? 'active' : 'suspended'}</Pill>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
     </PlatformShell>
   );
 }

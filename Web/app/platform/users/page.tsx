@@ -12,12 +12,8 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { Mail, Phone, Search, ShieldCheck, Users } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { platformApi } from '@/lib/api/endpoints';
-import { Table, Thead, Tbody, Tr, Th, Td } from '@/components/ui/Table';
-import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
-import { PageSpinner } from '@/components/ui/Spinner';
-import { EmptyState } from '@/components/ui/EmptyState';
 import { PlatformShell } from '@/components/platform/PlatformShell';
+import { DButton, DTable, Empty, Loading, PageHeader, Pill, TableWrap, Td } from '@/components/platform/ui';
 import { formatDate, formatDateTime, roleLabel } from '@/lib/utils';
 
 const PAGE_SIZE = 25;
@@ -40,8 +36,7 @@ export default function PlatformUsersPage() {
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['platform-users', page, search],
-    queryFn: () =>
-      platformApi.listUsers({ page, limit: PAGE_SIZE, search: search || undefined }).then((r) => r.data),
+    queryFn: () => platformApi.listUsers({ page, limit: PAGE_SIZE, search: search || undefined }).then((r) => r.data),
     enabled: !!user?.isPlatformAdmin,
     placeholderData: keepPreviousData,
   });
@@ -50,106 +45,88 @@ export default function PlatformUsersPage() {
   const meta = data?.meta;
 
   return (
-    <PlatformShell subtitle={meta ? `${meta.total} user${meta.total === 1 ? '' : 's'}` : undefined}>
-      <div className="mb-4 flex items-center gap-3">
-        <div className="relative w-full max-w-sm">
-          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Search name, email or phone"
-            aria-label="Search users"
-            className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
-          />
-        </div>
+    <PlatformShell>
+      <PageHeader
+        title="Users"
+        subtitle={meta ? `${meta.total} user${meta.total === 1 ? '' : 's'} across all societies` : 'Every account on the platform'}
+      />
+
+      <div className="relative mb-4 w-full max-w-sm">
+        <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -trangray-y-1/2 text-gray-500" />
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Search name, email or phone"
+          aria-label="Search users"
+          className="w-full rounded-lg border border-gray-700 bg-gray-900 py-2 pl-9 pr-3 text-sm text-gray-100 placeholder:text-gray-500 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+        />
       </div>
 
       {isLoading ? (
-        <PageSpinner />
+        <Loading />
       ) : isError ? (
-        <EmptyState icon={Users} title="Couldn't load users" description="Try refreshing the page." />
+        <Empty icon={Users} title="Couldn't load users" description="Try refreshing the page." />
       ) : users.length === 0 ? (
-        <EmptyState
+        <Empty
           icon={Users}
           title={search ? 'No matching users' : 'No users yet'}
           description={search ? 'Try a different name, email or phone number.' : 'Users appear here once they register.'}
         />
       ) : (
         <>
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-            <Table>
-              <Thead>
-                <Tr>
-                  <Th>User</Th>
-                  <Th>Contact</Th>
-                  <Th>Societies &amp; roles</Th>
-                  <Th>Last login</Th>
-                  <Th>Joined</Th>
-                  <Th>Status</Th>
-                </Tr>
-              </Thead>
-              <Tbody>
-                {users.map((u) => (
-                  <Tr key={u.id}>
-                    <Td>
-                      <p className="flex items-center gap-1.5 font-medium text-slate-900">
-                        {u.firstName} {u.lastName}
-                        {u.isPlatformAdmin && (
-                          <span title="Platform admin" className="text-primary-600">
-                            <ShieldCheck size={14} />
-                          </span>
-                        )}
-                      </p>
-                    </Td>
-                    <Td>
-                      <div className="flex flex-col gap-0.5 text-xs text-slate-500">
-                        <span className="flex items-center gap-1"><Mail size={11} /> {u.email}</span>
-                        {u.phone && <span className="flex items-center gap-1"><Phone size={11} /> {u.phone}</span>}
-                      </div>
-                    </Td>
-                    <Td>
-                      {u.memberships.length === 0 ? (
-                        <span className="text-xs text-slate-400">{u.isPlatformAdmin ? 'Platform-level' : 'No society'}</span>
-                      ) : (
-                        <div className="space-y-1">
-                          {u.memberships.map((m, i) => (
-                            <div key={`${m.society.id}-${i}`} className="flex flex-wrap items-center gap-1.5 text-sm">
-                              <Link
-                                href={`/platform/${m.society.id}`}
-                                className="text-slate-800 hover:text-primary-700 hover:underline"
-                              >
-                                {m.society.displayName ?? m.society.name}
-                              </Link>
-                              <Badge variant={m.role === 'SOCIETY_ADMIN' ? 'info' : 'muted'}>{roleLabel(m.role)}</Badge>
-                              {m.flat && <span className="text-xs text-slate-500">{m.flat.flatCode}</span>}
-                            </div>
-                          ))}
-                        </div>
+          <TableWrap>
+            <DTable head={['User', 'Contact', 'Societies & roles', 'Last login', 'Joined', 'Status']}>
+              {users.map((u) => (
+                <tr key={u.id} className="hover:bg-gray-800/30">
+                  <Td>
+                    <p className="flex items-center gap-1.5 font-medium text-white">
+                      {u.firstName} {u.lastName}
+                      {u.isPlatformAdmin && (
+                        <span title="Platform admin" className="text-teal-400">
+                          <ShieldCheck size={14} />
+                        </span>
                       )}
-                    </Td>
-                    <Td className="text-xs text-slate-500">
-                      {u.lastLoginAt ? formatDateTime(u.lastLoginAt) : 'Never'}
-                    </Td>
-                    <Td className="text-xs text-slate-500">{formatDate(u.createdAt)}</Td>
-                    <Td>
-                      <Badge variant={u.isActive ? 'success' : 'danger'}>{u.isActive ? 'Active' : 'Deactivated'}</Badge>
-                    </Td>
-                  </Tr>
-                ))}
-              </Tbody>
-            </Table>
-          </div>
+                    </p>
+                  </Td>
+                  <Td>
+                    <div className="flex flex-col gap-0.5 text-xs text-gray-400">
+                      <span className="flex items-center gap-1"><Mail size={11} /> {u.email}</span>
+                      {u.phone && <span className="flex items-center gap-1"><Phone size={11} /> {u.phone}</span>}
+                    </div>
+                  </Td>
+                  <Td>
+                    {u.memberships.length === 0 ? (
+                      <span className="text-xs text-gray-500">{u.isPlatformAdmin ? 'Platform-level' : 'No society'}</span>
+                    ) : (
+                      <div className="space-y-1">
+                        {u.memberships.map((m, i) => (
+                          <div key={`${m.society.id}-${i}`} className="flex flex-wrap items-center gap-1.5 text-sm">
+                            <Link href={`/platform/${m.society.id}`} className="text-gray-100 hover:text-teal-300 hover:underline">
+                              {m.society.displayName ?? m.society.name}
+                            </Link>
+                            <Pill tone={m.role === 'SOCIETY_ADMIN' ? 'blue' : 'slate'}>{roleLabel(m.role)}</Pill>
+                            {m.flat && <span className="text-xs text-gray-500">{m.flat.flatCode}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Td>
+                  <Td className="text-xs text-gray-400">{u.lastLoginAt ? formatDateTime(u.lastLoginAt) : 'Never'}</Td>
+                  <Td className="text-xs text-gray-400">{formatDate(u.createdAt)}</Td>
+                  <Td>
+                    <Pill tone={u.isActive ? 'green' : 'red'}>{u.isActive ? 'Active' : 'Deactivated'}</Pill>
+                  </Td>
+                </tr>
+              ))}
+            </DTable>
+          </TableWrap>
 
           {meta && meta.totalPages > 1 && (
-            <div className="mt-4 flex items-center justify-between text-sm text-slate-500">
+            <div className="mt-4 flex items-center justify-between text-sm text-gray-400">
               <span>Page {meta.page} of {meta.totalPages}</span>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                  Previous
-                </Button>
-                <Button variant="outline" size="sm" disabled={page >= meta.totalPages} onClick={() => setPage((p) => p + 1)}>
-                  Next
-                </Button>
+                <DButton size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</DButton>
+                <DButton size="sm" disabled={page >= meta.totalPages} onClick={() => setPage((p) => p + 1)}>Next</DButton>
               </div>
             </div>
           )}

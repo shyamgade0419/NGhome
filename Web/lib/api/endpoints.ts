@@ -505,6 +505,7 @@ export const platformApi = {
       societies: number;
       activeSocieties: number;
       suspendedSocieties: number;
+      newThisMonth: number;
       buildings: number;
       flats: number;
       members: number;
@@ -522,7 +523,38 @@ export const platformApi = {
 
   overview: (id: string): Promise<{ data: PlatformSocietyOverview }> =>
     api.get(`/societies/${id}/overview`),
+
+  storage: (): Promise<{ data: PlatformStorage }> => api.get('/platform/storage'),
+  /** Opens a real SFTP connection — call only from an explicit button press. */
+  checkStorage: (): Promise<{ data: PlatformStorageCheck }> => api.post('/platform/storage/check'),
+
+  admins: (): Promise<{ data: PlatformAdminUser[] }> => api.get('/platform/admins'),
+  setAdminStatus: (id: string, isActive: boolean) => api.patch(`/platform/admins/${id}/status`, { isActive }),
 };
+
+export interface PlatformStorage {
+  provider: string;
+  basePath: string;
+  totalFiles: number;
+  totalBytes: number;
+  byType: Record<'images' | 'pdf' | 'office' | 'other', { files: number; bytes: number }>;
+  societies: { societyId: string; name: string; files: number; bytes: number }[];
+}
+
+export type PlatformStorageCheck =
+  | { ok: true; base: string; home: string }
+  | { ok: false; reason: string };
+
+export interface PlatformAdminUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string | null;
+  isActive: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
 
 export interface PlatformUser {
   id: string;
