@@ -10,7 +10,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Building2, Mail, Phone, RotateCcw, Search } from 'lucide-react';
+import { Ban, Building2, Mail, Phone, RotateCcw, Search, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { platformApi, PlatformSociety } from '@/lib/api/endpoints';
@@ -26,6 +26,8 @@ export default function PlatformSocietiesPage() {
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [confirming, setConfirming] = useState<PlatformSociety | null>(null);
+  const [deleting, setDeleting] = useState<PlatformSociety | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['platform-societies'],
@@ -42,6 +44,18 @@ export default function PlatformSocietiesPage() {
       setConfirming(null);
     },
     onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to update society'),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => platformApi.deleteSociety(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['platform-societies'] });
+      qc.invalidateQueries({ queryKey: ['platform-stats'] });
+      toast.success('Society deleted');
+      setDeleting(null);
+      setDeleteConfirmText('');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to delete society'),
   });
 
   const all = useMemo(() => data?.data ?? [], [data]);
@@ -88,7 +102,7 @@ export default function PlatformSocietiesPage() {
           ))}
         </div>
         <div className="relative w-full max-w-xs">
-          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -trangray-y-1/2 text-gray-500" />
+          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -153,13 +167,25 @@ export default function PlatformSocietiesPage() {
                 </Td>
                 <Td className="whitespace-nowrap text-xs text-gray-400">{formatDate(s.createdAt)}</Td>
                 <Td className="text-right">
-                  <DButton size="sm" onClick={() => setConfirming(s)}>
-                    {s.isActive ? (
-                      <><Ban size={13} /> Suspend</>
-                    ) : (
-                      <><RotateCcw size={13} /> Reinstate</>
-                    )}
-                  </DButton>
+                  <div className="flex justify-end gap-2">
+                    <DButton size="sm" onClick={() => setConfirming(s)}>
+                      {s.isActive ? (
+                        <><Ban size={13} /> Suspend</>
+                      ) : (
+                        <><RotateCcw size={13} /> Reinstate</>
+                      )}
+                    </DButton>
+                    <DButton
+                      size="sm"
+                      variant="danger"
+                      onClick={() => {
+                        setDeleting(s);
+                        setDeleteConfirmText('');
+                      }}
+                    >
+                      <Trash2 size={13} />
+                    </DButton>
+                  </div>
                 </Td>
               </tr>
             ))}
@@ -205,6 +231,44 @@ export default function PlatformSocietiesPage() {
                 onClick={() => setStatus.mutate({ id: confirming.id, isActive: !confirming.isActive })}
               >
                 {confirming.isActive ? 'Suspend' : 'Reinstate'}
+              </DButton>
+            </div>
+          </div>
+        )}
+      </DModal>
+
+      <DModal open={!!deleting} onClose={() => setDeleting(null)} title="Delete society">
+        {deleting && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-300">
+              Delete <strong className="text-white">{deleting.displayName ?? deleting.name}</strong>? It will stop
+              appearing anywhere on the platform, and no one there will be able to sign in.
+            </p>
+            <p className="rounded-lg bg-gray-800/60 px-3 py-2.5 text-xs text-gray-400">
+              Its data — memberships, bills, expenses, documents, audit history — is kept, not erased. There is no
+              undo button in this console, though: getting it back would mean asking for it directly.
+            </p>
+            <div>
+              <label htmlFor="confirm-name" className="mb-1 block text-xs font-medium text-gray-300">
+                Type <span className="font-mono text-gray-200">{deleting.displayName ?? deleting.name}</span> to confirm
+              </label>
+              <input
+                id="confirm-name"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                autoComplete="off"
+                className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+              />
+            </div>
+            <div className="flex justify-end gap-3 pt-1">
+              <DButton onClick={() => setDeleting(null)}>Cancel</DButton>
+              <DButton
+                variant="danger"
+                loading={remove.isPending}
+                disabled={deleteConfirmText.trim() !== (deleting.displayName ?? deleting.name)}
+                onClick={() => remove.mutate(deleting.id)}
+              >
+                <Trash2 size={13} /> Delete society
               </DButton>
             </div>
           </div>

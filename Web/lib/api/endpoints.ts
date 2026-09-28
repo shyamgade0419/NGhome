@@ -518,6 +518,9 @@ export const platformApi = {
   setSocietyStatus: (id: string, isActive: boolean) =>
     api.patch(`/societies/${id}/status`, { isActive }),
 
+  /** Soft delete — nothing is dropped, the society just stops appearing on the platform. */
+  deleteSociety: (id: string) => api.delete(`/societies/${id}`),
+
   listUsers: (params?: { page?: number; limit?: number; search?: string }): Promise<{ data: PaginatedResponse<PlatformUser> }> =>
     api.get('/societies/platform/users', { params }),
 
@@ -534,6 +537,9 @@ export const platformApi = {
 
   admins: (): Promise<{ data: PlatformAdminUser[] }> => api.get('/platform/admins'),
   setAdminStatus: (id: string, isActive: boolean) => api.patch(`/platform/admins/${id}/status`, { isActive }),
+  /** They set their own password by email — this never takes one. */
+  inviteAdmin: (body: { email: string; firstName: string; lastName: string }): Promise<{ data: PlatformAdminUser }> =>
+    api.post('/platform/admins', body),
 };
 
 export interface PlatformStorage {

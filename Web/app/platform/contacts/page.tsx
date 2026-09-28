@@ -118,7 +118,7 @@ export default function PlatformContactsPage() {
           ))}
         </div>
         <div className="relative w-full max-w-xs">
-          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -trangray-y-1/2 text-gray-500" />
+          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}

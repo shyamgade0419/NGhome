@@ -49,7 +49,7 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
   const isActive = (item: (typeof NAV)[number]) => {
     if (item.exact) return pathname === item.href;
     if (item.href === '/platform/societies') {
-      const reserved = ['/platform/users', '/platform/contacts', '/platform/storage', '/platform/settings'];
+      const reserved = ['/platform/users', '/platform/contacts', '/platform/storage', '/platform/settings', '/platform/profile'];
       return pathname === item.href || (pathname.startsWith('/platform/') && !reserved.some((r) => pathname.startsWith(r)));
     }
     return pathname.startsWith(item.href);
@@ -90,7 +90,13 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
       </nav>
 
       <div className="border-t border-gray-800 p-3">
-        <div className="mb-2 flex items-center gap-3 rounded-lg bg-gray-800/50 px-3 py-2.5">
+        <Link
+          href="/platform/profile"
+          className={cn(
+            'mb-2 flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors',
+            pathname === '/platform/profile' ? 'bg-teal-500/10 ring-1 ring-teal-500/30' : 'bg-gray-800/50 hover:bg-gray-800',
+          )}
+        >
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-teal-500 text-sm font-bold text-gray-950">
             {(user?.firstName?.[0] ?? '?').toUpperCase()}
           </span>
@@ -98,9 +104,9 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
             <p className="truncate text-sm font-medium text-white">
               {user?.firstName} {user?.lastName}
             </p>
-            <p className="text-[11px] text-gray-500">Platform Admin</p>
+            <p className="text-[11px] text-gray-500">Platform Admin · view profile</p>
           </div>
-        </div>
+        </Link>
         <button
           onClick={logout}
           className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-400 hover:bg-gray-800/70 hover:text-gray-100"
