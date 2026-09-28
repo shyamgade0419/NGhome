@@ -7,11 +7,16 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PlatformService, fileKind } from './platform.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from '../documents/sftp-storage.service';
+import { AuthService } from '../auth/auth.service';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { UpdatePlatformSettingsDto } from './dto/update-platform-settings.dto';
 
 const ACTOR = 'admin-1';
+
+function makeAuth() {
+  return { issuePasswordResetLink: jest.fn().mockResolvedValue(undefined) } as unknown as AuthService;
+}
 
 function makeStorage(check: unknown = { ok: true, home: '/home/x', base: 'apartment-management' }) {
   return {
@@ -65,7 +70,7 @@ describe('PlatformService.getStorageOverview', () => {
   }
 
   it('reports files and bytes per society, largest first, including societies with none', async () => {
-    const out = await new PlatformService(prismaWith(), makeStorage()).getStorageOverview();
+    const out = await new PlatformService(prismaWith(), makeStorage(), makeAuth()).getStorageOverview();
 
     expect(out.societies.map((s) => [s.name, s.files, s.bytes])).toEqual([
       ['Beta Heights', 1, 9000],
@@ -75,14 +80,14 @@ describe('PlatformService.getStorageOverview', () => {
   });
 
   it('totals only live societies', async () => {
-    const out = await new PlatformService(prismaWith(), makeStorage()).getStorageOverview();
+    const out = await new PlatformService(prismaWith(), makeStorage(), makeAuth()).getStorageOverview();
 
     expect(out.totalFiles).toBe(4);
     expect(out.totalBytes).toBe(12000);
   });
 
   it('breaks usage down by file type', async () => {
-    const out = await new PlatformService(prismaWith(), makeStorage()).getStorageOverview();
+    const out = await new PlatformService(prismaWith(), makeStorage(), makeAuth()).getStorageOverview();
 
     expect(out.byType.images).toEqual({ files: 3, bytes: 9000 });
     expect(out.byType.pdf).toEqual({ files: 1, bytes: 3000 });
@@ -91,7 +96,7 @@ describe('PlatformService.getStorageOverview', () => {
 
   it('counts only active files actually stored on SFTP, not link documents', async () => {
     const prisma = prismaWith();
-    await new PlatformService(prisma, makeStorage()).getStorageOverview();
+    await new PlatformService(prisma, makeStorage(), makeAuth()).getStorageOverview();
 
     const [args] = (prisma.document.groupBy as jest.Mock).mock.calls[0];
     expect(args.where).toEqual({ storageProvider: 'sftp', isActive: true });
@@ -99,7 +104,7 @@ describe('PlatformService.getStorageOverview', () => {
 
   it('reports the configured base path, and never opens an SFTP connection', async () => {
     const storage = makeStorage();
-    const out = await new PlatformService(prismaWith(), storage).getStorageOverview();
+    const out = await new PlatformService(prismaWith(), storage, makeAuth()).getStorageOverview();
 
     expect(out.basePath).toBe('apartment-management');
     expect(storage.checkStorage).not.toHaveBeenCalled();
@@ -108,13 +113,13 @@ describe('PlatformService.getStorageOverview', () => {
 
 describe('PlatformService.checkStorageConnection', () => {
   it('returns the base and home when the write check passes', async () => {
-    const out = await new PlatformService({} as PrismaService, makeStorage()).checkStorageConnection();
+    const out = await new PlatformService({} as PrismaService, makeStorage(), makeAuth()).checkStorageConnection();
     expect(out).toEqual({ ok: true, base: 'apartment-management', home: '/home/x' });
   });
 
   it('returns the reason when it fails', async () => {
     const storage = makeStorage({ ok: false, reason: 'could not log in — timeout' });
-    const out = await new PlatformService({} as PrismaService, storage).checkStorageConnection();
+    const out = await new PlatformService({} as PrismaService, storage, makeAuth()).checkStorageConnection();
     expect(out).toEqual({ ok: false, reason: 'could not log in — timeout' });
   });
 });
@@ -133,7 +138,7 @@ describe('PlatformService admins', () => {
 
   it('lists only platform admins and never selects passwordHash', async () => {
     const prisma = adminPrisma();
-    await new PlatformService(prisma, makeStorage()).listAdmins();
+    await new PlatformService(prisma, makeStorage(), makeAuth()).listAdmins();
 
     const [args] = (prisma.user.findMany as jest.Mock).mock.calls[0];
     expect(args.where).toMatchObject({ isPlatformAdmin: true, deletedAt: null });
@@ -142,7 +147,7 @@ describe('PlatformService admins', () => {
 
   it('deactivates another platform admin and records who did it', async () => {
     const prisma = adminPrisma();
-    await new PlatformService(prisma, makeStorage()).setAdminActive('admin-2', false, ACTOR);
+    await new PlatformService(prisma, makeStorage(), makeAuth()).setAdminActive('admin-2', false, ACTOR);
 
     expect((prisma.user.update as jest.Mock).mock.calls[0][0]).toMatchObject({
       where: { id: 'admin-2' },
@@ -159,7 +164,7 @@ describe('PlatformService admins', () => {
 
   it('labels a reactivation as such', async () => {
     const prisma = adminPrisma({ id: 'admin-2', isActive: false });
-    await new PlatformService(prisma, makeStorage()).setAdminActive('admin-2', true, ACTOR);
+    await new PlatformService(prisma, makeStorage(), makeAuth()).setAdminActive('admin-2', true, ACTOR);
 
     const [audit] = (prisma.auditLog.create as jest.Mock).mock.calls[0];
     expect(audit.data.action).toBe('USER_MODIFIED');
@@ -168,7 +173,7 @@ describe('PlatformService admins', () => {
 
   it('refuses to change your own access — so an active platform admin always remains', async () => {
     const prisma = adminPrisma();
-    await expect(new PlatformService(prisma, makeStorage()).setAdminActive(ACTOR, false, ACTOR)).rejects.toThrow(
+    await expect(new PlatformService(prisma, makeStorage(), makeAuth()).setAdminActive(ACTOR, false, ACTOR)).rejects.toThrow(
       BadRequestException,
     );
     expect(prisma.user.update).not.toHaveBeenCalled();
@@ -176,12 +181,95 @@ describe('PlatformService admins', () => {
 
   it('refuses a user who is not a platform admin — this cannot be used to deactivate a resident', async () => {
     const prisma = adminPrisma(null);
-    await expect(new PlatformService(prisma, makeStorage()).setAdminActive('resident-1', false, ACTOR)).rejects.toThrow(
+    await expect(new PlatformService(prisma, makeStorage(), makeAuth()).setAdminActive('resident-1', false, ACTOR)).rejects.toThrow(
       NotFoundException,
     );
     const [args] = (prisma.user.findFirst as jest.Mock).mock.calls[0];
     expect(args.where).toMatchObject({ isPlatformAdmin: true });
     expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('PlatformService.inviteAdmin', () => {
+  function invitePrisma(existing: unknown = null) {
+    return {
+      user: {
+        findUnique: jest.fn().mockResolvedValue(existing),
+        create: jest.fn().mockImplementation(({ data }: any) =>
+          Promise.resolve({
+            id: 'new-admin-1',
+            firstName: data.firstName,
+            lastName: data.lastName,
+            email: data.email,
+            phone: null,
+            isActive: data.isActive,
+            lastLoginAt: null,
+            createdAt: new Date('2026-09-28T00:00:00Z'),
+          }),
+        ),
+      },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+    } as unknown as PrismaService;
+  }
+  const dto = { email: 'New.Admin@Example.com', firstName: 'New', lastName: 'Admin' };
+
+  it('creates the admin and emails them a link to set their own password', async () => {
+    const prisma = invitePrisma();
+    const auth = makeAuth();
+
+    const admin = await new PlatformService(prisma, makeStorage(), auth).inviteAdmin(dto, ACTOR);
+
+    expect(admin).toMatchObject({ id: 'new-admin-1', email: 'new.admin@example.com' });
+    expect(auth.issuePasswordResetLink).toHaveBeenCalledWith('new-admin-1', 'new.admin@example.com');
+  });
+
+  it('creates the row as active and platform-admin, with a password nobody was given', async () => {
+    const prisma = invitePrisma();
+    await new PlatformService(prisma, makeStorage(), makeAuth()).inviteAdmin(dto, ACTOR);
+
+    const [args] = (prisma.user.create as jest.Mock).mock.calls[0];
+    expect(args.data).toMatchObject({ isPlatformAdmin: true, isActive: true });
+    expect(args.data.passwordHash).toBeDefined();
+    expect(args.data.passwordHash).not.toBe(''); // an argon2 hash of a random 32-byte value, never surfaced anywhere
+    expect(args.select.passwordHash).toBeUndefined();
+  });
+
+  it('normalises the email to lowercase before creating and checking it', async () => {
+    const prisma = invitePrisma();
+    await new PlatformService(prisma, makeStorage(), makeAuth()).inviteAdmin(dto, ACTOR);
+
+    expect((prisma.user.findUnique as jest.Mock).mock.calls[0][0]).toEqual({ where: { email: 'new.admin@example.com' } });
+    expect((prisma.user.create as jest.Mock).mock.calls[0][0].data.email).toBe('new.admin@example.com');
+  });
+
+  it('refuses an email that already belongs to a platform admin, with a distinct message', async () => {
+    const prisma = invitePrisma({ id: 'x', isPlatformAdmin: true });
+    await expect(new PlatformService(prisma, makeStorage(), makeAuth()).inviteAdmin(dto, ACTOR)).rejects.toThrow(
+      'That email is already a platform admin.',
+    );
+    expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses an email that already belongs to a different (non-admin) account', async () => {
+    const prisma = invitePrisma({ id: 'x', isPlatformAdmin: false });
+    await expect(new PlatformService(prisma, makeStorage(), makeAuth()).inviteAdmin(dto, ACTOR)).rejects.toThrow(
+      'That email is already used by another account.',
+    );
+    expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+
+  it('audit-logs the creation', async () => {
+    const prisma = invitePrisma();
+    await new PlatformService(prisma, makeStorage(), makeAuth()).inviteAdmin(dto, ACTOR);
+
+    const [audit] = (prisma.auditLog.create as jest.Mock).mock.calls[0];
+    expect(audit.data).toMatchObject({
+      actorId: ACTOR,
+      action: 'USER_CREATED',
+      entityType: 'User',
+      entityId: 'new-admin-1',
+      newValues: { email: 'new.admin@example.com', isPlatformAdmin: true },
+    });
   });
 });
 
@@ -195,7 +283,7 @@ describe('PlatformService settings', () => {
       auditLog: { create: jest.fn().mockResolvedValue({}) },
     } as unknown as PrismaService;
   }
-  const svc = (prisma: PrismaService) => new PlatformService(prisma, makeStorage());
+  const svc = (prisma: PrismaService) => new PlatformService(prisma, makeStorage(), makeAuth());
 
   it('defaults to free with no support prompt before anything is saved', async () => {
     const s = await svc(settingsPrisma()).getSettings();

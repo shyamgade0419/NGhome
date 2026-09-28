@@ -1,8 +1,12 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditAction, Prisma } from '@prisma/client';
+import * as argon2 from 'argon2';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from '../documents/sftp-storage.service';
+import { AuthService } from '../auth/auth.service';
 import { PricingMode, UpdatePlatformSettingsDto } from './dto/update-platform-settings.dto';
+import { InvitePlatformAdminDto } from './dto/invite-platform-admin.dto';
 
 export type FileKind = 'images' | 'pdf' | 'office' | 'other';
 
@@ -34,6 +38,7 @@ export class PlatformService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: SftpStorageService,
+    private readonly authService: AuthService,
   ) {}
 
   /**
@@ -209,6 +214,66 @@ export class PlatformService {
         createdAt: true,
       },
     });
+  }
+
+  /**
+   * Creates a new platform admin and emails them a link to set their own
+   * first password — the same "set your password" link and token model
+   * forgotPassword() uses. Nobody but the new admin ever sees or chooses
+   * that password: the row is created with a random, unusable hash (its
+   * argon2 encoding is never compared against because no login attempt can
+   * reach it before the reset link replaces it), so this cannot be used to
+   * hand someone a working password out of band.
+   */
+  async inviteAdmin(dto: InvitePlatformAdminDto, actorId: string) {
+    const email = dto.email.trim().toLowerCase();
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      throw new ConflictException(
+        existing.isPlatformAdmin
+          ? 'That email is already a platform admin.'
+          : 'That email is already used by another account.',
+      );
+    }
+
+    const unusablePassword = crypto.randomBytes(32).toString('hex');
+    const passwordHash = await argon2.hash(unusablePassword);
+
+    const admin = await this.prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        firstName: dto.firstName.trim(),
+        lastName: dto.lastName.trim(),
+        isPlatformAdmin: true,
+        isActive: true,
+        emailVerified: false,
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        isActive: true,
+        lastLoginAt: true,
+        createdAt: true,
+      },
+    });
+
+    await this.authService.issuePasswordResetLink(admin.id, admin.email);
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId,
+        action: AuditAction.USER_CREATED,
+        entityType: 'User',
+        entityId: admin.id,
+        newValues: { email, isPlatformAdmin: true } as Prisma.InputJsonValue,
+      },
+    });
+
+    return admin;
   }
 
   /**

@@ -548,9 +548,21 @@ export class AuthService {
     // Always return success — never leak whether an email is registered
     if (!user || !user.isActive) return;
 
+    await this.issuePasswordResetLink(user.id, user.email);
+  }
+
+  /**
+   * Issues a fresh reset token and emails the same "set your password" link
+   * forgotPassword() sends — also used to let a brand-new platform admin set
+   * their own first password, so a password never has to be typed into a web
+   * form by anyone other than the account's own owner. Shared here rather
+   * than duplicated so both paths stay identical: same token lifetime, same
+   * invalidation of any outstanding token, same non-blocking send.
+   */
+  async issuePasswordResetLink(userId: string, email: string): Promise<void> {
     // Invalidate any outstanding (unused, unexpired) tokens for this user
     await this.prisma.passwordResetToken.updateMany({
-      where: { userId: user.id, isUsed: false },
+      where: { userId, isUsed: false },
       data: { isUsed: true },
     });
 
@@ -559,7 +571,7 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
     await this.prisma.passwordResetToken.create({
-      data: { userId: user.id, tokenHash, expiresAt },
+      data: { userId, tokenHash, expiresAt },
     });
 
     const appUrl = this.configService.get<string>('mail.appUrl');
@@ -570,14 +582,14 @@ export class AuthService {
     // This used to await the send with nothing catching it. When SMTP failed,
     // a registered address got a 500 while an unregistered one got success —
     // so a failed request confirmed the account existed, breaking the promise
-    // at the top of this method. It also made every reset wait on the mail
-    // server, which is itself a timing signal for the same thing.
+    // at the top of forgotPassword(). It also made every reset wait on the
+    // mail server, which is itself a timing signal for the same thing.
     //
-    // The log line is how a failure gets noticed: the user always sees
+    // The log line is how a failure gets noticed: the caller always sees
     // success, so the server log is the only place it can show up.
-    void this.mailService.sendPasswordResetEmail(user.email, resetUrl).catch((err) => {
+    void this.mailService.sendPasswordResetEmail(email, resetUrl).catch((err) => {
       this.logger.error(
-        `Password reset email for user ${user.id} could not be sent: ${
+        `Password reset email for user ${userId} could not be sent: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );

@@ -8,6 +8,7 @@ import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interfa
 import { PlatformService } from './platform.service';
 import { SetAdminStatusDto } from './dto/set-admin-status.dto';
 import { UpdatePlatformSettingsDto } from './dto/update-platform-settings.dto';
+import { InvitePlatformAdminDto } from './dto/invite-platform-admin.dto';
 
 @ApiTags('Platform')
 @ApiBearerAuth()
@@ -47,6 +48,12 @@ export class PlatformController {
   @ApiOperation({ summary: '[Platform Admin] List platform admins' })
   admins() {
     return this.platform.listAdmins();
+  }
+
+  @Post('admins')
+  @ApiOperation({ summary: '[Platform Admin] Invite a new platform admin — they set their own password by email' })
+  inviteAdmin(@Body() dto: InvitePlatformAdminDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.platform.inviteAdmin(dto, user.id);
   }
 
   @Patch('admins/:id/status')
