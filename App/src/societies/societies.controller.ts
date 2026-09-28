@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query, UseGuards, HttpCode, HttpStatus,
+  Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
@@ -139,6 +139,13 @@ export class SocietiesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.societiesService.setActive(id, dto.isActive, user.id);
+  }
+
+  @Delete(':id')
+  @UseGuards(PlatformAdminGuard)
+  @ApiOperation({ summary: '[Platform Admin] Remove a society from the platform (soft delete — nothing is dropped)' })
+  async remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.societiesService.softDelete(id, user.id);
   }
 
   // ─── Join-code endpoints ────────────────────────────────────────────────────

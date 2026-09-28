@@ -311,3 +311,68 @@ describe('SocietiesService.getPlatformStats — newThisMonth', () => {
     expect(stats.newThisMonth).toBe(2);
   });
 });
+
+describe('SocietiesService.softDelete', () => {
+  it('sets deletedAt and returns the updated row, touching no other table', async () => {
+    const prisma = makePrisma({
+      society: {
+        findUnique: jest.fn().mockResolvedValue({ id: SOCIETY_ID, isActive: true, deletedAt: null }),
+        update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: SOCIETY_ID, ...data })),
+        findMany: jest.fn(),
+        count: jest.fn(),
+      },
+    });
+
+    const result = await new SocietiesService(prisma).softDelete(SOCIETY_ID, ACTOR_ID);
+
+    expect((prisma.society.update as jest.Mock).mock.calls[0][0]).toMatchObject({
+      where: { id: SOCIETY_ID },
+      data: { deletedAt: expect.any(Date) },
+    });
+    expect(result.deletedAt).toBeInstanceOf(Date);
+  });
+
+  it('records the actor and marks the audit entry as a deletion', async () => {
+    const prisma = makePrisma({
+      society: {
+        findUnique: jest.fn().mockResolvedValue({ id: SOCIETY_ID, isActive: true, deletedAt: null }),
+        update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: SOCIETY_ID, ...data })),
+        findMany: jest.fn(),
+        count: jest.fn(),
+      },
+    });
+
+    await new SocietiesService(prisma).softDelete(SOCIETY_ID, ACTOR_ID);
+
+    const [audit] = (prisma.auditLog.create as jest.Mock).mock.calls[0];
+    expect(audit.data).toMatchObject({
+      societyId: SOCIETY_ID,
+      actorId: ACTOR_ID,
+      action: 'CONFIG_CHANGED',
+      newValues: expect.objectContaining({ action: 'SOCIETY_DELETED' }),
+    });
+  });
+
+  it('refuses a society that does not exist', async () => {
+    const prisma = makePrisma({
+      society: { findUnique: jest.fn().mockResolvedValue(null), update: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+    });
+
+    await expect(new SocietiesService(prisma).softDelete('nope', ACTOR_ID)).rejects.toThrow(NotFoundException);
+    expect((prisma.society as any).update).not.toHaveBeenCalled();
+  });
+
+  it('a deleted society is excluded from findAll — findOne already scopes deletedAt: null, and findAll shares that scope', async () => {
+    const prisma = makePrisma({
+      society: {
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+      },
+    });
+
+    await new SocietiesService(prisma).findAll(1, 20);
+
+    const [args] = (prisma.society.findMany as jest.Mock).mock.calls[0];
+    expect(args.where).toMatchObject({ deletedAt: null });
+  });
+});

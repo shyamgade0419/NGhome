@@ -361,6 +361,41 @@ export class SocietiesService {
     return updated;
   }
 
+  /**
+   * Soft delete: sets deletedAt and nothing else. Every list and total this
+   * service returns already filters on deletedAt: null (findAll,
+   * getPlatformStats, getPlatformOverview), so a deleted society disappears
+   * from the console immediately without any further change — the same
+   * pattern already used for flats, documents and users elsewhere in this
+   * app. No row is dropped, no related table (memberships, bills, expenses,
+   * audit logs) is touched: this is the one-way "remove from the platform"
+   * action, not a way to actually erase a society's financial history, which
+   * this product has no business destroying on a button click.
+   */
+  async softDelete(id: string, actorId: string) {
+    const society = await this.findOne(id);
+
+    const deletedAt = new Date();
+    const deleted = await this.prisma.society.update({
+      where: { id },
+      data: { deletedAt },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        societyId: id,
+        actorId,
+        action: AuditAction.CONFIG_CHANGED,
+        entityType: 'Society',
+        entityId: id,
+        oldValues: { deletedAt: society.deletedAt } as Prisma.InputJsonValue,
+        newValues: { deletedAt, action: 'SOCIETY_DELETED' } as Prisma.InputJsonValue,
+      },
+    });
+
+    return deleted;
+  }
+
   async findOneForMember(id: string, userId: string) {
     const membership = await this.prisma.societyMembership.findFirst({
       where: { societyId: id, userId, status: 'ACTIVE' },
