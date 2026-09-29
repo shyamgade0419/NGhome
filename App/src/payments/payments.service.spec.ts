@@ -36,6 +36,14 @@ const OTHER_RESIDENT_ID = 'resident-2';
 
 function makeServices(documents: Array<{ id: string; fileKey: string; fileName: string; mimeType: string; createdAt?: Date }>) {
   const prisma = {
+    // Echoes the queried id back as the slug, so isSocietyKey resolves the
+    // same single segment it always did — this suite's own point is which
+    // fileKeys read as inside vs. outside that one folder.
+    society: {
+      findUnique: jest
+        .fn()
+        .mockImplementation(({ where }: any) => Promise.resolve({ name: where.id, storageSlug: where.id })),
+    },
     paymentSubmission: {
       findFirst: jest.fn().mockResolvedValue({
         id: PAYMENT_ID,
@@ -53,7 +61,7 @@ function makeServices(documents: Array<{ id: string; fileKey: string; fileName: 
     getBasePath: jest.fn().mockReturnValue('/ng-home-documents'),
   } as unknown as SftpStorageService;
 
-  return { prisma, storage, service: new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage)) };
+  return { prisma, storage, service: new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage, prisma)) };
 }
 
 describe('PaymentsService.getProofFile', () => {
@@ -110,6 +118,11 @@ describe('PaymentsService.submit — proof attachment', () => {
       document: { create: jest.fn().mockResolvedValue({ id: 'doc-1' }) },
     };
     return {
+      society: {
+        findUnique: jest
+          .fn()
+          .mockImplementation(({ where }: any) => Promise.resolve({ name: where.id, storageSlug: where.id })),
+      },
       societyMembership: { findFirst: jest.fn().mockResolvedValue({ id: 'm1' }) },
       maintenanceBill: { findFirst: jest.fn() },
       societyConfiguration: { findUnique: jest.fn().mockResolvedValue({ paymentVerificationRequired: true }) },
@@ -129,7 +142,7 @@ describe('PaymentsService.submit — proof attachment', () => {
       upload: jest.fn().mockResolvedValue(undefined),
       getBasePath: jest.fn().mockReturnValue('/ng-home-documents'),
     } as unknown as SftpStorageService;
-    const service = new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage));
+    const service = new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage, prisma));
 
     await service.submit(
       SOCIETY_ID, OWNER_ID, 'flat-1',
@@ -154,7 +167,7 @@ describe('PaymentsService.submit — proof attachment', () => {
       upload: jest.fn(),
       getBasePath: jest.fn().mockReturnValue('/ng-home-documents'),
     } as unknown as SftpStorageService;
-    const service = new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage));
+    const service = new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage, prisma));
 
     await service.submit(
       SOCIETY_ID, OWNER_ID, 'flat-1',
@@ -239,6 +252,11 @@ function makeSubmitServices(opts: { accounts: { id: string }[]; verificationRequ
   };
 
   const prisma = {
+    society: {
+      findUnique: jest
+        .fn()
+        .mockImplementation(({ where }: any) => Promise.resolve({ name: where.id, storageSlug: where.id })),
+    },
     societyMembership: { findFirst: jest.fn().mockResolvedValue({ id: 'm1' }) },
     maintenanceBill: { findFirst: jest.fn().mockResolvedValue(bill) },
     billingPeriod: { findFirst: jest.fn().mockResolvedValue({ id: 'period-1', societyId: SOCIETY_ID }) },
@@ -269,7 +287,7 @@ function makeSubmitServices(opts: { accounts: { id: string }[]; verificationRequ
   } as unknown as SftpStorageService;
   const notifications = notificationsStub();
   return {
-    service: new PaymentsService(prisma, storage, notifications, new StoragePathService(storage)),
+    service: new PaymentsService(prisma, storage, notifications, new StoragePathService(storage, prisma)),
     prisma,
     tx,
     storage,
@@ -604,11 +622,16 @@ describe('PaymentsService.submit — unsupported receipt', () => {
   it('rejects the file before creating a payment', async () => {
     const create = jest.fn();
     const prisma = {
+      society: {
+        findUnique: jest
+          .fn()
+          .mockImplementation(({ where }: any) => Promise.resolve({ name: where.id, storageSlug: where.id })),
+      },
       societyMembership: { findFirst: jest.fn().mockResolvedValue({ id: 'm1' }) },
       paymentSubmission: { create },
     } as unknown as PrismaService;
     const storage = { upload: jest.fn(), getBasePath: jest.fn() } as unknown as SftpStorageService;
-    const service = new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage));
+    const service = new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage, prisma));
 
     await expect(
       service.submit(
@@ -644,6 +667,11 @@ describe('PaymentsService.submit — where the proof is stored', () => {
       },
     };
     const prisma = {
+      society: {
+        findUnique: jest
+          .fn()
+          .mockImplementation(({ where }: any) => Promise.resolve({ name: where.id, storageSlug: where.id })),
+      },
       societyMembership: { findFirst: jest.fn().mockResolvedValue({ id: 'm1' }) },
       maintenanceBill: { findFirst: jest.fn() },
       societyConfiguration: { findUnique: jest.fn().mockResolvedValue({ paymentVerificationRequired: true }) },
@@ -651,7 +679,7 @@ describe('PaymentsService.submit — where the proof is stored', () => {
       paymentSubmission: { findFirst: jest.fn().mockResolvedValue(null) },
       $transaction: jest.fn((cb: any) => cb(tx)),
     } as unknown as PrismaService;
-    const service = new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage));
+    const service = new PaymentsService(prisma, storage, notificationsStub(), new StoragePathService(storage, prisma));
     return { service, storage, prisma, tx };
   }
 

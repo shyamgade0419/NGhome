@@ -131,7 +131,7 @@ export class DocumentsService {
     // above — and for staff it has just been checked against this society.
     // The on-disk name is sanitised; file.originalname is still stored below
     // as fileName, so people see the name they uploaded.
-    const remotePath = this.paths.documentFile(
+    const remotePath = await this.paths.documentFile(
       societyId,
       flatId,
       meta.category,
@@ -242,7 +242,7 @@ export class DocumentsService {
     if (doc.storageProvider !== 'sftp') {
       throw new BadRequestException('This document is a link, not an uploaded file — open fileKey directly.');
     }
-    if (!this.paths.isSocietyKey(societyId, doc.fileKey)) {
+    if (!(await this.paths.isSocietyKey(societyId, doc.fileKey))) {
       throw new NotFoundException('File not found');
     }
     const buffer = await this.storage.download(doc.fileKey);
@@ -269,7 +269,7 @@ export class DocumentsService {
 
     // A key outside this society's folder is never deleted; the row is still
     // deactivated.
-    if (doc.storageProvider === 'sftp' && this.paths.isSocietyKey(societyId, doc.fileKey)) {
+    if (doc.storageProvider === 'sftp' && (await this.paths.isSocietyKey(societyId, doc.fileKey))) {
       await this.storage.remove(doc.fileKey);
     }
 

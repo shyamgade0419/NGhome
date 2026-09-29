@@ -1,13 +1,25 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes } from 'crypto';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from './sftp-storage.service';
 import { safeStorageName } from './file-safety';
+import { slugify } from '../common/utils/slugify';
 
 /**
  * The single place that decides where a file lives on the SFTP server.
  *
- *   {base}/{societyId}/society/{folder}/{file}           society-owned
- *   {base}/{societyId}/residents/{flatId}/{folder}/{file} flat-owned
+ *   {base}/{segment}/society/{folder}/{file}           society-owned
+ *   {base}/{segment}/residents/{flatId}/{folder}/{file} flat-owned
+ *
+ * `segment` is the society's storage folder name — Society.storageSlug once
+ * one exists (e.g. "chaitanya-classic-3-a1b2c3d4"), the raw societyId until
+ * then. It is generated once, lazily, on that society's first upload after
+ * this shipped (resolveSegment below), and never recomputed from a later
+ * name change: renaming a society must not split its files across two
+ * folders. Files uploaded before this shipped keep the raw-id folder they
+ * already have forever — nothing moves them, and isSocietyKey below accepts
+ * both forms so they stay readable.
  *
  * Resident files are grouped by flatId, not by user: several people can hold
  * memberships on one flat, and flat ownership is what the access rules
@@ -33,7 +45,9 @@ export const RESIDENT_FOLDERS = ['profile', 'documents', 'complaints', 'payments
 export type SocietyFolder = (typeof SOCIETY_FOLDERS)[number];
 export type ResidentFolder = (typeof RESIDENT_FOLDERS)[number];
 
-/** UUIDs and cuid-style database ids — and nothing that can mean a path. */
+/** UUIDs and cuid-style database ids — and nothing that can mean a path. Also
+ *  what a generated storage slug must match: see slugify() + the id suffix
+ *  appended in createStorageSlug(), both lowercase alphanumeric and hyphens. */
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 /**
@@ -54,6 +68,10 @@ function assertSafeFileName(value: string): void {
   if (typeof value !== 'string' || !SAFE_FILE_NAME.test(value)) {
     throw new BadRequestException('Invalid file name for file storage.');
   }
+}
+
+function isUniqueConstraintError(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
 
 /**
@@ -77,7 +95,10 @@ function folderFromCategory<T extends string>(
 
 @Injectable()
 export class StoragePathService {
-  constructor(private readonly storage: SftpStorageService) {}
+  constructor(
+    private readonly storage: SftpStorageService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   /**
    * The physical name for an upload: `{uuid}-{sanitised original}`. The UUID
@@ -89,28 +110,30 @@ export class StoragePathService {
     return `${randomUUID()}-${safeStorageName(originalName)}`;
   }
 
-  societyFile(societyId: string, folder: SocietyFolder, fileName: string): string {
+  async societyFile(societyId: string, folder: SocietyFolder, fileName: string): Promise<string> {
     assertSafeId(societyId, 'society');
     if (!(SOCIETY_FOLDERS as readonly string[]).includes(folder)) {
       throw new BadRequestException('Invalid society storage folder.');
     }
     assertSafeFileName(fileName);
-    return `${this.base()}/${societyId}/society/${folder}/${fileName}`;
+    const segment = await this.resolveSegment(societyId);
+    return `${this.base()}/${segment}/society/${folder}/${fileName}`;
   }
 
-  residentFile(
+  async residentFile(
     societyId: string,
     flatId: string,
     folder: ResidentFolder,
     fileName: string,
-  ): string {
+  ): Promise<string> {
     assertSafeId(societyId, 'society');
     assertSafeId(flatId, 'flat');
     if (!(RESIDENT_FOLDERS as readonly string[]).includes(folder)) {
       throw new BadRequestException('Invalid resident storage folder.');
     }
     assertSafeFileName(fileName);
-    return `${this.base()}/${societyId}/residents/${flatId}/${folder}/${fileName}`;
+    const segment = await this.resolveSegment(societyId);
+    return `${this.base()}/${segment}/residents/${flatId}/${folder}/${fileName}`;
   }
 
   /**
@@ -118,37 +141,84 @@ export class StoragePathService {
    * does not. `category` is the raw value stored on the Document and is only
    * used to pick a folder.
    */
-  documentFile(
+  async documentFile(
     societyId: string,
     flatId: string | null | undefined,
     category: string | null | undefined,
     fileName: string,
-  ): string {
+  ): Promise<string> {
     return flatId
       ? this.residentFile(societyId, flatId, folderFromCategory(category, RESIDENT_FOLDERS), fileName)
       : this.societyFile(societyId, folderFromCategory(category, SOCIETY_FOLDERS), fileName);
   }
 
-  paymentProof(societyId: string, flatId: string, fileName: string): string {
+  async paymentProof(societyId: string, flatId: string, fileName: string): Promise<string> {
     return this.residentFile(societyId, flatId, 'payments', fileName);
   }
 
   /**
-   * The check made before a stored fileKey is read or deleted: true only for
-   * a key inside this society's own folder, with no "." / ".." segment that
-   * could climb back out of it. Both this layout and the older one
-   * ({societyId}/{file}, {societyId}/payment-proofs/{file}) pass, so files
-   * uploaded before the reorganisation stay reachable where they are.
+   * The check made before a stored fileKey is read or deleted: true for a key
+   * inside this society's own folder — under either its raw id (every file
+   * uploaded before storageSlug existed, or before this society had uploaded
+   * anything since) or its storage slug (every upload since) — with no "."
+   * or ".." segment that could climb back out of it.
    */
-  isSocietyKey(societyId: string, fileKey: string): boolean {
+  async isSocietyKey(societyId: string, fileKey: string): Promise<boolean> {
     if (typeof societyId !== 'string' || !SAFE_ID.test(societyId)) return false;
     if (typeof fileKey !== 'string') return false;
-    const prefix = `${this.base()}/${societyId}/`;
+
+    const society = await this.prisma.society.findUnique({
+      where: { id: societyId },
+      select: { storageSlug: true },
+    });
+    const segments = [societyId, society?.storageSlug].filter((s): s is string => !!s);
+    return segments.some((segment) => this.matchesSegment(segment, fileKey));
+  }
+
+  private matchesSegment(segment: string, fileKey: string): boolean {
+    const prefix = `${this.base()}/${segment}/`;
     if (!fileKey.startsWith(prefix)) return false;
     return fileKey
       .slice(prefix.length)
       .split('/')
-      .every((segment) => segment !== '' && segment !== '.' && segment !== '..' && !/[\\\0]/.test(segment));
+      .every((part) => part !== '' && part !== '.' && part !== '..' && !/[\\\0]/.test(part));
+  }
+
+  /**
+   * The society's storage folder name: its existing slug, or one created and
+   * persisted now. Deterministic from (name, id) — two concurrent first
+   * uploads for the same society compute and write the identical value, so
+   * this needs no locking. A society row that has vanished between the
+   * caller's own lookup and this one is a should-never-happen; assertSafeId
+   * above already validated the id's shape, so this throws the same generic
+   * "invalid society" error rather than a confusing null-property crash.
+   */
+  private async resolveSegment(societyId: string): Promise<string> {
+    const society = await this.prisma.society.findUnique({
+      where: { id: societyId },
+      select: { name: true, storageSlug: true },
+    });
+    if (!society) throw new BadRequestException('Invalid society for file storage.');
+    if (society.storageSlug) return society.storageSlug;
+    return this.createStorageSlug(societyId, society.name);
+  }
+
+  private async createStorageSlug(societyId: string, name: string): Promise<string> {
+    const slug = `${slugify(name)}-${societyId.replace(/-/g, '').slice(0, 8)}`;
+    try {
+      await this.prisma.society.update({ where: { id: societyId }, data: { storageSlug: slug } });
+      return slug;
+    } catch (err) {
+      // Two different societies landing on the same slug — the id suffix
+      // above makes this astronomically unlikely, not impossible. Widen it
+      // with a few random hex characters and accept whatever that gives us;
+      // this society's files still land somewhere readable, just with one
+      // more disambiguator, rather than the upload failing outright.
+      if (!isUniqueConstraintError(err)) throw err;
+      const widened = `${slug}-${randomBytes(2).toString('hex')}`;
+      await this.prisma.society.update({ where: { id: societyId }, data: { storageSlug: widened } });
+      return widened;
+    }
   }
 
   /** Base path without a trailing slash, so joins never produce "//". */

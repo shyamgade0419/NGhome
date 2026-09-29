@@ -134,7 +134,7 @@ export class PaymentsService {
     // APPROVED payment exists without the money having actually moved.
     let proofRemotePath: string | undefined;
     if (proofFile) {
-      proofRemotePath = this.paths.paymentProof(
+      proofRemotePath = await this.paths.paymentProof(
         societyId,
         flatId,
         this.paths.storedFileName(proofFile.originalname),
@@ -522,7 +522,7 @@ export class PaymentsService {
     });
     if (already) return already;
 
-    const remotePath = this.paths.paymentProof(societyId, flatId, this.paths.storedFileName(proofFile.originalname));
+    const remotePath = await this.paths.paymentProof(societyId, flatId, this.paths.storedFileName(proofFile.originalname));
     await this.storage.upload(proofFile.buffer, remotePath);
     try {
       return await this.prisma.document.create({
@@ -832,7 +832,7 @@ export class PaymentsService {
 
     const doc = payment.documents[0];
     if (!doc) throw new NotFoundException('No proof file was attached to this payment');
-    if (!this.paths.isSocietyKey(societyId, doc.fileKey)) {
+    if (!(await this.paths.isSocietyKey(societyId, doc.fileKey))) {
       throw new NotFoundException('No proof file was attached to this payment');
     }
 

@@ -343,6 +343,12 @@ model Society {
   // Resident self-registration via join code
   joinCode            String?   @unique
   joinCodeGeneratedAt DateTime?
+  // The society's storage folder name, e.g. "chaitanya-classic-3-a1b2c3d4" —
+  // set once, on first file upload after this column shipped, and never
+  // recomputed from a later name change (StoragePathService.resolveSegment).
+  // Files already on disk before that stay under this society's raw id
+  // forever; only new uploads move to this folder.
+  storageSlug         String?   @unique
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   deletedAt           DateTime?

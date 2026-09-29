@@ -39,6 +39,16 @@ function setup(opts: { flatInSociety?: boolean; createFails?: boolean } = {}) {
       );
 
   const prisma = {
+    // storageSlug echoes the queried id back, so StoragePathService resolves
+    // the exact same segment it always did — this file's own path
+    // expectations are about folder/flat/category, not slugs.
+    society: {
+      findUnique: jest
+        .fn()
+        .mockImplementation(({ where }: { where: { id: string } }) =>
+          Promise.resolve({ name: where.id, storageSlug: where.id }),
+        ),
+    },
     flat: {
       findFirst: jest
         .fn()
@@ -59,7 +69,7 @@ function setup(opts: { flatInSociety?: boolean; createFails?: boolean } = {}) {
     $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
   } as unknown as PrismaService;
 
-  const service = new DocumentsService(prisma, storage, new StoragePathService(storage));
+  const service = new DocumentsService(prisma, storage, new StoragePathService(storage, prisma));
   return { service, storage, prisma, create };
 }
 

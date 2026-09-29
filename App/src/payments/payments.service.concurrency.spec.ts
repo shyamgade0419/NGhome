@@ -202,6 +202,14 @@ function makeStatefulServices() {
   // how these other tables' safety is proven elsewhere in this file (via
   // their own single-statement atomic conditional writes).
   const prisma = {
+    // Echoes the queried id back as the slug, so StoragePathService resolves
+    // the same segment it always did — this file's races are about payments/
+    // accounts/bills, not storage folder naming.
+    society: {
+      findUnique: jest
+        .fn()
+        .mockImplementation(({ where }: any) => Promise.resolve({ name: where.id, storageSlug: where.id })),
+    },
     paymentSubmission: paymentApi,
     account: accountApi,
     maintenanceBill: { findFirst: topLevelBillFindFirst },
@@ -236,7 +244,7 @@ function makeStatefulServices() {
     notifyQuietly: jest.fn(async (fn: () => Promise<unknown>) => { await fn(); }),
   } as unknown as NotificationsService;
 
-  const service = new PaymentsService(prisma, storage, notifications, new StoragePathService(storage));
+  const service = new PaymentsService(prisma, storage, notifications, new StoragePathService(storage, prisma));
 
   function seedAccount(id: string, overrides: Record<string, unknown> = {}) {
     accounts.set(id, { id, societyId: SOCIETY_ID, isActive: true, currentBalance: new Prisma.Decimal(100000), ...overrides });
