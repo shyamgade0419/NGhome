@@ -2,16 +2,17 @@
 
 /**
  * Self-service account page for the signed-in platform admin: who they are,
- * and a change-password form. Reuses the exact BFF route the society-side
- * profile page already uses (/api/auth/change-password reads the ng_access
- * cookie directly) — the backend endpoint has no society/role check, so it
- * already worked for a platform admin, it just had no page to reach it from
- * in this console.
+ * a name-change form, and a change-password form. Reuses the exact BFF
+ * routes the society-side profile page already uses
+ * (/api/auth/update-profile, /api/auth/change-password — both read the
+ * ng_access cookie directly) — neither backend endpoint has a society/role
+ * check, so both already worked for a platform admin, they just had no page
+ * to reach them from in this console.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { KeyRound, Mail, ShieldCheck } from 'lucide-react';
+import { KeyRound, Mail, Save, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { PlatformShell } from '@/components/platform/PlatformShell';
@@ -19,6 +20,17 @@ import { Card, DButton, PageHeader } from '@/components/platform/ui';
 
 const inputClass =
   'w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500';
+
+async function patchProfile(body: { firstName: string; lastName: string }) {
+  const res = await fetch('/api/auth/update-profile', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.message ?? 'Update failed');
+  return data;
+}
 
 async function postChangePassword(body: { currentPassword: string; newPassword: string }) {
   const res = await fetch('/api/auth/change-password', {
@@ -32,10 +44,35 @@ async function postChangePassword(body: { currentPassword: string; newPassword: 
 }
 
 export default function PlatformProfilePage() {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+
+  // Populate once the auth context resolves the user, same pattern as the
+  // society-side profile page — an empty dependency on user.id so a later
+  // refetch (e.g. after saving) doesn't stomp on what's being typed.
+  useEffect(() => {
+    if (user) {
+      setFirstName(user.firstName ?? '');
+      setLastName(user.lastName ?? '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  const saveProfile = useMutation({
+    mutationFn: patchProfile,
+    onSuccess: async () => {
+      toast.success('Profile updated');
+      await refreshUser();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const nameChanged = firstName.trim() !== (user?.firstName ?? '') || lastName.trim() !== (user?.lastName ?? '');
+  const nameValid = firstName.trim() !== '' && lastName.trim() !== '';
 
   const changePassword = useMutation({
     mutationFn: postChangePassword,
@@ -60,16 +97,30 @@ export default function PlatformProfilePage() {
 
       <div className="max-w-xl space-y-6">
         <Card title="Account" icon={ShieldCheck}>
-          <dl className="space-y-3 text-sm">
-            <div className="flex items-center justify-between">
-              <dt className="text-gray-400">Name</dt>
-              <dd className="text-white">{user?.firstName} {user?.lastName}</dd>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (nameValid && nameChanged) saveProfile.mutate({ firstName: firstName.trim(), lastName: lastName.trim() });
+            }}
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="first-name" className="mb-1 block text-xs font-medium text-gray-300">First name</label>
+                <input id="first-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} className={inputClass} />
+              </div>
+              <div>
+                <label htmlFor="last-name" className="mb-1 block text-xs font-medium text-gray-300">Last name</label>
+                <input id="last-name" value={lastName} onChange={(e) => setLastName(e.target.value)} className={inputClass} />
+              </div>
             </div>
-            <div className="flex items-center justify-between">
-              <dt className="flex items-center gap-1.5 text-gray-400"><Mail size={13} /> Email</dt>
-              <dd className="text-white">{user?.email}</dd>
+            <div className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-1.5 text-gray-400"><Mail size={13} /> {user?.email}</span>
+              <DButton type="submit" size="sm" variant="primary" loading={saveProfile.isPending} disabled={!nameValid || !nameChanged}>
+                <Save size={13} /> Save name
+              </DButton>
             </div>
-          </dl>
+          </form>
           <p className="mt-3 text-xs text-gray-500">
             Changing your email isn&apos;t self-service yet — ask another platform admin, or use the server script.
           </p>
