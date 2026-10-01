@@ -278,18 +278,32 @@ export class SocietiesService {
     const { skip, take, page, limit } = getPaginationParams({ page: params.page, limit: params.limit });
     const term = params.search?.trim().slice(0, 100);
 
+    // Deleting a society only ever set deletedAt on the Society row — its
+    // members' User rows were never touched, so they kept appearing here
+    // with no visible connection to anything live. A platform admin has no
+    // memberships at all, so they're let through on that basis alone rather
+    // than needing a membership to survive this filter.
+    const belongsToLivePlatform: Prisma.UserWhereInput = {
+      OR: [{ isPlatformAdmin: true }, { memberships: { some: { status: 'ACTIVE', society: { deletedAt: null } } } }],
+    };
+
     const where: Prisma.UserWhereInput = {
       deletedAt: null,
-      ...(term
-        ? {
-            OR: [
-              { firstName: { contains: term, mode: 'insensitive' } },
-              { lastName: { contains: term, mode: 'insensitive' } },
-              { email: { contains: term, mode: 'insensitive' } },
-              { phone: { contains: term } },
-            ],
-          }
-        : {}),
+      AND: [
+        belongsToLivePlatform,
+        ...(term
+          ? [
+              {
+                OR: [
+                  { firstName: { contains: term, mode: 'insensitive' as const } },
+                  { lastName: { contains: term, mode: 'insensitive' as const } },
+                  { email: { contains: term, mode: 'insensitive' as const } },
+                  { phone: { contains: term } },
+                ],
+              },
+            ]
+          : []),
+      ],
     };
 
     const [data, total] = await Promise.all([
@@ -309,7 +323,9 @@ export class SocietiesService {
           lastLoginAt: true,
           createdAt: true,
           memberships: {
-            where: { status: 'ACTIVE' },
+            // Same reasoning as the top-level filter: a deleted society's
+            // membership should not still show as a place this user belongs.
+            where: { status: 'ACTIVE', society: { deletedAt: null } },
             select: {
               role: true,
               society: { select: { id: true, name: true, displayName: true } },

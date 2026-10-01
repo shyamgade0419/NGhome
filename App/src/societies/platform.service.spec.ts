@@ -151,32 +151,54 @@ describe('SocietiesService.listPlatformUsers', () => {
     expect(args.include).toBeUndefined();
   });
 
-  it('excludes soft-deleted users and only lists active memberships', async () => {
+  it('excludes soft-deleted users and only lists active memberships in live societies', async () => {
     const prisma = usersPrisma();
     await new SocietiesService(prisma).listPlatformUsers({ page: 1, limit: 20 });
 
     const [args] = (prisma.user.findMany as jest.Mock).mock.calls[0];
     expect(args.where).toMatchObject({ deletedAt: null });
-    expect(args.select.memberships.where).toEqual({ status: 'ACTIVE' });
+    expect(args.select.memberships.where).toEqual({ status: 'ACTIVE', society: { deletedAt: null } });
   });
 
-  it('searches name, email and phone, and applies the same filter to the count', async () => {
+  it('excludes a user whose only memberships are to a deleted society — deleting a society used to leave its members still listed here', async () => {
     const prisma = usersPrisma();
-    await new SocietiesService(prisma).listPlatformUsers({ page: 1, limit: 20, search: '  ramesh ' });
+    await new SocietiesService(prisma).listPlatformUsers({ page: 1, limit: 20 });
 
     const [args] = (prisma.user.findMany as jest.Mock).mock.calls[0];
-    expect(args.where.OR).toHaveLength(4);
-    expect(args.where.OR[0]).toEqual({ firstName: { contains: 'ramesh', mode: 'insensitive' } });
+    expect(args.where.AND[0].OR).toEqual([
+      { isPlatformAdmin: true },
+      { memberships: { some: { status: 'ACTIVE', society: { deletedAt: null } } } },
+    ]);
     const [countArgs] = (prisma.user.count as jest.Mock).mock.calls[0];
     expect(countArgs.where).toEqual(args.where);
   });
 
-  it('adds no search filter when the term is blank', async () => {
+  it('keeps a platform admin visible even though they hold no memberships at all', async () => {
+    const prisma = usersPrisma();
+    await new SocietiesService(prisma).listPlatformUsers({ page: 1, limit: 20 });
+
+    const [args] = (prisma.user.findMany as jest.Mock).mock.calls[0];
+    expect(args.where.AND[0].OR[0]).toEqual({ isPlatformAdmin: true });
+  });
+
+  it('searches name, email and phone, narrowing the live-platform filter rather than replacing it', async () => {
+    const prisma = usersPrisma();
+    await new SocietiesService(prisma).listPlatformUsers({ page: 1, limit: 20, search: '  ramesh ' });
+
+    const [args] = (prisma.user.findMany as jest.Mock).mock.calls[0];
+    expect(args.where.AND).toHaveLength(2);
+    expect(args.where.AND[1].OR).toHaveLength(4);
+    expect(args.where.AND[1].OR[0]).toEqual({ firstName: { contains: 'ramesh', mode: 'insensitive' } });
+    const [countArgs] = (prisma.user.count as jest.Mock).mock.calls[0];
+    expect(countArgs.where).toEqual(args.where);
+  });
+
+  it('adds no search clause when the term is blank, but keeps the live-platform filter', async () => {
     const prisma = usersPrisma();
     await new SocietiesService(prisma).listPlatformUsers({ page: 1, limit: 20, search: '   ' });
 
     const [args] = (prisma.user.findMany as jest.Mock).mock.calls[0];
-    expect(args.where.OR).toBeUndefined();
+    expect(args.where.AND).toHaveLength(1);
   });
 });
 
