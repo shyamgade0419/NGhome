@@ -274,7 +274,16 @@ export default function ResidentDashboard() {
             </View>
             <Text style={styles.quickLinkText} numberOfLines={2}>Messages</Text>
           </TouchableOpacity>
-          <View style={[styles.quickLink, { opacity: 0 }]} pointerEvents="none" />
+          <TouchableOpacity
+            style={styles.quickLink}
+            activeOpacity={0.8}
+            onPress={() => router.push('/(app)/amenities' as any)}
+          >
+            <View style={[styles.quickLinkIcon, { backgroundColor: colors.primaryLight }]}>
+              <Ionicons name="calendar-outline" size={20} color={colors.primary} />
+            </View>
+            <Text style={styles.quickLinkText} numberOfLines={2}>Amenities</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Announcements preview */}

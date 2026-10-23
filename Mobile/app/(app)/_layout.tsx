@@ -26,6 +26,7 @@ export default function AppLayout() {
       <Stack.Screen name="directory" />
       <Stack.Screen name="forum" />
       <Stack.Screen name="chat" />
+      <Stack.Screen name="amenities" />
     </Stack>
   );
 }

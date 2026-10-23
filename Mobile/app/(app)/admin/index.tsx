@@ -31,6 +31,7 @@ const QUICK_ACTIONS = [
   { label: 'Add Expense', icon: 'add-circle-outline', route: '/(app)/admin/expenses' },
   { label: 'Helpdesk', icon: 'construct-outline', route: '/(app)/admin/helpdesk' },
   { label: 'Announce', icon: 'megaphone-outline', route: '/(app)/admin/announcements' },
+  { label: 'Amenities', icon: 'calendar-outline', route: '/(app)/admin/amenities' },
   { label: 'Directory', icon: 'people-outline', route: '/(app)/directory' },
   { label: 'Community Board', icon: 'chatbubbles-outline', route: '/(app)/forum' },
   { label: 'Messages', icon: 'chatbox-ellipses-outline', route: '/(app)/chat' },
