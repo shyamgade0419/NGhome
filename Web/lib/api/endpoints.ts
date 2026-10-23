@@ -8,6 +8,7 @@ import type {
   Announcement,
   PaginatedResponse,
 } from '@/lib/types';
+import type { Amenity, AmenityBooking, AmenityPayload } from '@/lib/amenities';
 
 // Dashboard — composites several report endpoints
 export const dashboardApi = {
@@ -630,3 +631,23 @@ export interface PlatformSettings {
   updatedAt: string | null;
 }
 export type PlatformSettingsInput = Omit<PlatformSettings, 'updatedAt'>;
+
+// Amenity booking — committee side. Spaces (hours, slots, approval, fee) and
+// the booking requests residents make against them.
+export const amenitiesApi = {
+  list: (all = true): Promise<{ data: Amenity[] }> =>
+    api.get('/amenities', { params: all ? { all: 'true' } : undefined }),
+  create: (data: AmenityPayload) => api.post('/amenities', data),
+  update: (id: string, data: AmenityPayload) => api.patch(`/amenities/${id}`, data),
+};
+
+export const amenityBookingsApi = {
+  list: (params?: Record<string, unknown>): Promise<{ data: PaginatedResponse<AmenityBooking> }> =>
+    api.get('/amenity-bookings', { params }),
+  approve: (id: string) => api.post(`/amenity-bookings/${id}/approve`),
+  reject: (id: string, reason?: string) => api.post(`/amenity-bookings/${id}/reject`, { reason }),
+  cancel: (id: string) => api.post(`/amenity-bookings/${id}/cancel`),
+  /** Records the fee as received into the account: credits its balance and writes the ledger entry. */
+  collectFee: (id: string, accountId: string) => api.post(`/amenity-bookings/${id}/fee/collect`, { accountId }),
+  waiveFee: (id: string) => api.post(`/amenity-bookings/${id}/fee/waive`),
+};
