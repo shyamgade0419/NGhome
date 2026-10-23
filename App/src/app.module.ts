@@ -33,6 +33,7 @@ import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { HelpdeskModule } from './helpdesk/helpdesk.module';
 import { HealthModule } from './health/health.module';
 import { PlatformModule } from './platform/platform.module';
+import { AmenitiesModule } from './amenities/amenities.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { EventsModule } from './events/events.module';
@@ -82,6 +83,7 @@ import { ChatModule } from './chat/chat.module';
     ChatModule,
     HealthModule,
     PlatformModule,
+    AmenitiesModule,
   ],
   providers: [
     // Global guards
