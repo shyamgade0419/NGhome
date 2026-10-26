@@ -35,14 +35,14 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
     if (!isLoading && user && !user.isPlatformAdmin) router.replace('/');
   }, [isLoading, user, router]);
 
-  // A stale session on the console's front door: the 401 handler leaves
-  // /platform alone (so a signed-out visit keeps its URL — see
+  // A stale session on a console page: the 401 handler leaves /platform
+  // addresses alone (so a signed-out visit keeps its URL — see
   // lib/api/client.ts), and the failed refresh has already cleared the
-  // session cookie, so one full reload lands on the login form served at
-  // this same address. The timestamp guards against a reload loop if the
+  // session cookie, so one full reload lands on the platform sign-in served
+  // at this same address. The timestamp guards against a reload loop if the
   // cookie ever survives.
   useEffect(() => {
-    if (isLoading || user || pathname !== '/platform') return;
+    if (isLoading || user) return;
     try {
       const last = Number(sessionStorage.getItem('ng_platform_reload') ?? 0);
       if (Date.now() - last < 10_000) return;
@@ -50,8 +50,8 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
     } catch {
       return;
     }
-    window.location.replace('/platform');
-  }, [isLoading, user, pathname]);
+    window.location.reload();
+  }, [isLoading, user]);
 
   useEffect(() => setOpen(false), [pathname]);
 

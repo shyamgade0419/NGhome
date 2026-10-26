@@ -42,16 +42,7 @@ export default function LoginPage() {
         // A platform admin's token carries no societyId (see auth.service.ts
         // login()) — every page under (dashboard) calls society-scoped
         // endpoints and would just error out for this account.
-        //
-        // When the form was served at /platform itself (a rewrite — see
-        // middleware.ts) the URL doesn't change, so a client-side replace
-        // could be answered from the router cache with this same login
-        // page. A full navigation always fetches the console.
-        if (window.location.pathname.startsWith('/platform')) {
-          window.location.replace('/platform');
-        } else {
-          router.replace('/platform');
-        }
+        router.replace('/platform');
       } else {
         const from = searchParams.get('from') ?? '/';
         router.replace(from);
