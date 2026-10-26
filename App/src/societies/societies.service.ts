@@ -5,6 +5,7 @@ import { UpdateSocietyDto } from './dto/update-society.dto';
 import { UpdateSocietyConfigDto } from './dto/update-society-config.dto';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
 import { generateUniqueJoinCode } from '../common/utils/join-code.util';
+import { scrubLogo } from './branding';
 import { Prisma, AuditAction } from '@prisma/client';
 
 @Injectable()
@@ -90,7 +91,8 @@ export class SocietiesService {
       },
     });
     if (!society) throw new NotFoundException('Society not found');
-    return society;
+    // The logo travels only through the branding endpoint, not on every read of the society.
+    return { ...society, configuration: scrubLogo(society.configuration) ?? null };
   }
 
   /**
@@ -460,7 +462,7 @@ export class SocietiesService {
       ...(additionalConfigPatch !== undefined ? { additionalConfig: additionalConfigPatch } : {}),
     };
 
-    return this.prisma.societyConfiguration.upsert({
+    const saved = await this.prisma.societyConfiguration.upsert({
       where: { societyId },
       create: {
         ...configFields,
@@ -469,6 +471,7 @@ export class SocietiesService {
       } as Prisma.SocietyConfigurationUncheckedCreateInput,
       update: data,
     });
+    return scrubLogo(saved) ?? saved;
   }
 
   async getConfiguration(societyId: string) {
@@ -476,7 +479,7 @@ export class SocietiesService {
       where: { societyId },
     });
     if (!config) throw new NotFoundException('Society configuration not found');
-    return config;
+    return scrubLogo(config) ?? config;
   }
 
   async getStats(societyId: string) {

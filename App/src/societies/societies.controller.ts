@@ -1,10 +1,12 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, HttpCode, HttpStatus,
+  Controller, Get, Post, Patch, Put, Delete, Body, Param, Query, UseGuards, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
 import { SocietiesService } from './societies.service';
 import { SocietyPurgeService } from './society-purge.service';
+import { SocietyBrandingService } from './society-branding.service';
+import { UpdateBrandingDto } from './dto/update-branding.dto';
 import { PurgeSocietyDto } from './dto/purge-society.dto';
 import { CreateSocietyDto } from './dto/create-society.dto';
 import { UpdateSocietyDto } from './dto/update-society.dto';
@@ -28,6 +30,7 @@ export class SocietiesController {
   constructor(
     private readonly societiesService: SocietiesService,
     private readonly purgeService: SocietyPurgeService,
+    private readonly brandingService: SocietyBrandingService,
   ) {}
 
   @Post()
@@ -63,6 +66,14 @@ export class SocietiesController {
   @ApiOperation({ summary: 'Get current society statistics' })
   async getStats(@SocietyId() societyId: string) {
     return this.societiesService.getStats(societyId);
+  }
+
+  /** Any member — the name, logo and colour their society has been given. */
+  @Get('my/branding')
+  @UseGuards(TenantGuard)
+  @ApiOperation({ summary: "The society's branding (app name, logo, colour)" })
+  async getMyBranding(@SocietyId() societyId: string) {
+    return this.brandingService.get(societyId);
   }
 
   @Get('my/config')
@@ -125,6 +136,24 @@ export class SocietiesController {
     @Query('search') search?: string,
   ) {
     return this.societiesService.listPlatformUsers({ page: +page, limit: +limit, search });
+  }
+
+  @Get(':id/branding')
+  @UseGuards(PlatformAdminGuard)
+  @ApiOperation({ summary: "[Platform Admin] A society's branding" })
+  async getBranding(@Param('id') id: string) {
+    return this.brandingService.get(id);
+  }
+
+  @Put(':id/branding')
+  @UseGuards(PlatformAdminGuard)
+  @ApiOperation({ summary: "[Platform Admin] Set a society's app name, logo and colour" })
+  async setBranding(
+    @Param('id') id: string,
+    @Body() dto: UpdateBrandingDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.brandingService.update(id, dto, user.id);
   }
 
   @Get(':id/overview')
