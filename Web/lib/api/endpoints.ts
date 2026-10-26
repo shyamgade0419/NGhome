@@ -245,6 +245,8 @@ export const societyApi = {
   removeMember: (userId: string) => api.delete(`/users/society/${userId}/remove`),
 
   // Edit a resident's profile info (admin only — PATCH /users/:id)
+  /** Gives an admin, committee member or other flat-less member a flat. Updates their one membership. */
+  assignFlat: (userId: string, flatId: string) => api.patch(`/users/society/${userId}/flat`, { flatId }),
   updateUser: (userId: string, data: { firstName?: string; lastName?: string; phone?: string }) =>
     api.patch(`/users/${userId}`, data),
 

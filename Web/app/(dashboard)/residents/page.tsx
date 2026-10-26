@@ -53,15 +53,29 @@ function EditResidentModal({
   const [lastName, setLastName] = useState(resident.lastName);
   const [phone, setPhone] = useState(resident.phone ?? '');
 
+  // Admins, committee members and the like join without a flat. Giving them
+  // one lets them book amenities and show up in the directory with a flat
+  // code. A resident's own flat is not changed from here.
+  const canChooseFlat = resident.role !== 'RESIDENT';
+  const [flatId, setFlatId] = useState('');
+  const { data: flatsData } = useQuery({
+    queryKey: ['flats'],
+    queryFn: () => societyApi.flats({ limit: 500 }).then((r: any) => r.data),
+    enabled: canChooseFlat,
+  });
+  const flats: any[] = Array.isArray(flatsData) ? flatsData : (flatsData?.data ?? []);
+
   const updateMutation = useMutation({
-    mutationFn: () =>
-      societyApi.updateUser(resident.userId, {
+    mutationFn: async () => {
+      await societyApi.updateUser(resident.userId, {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         phone: phone.trim() || undefined,
-      }),
+      });
+      if (canChooseFlat && flatId) await societyApi.assignFlat(resident.userId, flatId);
+    },
     onSuccess: () => {
-      toast.success('Resident info updated');
+      toast.success(flatId ? 'Saved — flat assigned' : 'Resident info updated');
       qc.invalidateQueries({ queryKey: ['residents'] });
       onClose();
     },
@@ -90,7 +104,7 @@ function EditResidentModal({
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div>
             <h3 className="text-base font-semibold text-slate-900">Edit Resident</h3>
-            <p className="text-xs text-slate-500 mt-0.5">{resident.flatNumber} · {resident.email}</p>
+            <p className="text-xs text-slate-500 mt-0.5">{resident.flatNumber ? `${resident.flatNumber} · ` : ''}{resident.email}</p>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
             <X size={16} />
@@ -126,6 +140,32 @@ function EditResidentModal({
               Used for WhatsApp billing reminders. Include country code.
             </p>
           </div>
+
+          {canChooseFlat && (
+            <div>
+              <label htmlFor="member-flat" className="mb-1 block text-sm font-medium text-slate-700">
+                Flat
+              </label>
+              <select
+                id="member-flat"
+                value={flatId}
+                onChange={(e) => setFlatId(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+              >
+                <option value="">
+                  {resident.flatNumber ? `Keep ${resident.flatNumber}` : 'No flat'}
+                </option>
+                {flats.map((f: any) => (
+                  <option key={f.id} value={f.id}>
+                    {f.flatCode}{f.building?.name ? ` — ${f.building.name}` : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-400">
+                A flat lets this person book amenities and appear in the directory with a flat number. Their role does not change.
+              </p>
+            </div>
+          )}
 
           <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
             ⚠️ Email address cannot be changed here. Contact platform support for email changes.

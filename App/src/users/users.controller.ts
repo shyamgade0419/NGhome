@@ -7,6 +7,7 @@ import { SystemRole } from '@prisma/client';
 import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AddMemberDto } from './dto/add-member.dto';
+import { AssignFlatDto } from './dto/assign-flat.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -77,6 +78,19 @@ export class UsersController {
       body.role,
       body.isPrimary ?? false,
     );
+  }
+
+  @Patch('society/:userId/flat')
+  @UseGuards(TenantGuard, RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @ApiOperation({ summary: 'Give a member who has no flat (e.g. an admin) a flat — updates their one membership' })
+  async assignFlat(
+    @SocietyId() societyId: string,
+    @Param('userId') userId: string,
+    @Body() dto: AssignFlatDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.usersService.assignFlat(societyId, userId, dto.flatId, actor.id);
   }
 
   @Delete('society/:userId/remove')

@@ -2,12 +2,13 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { SystemRole, AuditAction } from '@prisma/client';
+import { SystemRole, AuditAction, Prisma } from '@prisma/client';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
 
 const USER_SELECT = {
@@ -243,6 +244,59 @@ export class UsersService {
       where: { societyId_userId_flatId: { societyId, userId, flatId: flatId ?? '' } },
       create: { societyId, userId, flatId, role, isPrimary, status: 'ACTIVE' },
       update: { role, isPrimary, status: 'ACTIVE', leftAt: null },
+    });
+  }
+
+  /**
+   * Gives a member who has no flat — typically an admin, committee member or
+   * accountant, who joined the society through the Roles screen rather than
+   * through a flat — a flat of their own, so they can do what a flat is for:
+   * book amenities, appear in the directory with a flat code, and so on.
+   *
+   * It UPDATES the member's one membership row. The same person must stay a
+   * single row carrying both the role and the flat: a second row made the
+   * society show up twice at login (see addToSociety).
+   *
+   * A resident's flat is not changed here. Moving a resident is a different
+   * act (who lives where drives billing) and is not what this is for.
+   */
+  async assignFlat(societyId: string, userId: string, flatId: string, actorId: string) {
+    const flat = await this.prisma.flat.findFirst({ where: { id: flatId, societyId } });
+    if (!flat) throw new NotFoundException('Flat not found in this society');
+
+    const memberships = await this.prisma.societyMembership.findMany({
+      where: { societyId, userId, status: 'ACTIVE' },
+    });
+    if (memberships.length === 0) throw new NotFoundException('That person is not an active member of this society');
+    if (memberships.length > 1) {
+      throw new ConflictException('This member holds more than one membership in this society, so the flat cannot be chosen automatically.');
+    }
+
+    const membership = memberships[0];
+    if (membership.flatId === flatId) return membership;
+    if (membership.role === SystemRole.RESIDENT && membership.flatId) {
+      throw new BadRequestException(
+        'This resident already has a flat. Moving a resident to another flat is not done from here.',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.societyMembership.update({
+        where: { id: membership.id },
+        data: { flatId },
+      });
+      await tx.auditLog.create({
+        data: {
+          societyId,
+          actorId,
+          action: AuditAction.USER_MODIFIED,
+          entityType: 'SocietyMembership',
+          entityId: membership.id,
+          oldValues: { flatId: membership.flatId } as Prisma.InputJsonValue,
+          newValues: { flatId, action: 'FLAT_ASSIGNED', role: membership.role } as Prisma.InputJsonValue,
+        },
+      });
+      return updated;
     });
   }
 
