@@ -265,7 +265,9 @@ export default function PlatformSocietiesPage() {
               <DButton
                 variant="danger"
                 loading={remove.isPending}
-                disabled={deleteConfirmText.trim() !== (deleting.displayName ?? deleting.name)}
+                // Both sides trimmed: a society saved with a stray trailing
+                // space ("Name ") could otherwise never be confirmed.
+                disabled={deleteConfirmText.trim() !== (deleting.displayName ?? deleting.name).trim()}
                 onClick={() => remove.mutate(deleting.id)}
               >
                 <Trash2 size={13} /> Delete society
