@@ -5,6 +5,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { SystemRole } from '@prisma/client';
 import { SocietiesService } from './societies.service';
 import { CreateSocietyDto } from './dto/create-society.dto';
+import { UpdateSocietyDto } from './dto/update-society.dto';
 import { SetSocietyStatusDto } from './dto/set-society-status.dto';
 import { UpdateSocietyConfigDto } from './dto/update-society-config.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -86,7 +87,7 @@ export class SocietiesController {
   @UseGuards(TenantGuard, RolesGuard)
   @Roles(SystemRole.SOCIETY_ADMIN)
   @ApiOperation({ summary: 'Update society details' })
-  async update(@SocietyId() societyId: string, @Body() dto: Partial<CreateSocietyDto>) {
+  async update(@SocietyId() societyId: string, @Body() dto: UpdateSocietyDto) {
     return this.societiesService.update(societyId, dto);
   }
 

@@ -3,33 +3,41 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Trim } from '../../common/decorators/trim.decorator';
 
 class SocietyInfoDto {
   @ApiProperty({ example: 'Green Valley Apartments' })
+  @Trim()
   @IsString() @IsNotEmpty() @MinLength(3) @MaxLength(200)
   name: string;
 
   @ApiPropertyOptional({ example: 'MH-2023-12345' })
+  @Trim()
   @IsOptional() @IsString() @MaxLength(100)
   registrationNumber?: string;
 
   @ApiProperty({ example: 'Plot No. 12, Sector 5' })
+  @Trim()
   @IsString() @IsNotEmpty()
   address: string;
 
   @ApiProperty({ example: 'Mumbai' })
+  @Trim()
   @IsString() @IsNotEmpty()
   city: string;
 
   @ApiProperty({ example: 'Maharashtra' })
+  @Trim()
   @IsString() @IsNotEmpty()
   state: string;
 
   @ApiProperty({ example: '400001' })
+  @Trim()
   @IsString() @IsNotEmpty()
   pinCode: string;
 
   @ApiProperty({ example: 'India' })
+  @Trim()
   @IsString() @IsNotEmpty()
   country: string;
 

@@ -36,6 +36,9 @@ import { CreateForumTopicDto } from '../forum/dto/create-forum-topic.dto';
 import { CreateForumReplyDto } from '../forum/dto/create-forum-reply.dto';
 import { StartConversationDto } from '../chat/dto/start-conversation.dto';
 import { SendMessageDto } from '../chat/dto/send-message.dto';
+import { UpdateSocietyDto } from '../societies/dto/update-society.dto';
+import { CreateSocietyDto } from '../societies/dto/create-society.dto';
+import { RegisterSocietyDto } from '../auth/dto/register-society.dto';
 import { SystemRole, AnnouncementPriority, WaterBillingModel, NotificationChannel } from '@prisma/client';
 
 // Mirrors main.ts exactly — testing against different settings proves nothing.
@@ -562,6 +565,98 @@ describe('Chat DTO validation', () => {
 
     it('rejects an empty message', async () => {
       await expect(run({ body: '' }, SendMessageDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+});
+
+describe('Society details DTOs', () => {
+  // Exactly what Web settings and Mobile settings/society.tsx send.
+  const appPayload = {
+    name: 'Chaitanya Classic 3',
+    displayName: '',
+    address: 'Srinivasa Ngr Colony',
+    city: 'Nizampet',
+    state: 'Telangana',
+    pincode: '500090',
+    email: '',
+    phone: '+917569377741',
+  };
+
+  describe('UpdateSocietyDto', () => {
+    it('accepts the payload both apps send, including blank optional fields', async () => {
+      await expect(run(appPayload, UpdateSocietyDto)).resolves.toMatchObject({ name: 'Chaitanya Classic 3', email: '' });
+    });
+
+    it('accepts a partial update', async () => {
+      await expect(run({ city: 'Hyderabad' }, UpdateSocietyDto)).resolves.toMatchObject({ city: 'Hyderabad' });
+    });
+
+    it('trims stray whitespace, so a name can be typed back exactly', async () => {
+      const out: any = await run({ name: '  Novagade apartments ', city: ' Karimnagar ' }, UpdateSocietyDto);
+      expect(out.name).toBe('Novagade apartments');
+      expect(out.city).toBe('Karimnagar');
+    });
+
+    it.each(['', '   '])('rejects a name that is blank after trimming (%j)', async (name) => {
+      await expect(run({ name }, UpdateSocietyDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a malformed email but allows it to be cleared', async () => {
+      await expect(run({ email: 'not-an-email' }, UpdateSocietyDto)).rejects.toThrow(BadRequestException);
+      await expect(run({ email: '' }, UpdateSocietyDto)).resolves.toMatchObject({ email: '' });
+    });
+
+    // The route used to pass the whole body to Prisma, so a society admin could
+    // write columns that are not theirs to change.
+    it.each([
+      ['isActive', true],
+      ['joinCode', 'AAAA-BBBB'],
+      ['deletedAt', null],
+      ['storageSlug', 'someone-elses-folder'],
+      ['id', 'another-society-id'],
+      ['logoUrl', 'https://example.com/x.png'],
+    ])('refuses %s', async (field, value) => {
+      await expect(run({ name: 'X', [field]: value }, UpdateSocietyDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('CreateSocietyDto', () => {
+    it('trims the name and display name', async () => {
+      const out: any = await run({ name: ' Green Valley ', displayName: ' GV ' }, CreateSocietyDto);
+      expect(out.name).toBe('Green Valley');
+      expect(out.displayName).toBe('GV');
+    });
+  });
+
+  describe('RegisterSocietyDto', () => {
+    const body = (name: string) => ({
+      society: {
+        name,
+        address: ' Plot 12 ',
+        city: 'Mumbai',
+        state: 'Maharashtra',
+        pinCode: '400001',
+        country: 'India',
+        contactEmail: 'admin@gv.example.com',
+        contactPhone: '+919876543210',
+      },
+      admin: {
+        firstName: 'John',
+        lastName: 'Doe',
+        email: 'john@example.com',
+        phone: '+919876543210',
+        password: 'a-long-password',
+      },
+    });
+
+    it('trims the society name and address at registration', async () => {
+      const out: any = await run(body('Green Valley Apartments '), RegisterSocietyDto);
+      expect(out.society.name).toBe('Green Valley Apartments');
+      expect(out.society.address).toBe('Plot 12');
+    });
+
+    it('measures the minimum length after trimming', async () => {
+      await expect(run(body('  ab  '), RegisterSocietyDto)).rejects.toThrow(BadRequestException);
     });
   });
 });

@@ -1,13 +1,16 @@
 import { IsString, IsOptional, IsEmail } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Trim } from '../../common/decorators/trim.decorator';
 
 export class CreateSocietyDto {
   @ApiProperty()
+  @Trim()
   @IsString()
   name: string;
 
   @ApiPropertyOptional()
   @IsOptional()
+  @Trim()
   @IsString()
   displayName?: string;
 

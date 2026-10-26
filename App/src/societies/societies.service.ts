@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSocietyDto } from './dto/create-society.dto';
+import { UpdateSocietyDto } from './dto/update-society.dto';
 import { UpdateSocietyConfigDto } from './dto/update-society-config.dto';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
 import { generateUniqueJoinCode } from '../common/utils/join-code.util';
@@ -420,7 +421,7 @@ export class SocietiesService {
     return this.findOne(id);
   }
 
-  async update(id: string, dto: Partial<CreateSocietyDto>) {
+  async update(id: string, dto: UpdateSocietyDto) {
     await this.findOne(id);
     return this.prisma.society.update({
       where: { id },
