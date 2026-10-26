@@ -27,8 +27,11 @@ api.interceptors.response.use(
     // avoid an infinite reload loop: AuthContext calls /auth/me on mount, gets 401 while
     // unauthenticated, which would otherwise trigger a reload of the same page forever.
     const PUBLIC_PAGES = ['/login', '/register', '/forgot-password', '/reset-password', '/select-society'];
+    // /platform itself serves the login form when signed out (middleware
+    // rewrite), so a 401 there must not bounce the address bar to /login.
     const onPublicPage = typeof window !== 'undefined' &&
-      PUBLIC_PAGES.some((p) => window.location.pathname.startsWith(p));
+      (window.location.pathname === '/platform' ||
+        PUBLIC_PAGES.some((p) => window.location.pathname.startsWith(p)));
     if (err.response?.status === 401 && !onPublicPage) {
       window.location.href = '/login';
     }

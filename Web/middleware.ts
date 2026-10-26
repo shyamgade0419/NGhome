@@ -19,6 +19,14 @@ export function middleware(request: NextRequest) {
 
   const session = request.cookies.get('ng_session');
   if (!session) {
+    // The console's front door is a bookmarkable address, so signed-out
+    // visitors get the login form served right there instead of bouncing
+    // to /login?from=%2Fplatform. A rewrite keeps the URL in the address
+    // bar; deeper pages (/platform/societies, …) still redirect so the
+    // login can return you to them.
+    if (pathname === '/platform' || pathname === '/platform/') {
+      return NextResponse.rewrite(new URL('/login', request.url));
+    }
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('from', pathname);
     return NextResponse.redirect(loginUrl);
