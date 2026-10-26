@@ -560,22 +560,7 @@ export class AuthService {
    * invalidation of any outstanding token, same non-blocking send.
    */
   async issuePasswordResetLink(userId: string, email: string): Promise<void> {
-    // Invalidate any outstanding (unused, unexpired) tokens for this user
-    await this.prisma.passwordResetToken.updateMany({
-      where: { userId, isUsed: false },
-      data: { isUsed: true },
-    });
-
-    const rawToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = this.hashToken(rawToken);
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-
-    await this.prisma.passwordResetToken.create({
-      data: { userId, tokenHash, expiresAt },
-    });
-
-    const appUrl = this.configService.get<string>('mail.appUrl');
-    const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
+    const resetUrl = await this.createResetUrl(userId);
 
     // Sent without awaiting, and a failure is logged rather than thrown.
     //
@@ -594,6 +579,51 @@ export class AuthService {
         }`,
       );
     });
+  }
+
+  /**
+   * The same link and email, but waits for the mail server and says what
+   * happened. For callers where the person asking is a platform admin and not
+   * an anonymous visitor: there is no account-enumeration concern, and a
+   * blind "sent" is exactly what leaves an invited admin waiting for an email
+   * that was never going to arrive.
+   */
+  async issuePasswordResetLinkReporting(
+    userId: string,
+    email: string,
+  ): Promise<{ emailSent: boolean; emailError?: string }> {
+    const resetUrl = await this.createResetUrl(userId);
+    try {
+      const sent = await this.mailService.sendPasswordResetEmail(email, resetUrl);
+      if (sent) return { emailSent: true };
+      return { emailSent: false, emailError: 'The server has no email (SMTP) settings, so nothing could be sent.' };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Password reset email for user ${userId} could not be sent: ${reason}`);
+      return { emailSent: false, emailError: reason.slice(0, 300) };
+    }
+  }
+
+  /** Invalidates any outstanding token, stores a fresh one and returns the link that carries it. */
+  private async createResetUrl(userId: string): Promise<string> {
+    // Invalidate any outstanding (unused, unexpired) tokens for this user
+    await this.prisma.passwordResetToken.updateMany({
+      where: { userId, isUsed: false },
+      data: { isUsed: true },
+    });
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = this.hashToken(rawToken);
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await this.prisma.passwordResetToken.create({
+      data: { userId, tokenHash, expiresAt },
+    });
+
+    const appUrl = this.configService.get<string>('mail.appUrl');
+    const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
+
+    return resetUrl;
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<void> {

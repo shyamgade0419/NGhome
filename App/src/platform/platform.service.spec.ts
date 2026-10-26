@@ -15,7 +15,10 @@ import { UpdatePlatformSettingsDto } from './dto/update-platform-settings.dto';
 const ACTOR = 'admin-1';
 
 function makeAuth() {
-  return { issuePasswordResetLink: jest.fn().mockResolvedValue(undefined) } as unknown as AuthService;
+  return {
+    issuePasswordResetLink: jest.fn().mockResolvedValue(undefined),
+    issuePasswordResetLinkReporting: jest.fn().mockResolvedValue({ emailSent: true }),
+  } as unknown as AuthService;
 }
 
 function makeStorage(check: unknown = { ok: true, home: '/home/x', base: 'apartment-management' }) {
@@ -219,8 +222,24 @@ describe('PlatformService.inviteAdmin', () => {
 
     const admin = await new PlatformService(prisma, makeStorage(), auth).inviteAdmin(dto, ACTOR);
 
-    expect(admin).toMatchObject({ id: 'new-admin-1', email: 'new.admin@example.com' });
-    expect(auth.issuePasswordResetLink).toHaveBeenCalledWith('new-admin-1', 'new.admin@example.com');
+    expect(admin).toMatchObject({ id: 'new-admin-1', email: 'new.admin@example.com', emailSent: true });
+    expect(auth.issuePasswordResetLinkReporting).toHaveBeenCalledWith('new-admin-1', 'new.admin@example.com');
+  });
+
+  it('tells the inviter when no email went out, and still creates the account', async () => {
+    const prisma = invitePrisma();
+    const auth = makeAuth();
+    (auth.issuePasswordResetLinkReporting as jest.Mock).mockResolvedValue({
+      emailSent: false,
+      emailError: 'Invalid login: 535 Username and Password not accepted',
+    });
+
+    const admin = await new PlatformService(prisma, makeStorage(), auth).inviteAdmin(dto, ACTOR);
+
+    expect(admin).toMatchObject({ id: 'new-admin-1', emailSent: false, emailError: expect.stringContaining('535') });
+    expect(prisma.user.create).toHaveBeenCalled();
+    const audit = (prisma.auditLog.create as jest.Mock).mock.calls[0][0].data;
+    expect(audit.newValues).toMatchObject({ emailSent: false });
   });
 
   it('creates the row as active and platform-admin, with a password nobody was given', async () => {
@@ -383,5 +402,44 @@ describe('UpdatePlatformSettingsDto validation', () => {
 
   it('rejects fields it does not know about', async () => {
     expect(await errorsFor({ ...ok, isAdmin: true })).not.toHaveLength(0);
+  });
+});
+
+describe('PlatformService.resendInvite', () => {
+  const ACTOR_ID = 'actor-1';
+  const prismaWith = (admin: unknown) =>
+    ({
+      user: { findFirst: jest.fn().mockResolvedValue(admin) },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+    }) as unknown as PrismaService;
+
+  it('re-sends to an admin who has never signed in, and reports the outcome', async () => {
+    const prisma = prismaWith({ id: 'a1', email: 'new@example.com', lastLoginAt: null });
+    const auth = makeAuth();
+    const out = await new PlatformService(prisma, makeStorage(), auth).resendInvite('a1', ACTOR_ID);
+    expect(auth.issuePasswordResetLinkReporting).toHaveBeenCalledWith('a1', 'new@example.com');
+    expect(out).toMatchObject({ id: 'a1', emailSent: true });
+    expect(prisma.auditLog.create).toHaveBeenCalled();
+  });
+
+  it('passes a delivery failure back to the caller', async () => {
+    const auth = makeAuth();
+    (auth.issuePasswordResetLinkReporting as jest.Mock).mockResolvedValue({ emailSent: false, emailError: 'connect ETIMEDOUT' });
+    const out = await new PlatformService(prismaWith({ id: 'a1', email: 'n@e.com', lastLoginAt: null }), makeStorage(), auth).resendInvite('a1', ACTOR_ID);
+    expect(out).toMatchObject({ emailSent: false, emailError: 'connect ETIMEDOUT' });
+  });
+
+  it("refuses an admin who has already signed in — that would be resetting someone else's password", async () => {
+    const auth = makeAuth();
+    const svc = new PlatformService(prismaWith({ id: 'a1', email: 'n@e.com', lastLoginAt: new Date() }), makeStorage(), auth);
+    await expect(svc.resendInvite('a1', ACTOR_ID)).rejects.toThrow(BadRequestException);
+    expect(auth.issuePasswordResetLinkReporting).not.toHaveBeenCalled();
+  });
+
+  it('does not find a deactivated, deleted or non-admin account', async () => {
+    const auth = makeAuth();
+    const svc = new PlatformService(prismaWith(null), makeStorage(), auth);
+    await expect(svc.resendInvite('nope', ACTOR_ID)).rejects.toThrow(NotFoundException);
+    expect(auth.issuePasswordResetLinkReporting).not.toHaveBeenCalled();
   });
 });

@@ -261,7 +261,10 @@ export class PlatformService {
       },
     });
 
-    await this.authService.issuePasswordResetLink(admin.id, admin.email);
+    // Waits for the mail server and reports the outcome: the invite itself
+    // stands either way (the account exists and can be re-sent to), but the
+    // person inviting must be told if no email actually went out.
+    const mail = await this.authService.issuePasswordResetLinkReporting(admin.id, admin.email);
 
     await this.prisma.auditLog.create({
       data: {
@@ -269,11 +272,42 @@ export class PlatformService {
         action: AuditAction.USER_CREATED,
         entityType: 'User',
         entityId: admin.id,
-        newValues: { email, isPlatformAdmin: true } as Prisma.InputJsonValue,
+        newValues: { email, isPlatformAdmin: true, emailSent: mail.emailSent } as Prisma.InputJsonValue,
       },
     });
 
-    return admin;
+    return { ...admin, ...mail };
+  }
+
+  /**
+   * Sends the set-your-password link again to an admin who was invited but has
+   * never signed in — the follow-up when the first email never arrived. Only
+   * pending invitations qualify: for an admin who already has a password this
+   * would be a reset by someone else, and that is not this button's job.
+   */
+  async resendInvite(id: string, actorId: string) {
+    const admin = await this.prisma.user.findFirst({
+      where: { id, isPlatformAdmin: true, isActive: true, deletedAt: null },
+      select: { id: true, email: true, lastLoginAt: true },
+    });
+    if (!admin) throw new NotFoundException('Platform admin not found');
+    if (admin.lastLoginAt) {
+      throw new BadRequestException('That admin has already signed in. They can use Forgot password to reset theirs.');
+    }
+
+    const mail = await this.authService.issuePasswordResetLinkReporting(admin.id, admin.email);
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId,
+        action: AuditAction.OTHER,
+        entityType: 'User',
+        entityId: admin.id,
+        newValues: { action: 'PLATFORM_ADMIN_INVITE_RESENT', emailSent: mail.emailSent } as Prisma.InputJsonValue,
+      },
+    });
+
+    return { id: admin.id, email: admin.email, ...mail };
   }
 
   /**

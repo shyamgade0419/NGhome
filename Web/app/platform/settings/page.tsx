@@ -36,7 +36,15 @@ function InviteAdminModal({ open, onClose }: { open: boolean; onClose: () => voi
     mutationFn: () => platformApi.inviteAdmin({ email: email.trim(), firstName: firstName.trim(), lastName: lastName.trim() }),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['platform-admins'] });
-      toast.success(`Invite sent to ${res.data.email} — they'll get a link to set their own password.`);
+      if (res.data.emailSent) {
+        toast.success(`Invite emailed to ${res.data.email} — they'll get a link to set their own password.`);
+      } else {
+        // The account exists, but nothing reached the inbox — say why, and where to go next.
+        toast.error(
+          `${res.data.email} was added, but the email could not be sent: ${res.data.emailError ?? 'unknown error'}. Fix the mail settings, then use Resend invite.`,
+          { duration: 12000 },
+        );
+      }
       reset();
       onClose();
     },
@@ -116,6 +124,15 @@ export default function PlatformSettingsPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to update admin'),
   });
 
+  const resend = useMutation({
+    mutationFn: (id: string) => platformApi.resendInvite(id),
+    onSuccess: (res) => {
+      if (res.data.emailSent) toast.success(`Invite emailed to ${res.data.email}.`);
+      else toast.error(`Could not send to ${res.data.email}: ${res.data.emailError ?? 'unknown error'}`, { duration: 12000 });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Could not resend the invite'),
+  });
+
   return (
     <PlatformShell>
       <PageHeader title="Settings" subtitle="Platform administration" />
@@ -157,9 +174,20 @@ export default function PlatformSettingsPage() {
                         {isYou ? (
                           <span className="text-xs text-gray-500">—</span>
                         ) : (
-                          <DButton size="sm" onClick={() => setConfirming(a)}>
-                            {a.isActive ? 'Deactivate' : 'Activate'}
-                          </DButton>
+                          <div className="flex justify-end gap-2">
+                            {a.isActive && !a.lastLoginAt && (
+                              <DButton
+                                size="sm"
+                                loading={resend.isPending && resend.variables === a.id}
+                                onClick={() => resend.mutate(a.id)}
+                              >
+                                Resend invite
+                              </DButton>
+                            )}
+                            <DButton size="sm" onClick={() => setConfirming(a)}>
+                              {a.isActive ? 'Deactivate' : 'Activate'}
+                            </DButton>
+                          </div>
                         )}
                       </Td>
                     </tr>

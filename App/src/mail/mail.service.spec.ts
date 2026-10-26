@@ -67,6 +67,13 @@ describe('MailService.sendPasswordResetEmail — unconfigured SMTP', () => {
 
   const RESET_URL = 'https://nghome-app.novagade.in/reset-password?token=THE-ACTUAL-SECRET-TOKEN';
 
+  it('returns false when SMTP is unconfigured, so callers can tell nothing was sent', async () => {
+    const dev = new MailService(new ConfigService({ mail: {}, nodeEnv: 'development' }));
+    const prod = new MailService(new ConfigService({ mail: {}, nodeEnv: 'production' }));
+    await expect(dev.sendPasswordResetEmail('a@b.com', RESET_URL)).resolves.toBe(false);
+    await expect(prod.sendPasswordResetEmail('a@b.com', RESET_URL)).resolves.toBe(false);
+  });
+
   it('logs the live reset link in development — the only way a developer without SMTP set up sees it', async () => {
     const svc = new MailService(new ConfigService({ mail: {}, nodeEnv: 'development' }));
     await svc.sendPasswordResetEmail('resident@example.com', RESET_URL);

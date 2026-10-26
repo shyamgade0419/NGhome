@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -54,6 +54,13 @@ export class PlatformController {
   @ApiOperation({ summary: '[Platform Admin] Invite a new platform admin — they set their own password by email' })
   inviteAdmin(@Body() dto: InvitePlatformAdminDto, @CurrentUser() user: AuthenticatedUser) {
     return this.platform.inviteAdmin(dto, user.id);
+  }
+
+  @Post('admins/:id/resend-invite')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '[Platform Admin] Re-send the set-your-password email to an admin who has not signed in yet' })
+  resendInvite(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.platform.resendInvite(id, user.id);
   }
 
   @Patch('admins/:id/status')

@@ -92,3 +92,45 @@ describe('AuthService.forgotPassword', () => {
     expect(createArg.data.tokenHash).toMatch(/^[0-9a-f]{64}$/);
   });
 });
+
+describe('AuthService.issuePasswordResetLinkReporting', () => {
+  let errorSpy: jest.SpyInstance;
+  beforeEach(() => {
+    errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
+  afterEach(() => errorSpy.mockRestore());
+
+  it('reports success only once the mail server has accepted the message', async () => {
+    const { service, send } = makeService({ send: jest.fn().mockResolvedValue(true) });
+    await expect(service.issuePasswordResetLinkReporting('user-1', 'a@b.com')).resolves.toEqual({ emailSent: true });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('says so when SMTP is not configured, instead of claiming it sent', async () => {
+    const { service } = makeService({ send: jest.fn().mockResolvedValue(false) });
+    const out = await service.issuePasswordResetLinkReporting('user-1', 'a@b.com');
+    expect(out.emailSent).toBe(false);
+    expect(out.emailError).toMatch(/SMTP/);
+  });
+
+  it("returns the mail server's own reason when it refuses, rather than throwing", async () => {
+    const { service } = makeService({
+      send: jest.fn().mockRejectedValue(new Error('Invalid login: 535-5.7.8 Username and Password not accepted')),
+    });
+    const out = await service.issuePasswordResetLinkReporting('user-1', 'a@b.com');
+    expect(out).toEqual({ emailSent: false, emailError: expect.stringContaining('Username and Password not accepted') });
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
+  it('still issues the reset token when the email fails, so a resend can follow', async () => {
+    const { service, prisma } = makeService({ send: jest.fn().mockRejectedValue(new Error('ETIMEDOUT')) });
+    await service.issuePasswordResetLinkReporting('user-1', 'a@b.com');
+    expect(prisma.passwordResetToken.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the long error short enough for a toast', async () => {
+    const { service } = makeService({ send: jest.fn().mockRejectedValue(new Error('x'.repeat(2000))) });
+    const out = await service.issuePasswordResetLinkReporting('user-1', 'a@b.com');
+    expect(out.emailError!.length).toBeLessThanOrEqual(300);
+  });
+});

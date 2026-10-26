@@ -70,7 +70,13 @@ export class MailService implements OnModuleInit {
       );
   }
 
-  async sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
+  /**
+   * Resolves true once the mail server has accepted the message, false when
+   * SMTP is not configured (nothing was sent), and rejects if the server
+   * refuses it. Most callers ignore the result; the platform-admin invite
+   * uses it to tell the person inviting what actually happened.
+   */
+  async sendPasswordResetEmail(to: string, resetUrl: string): Promise<boolean> {
     const subject = 'Reset your NG Home password';
 
     // Brand navy, matching the app icon, splash and login screen. This used
@@ -128,10 +134,10 @@ export class MailService implements OnModuleInit {
           `SMTP is not configured — a password-reset email to ${to} could not be sent. ` +
             'Set SMTP_HOST, SMTP_USER and SMTP_PASS.',
         );
-        return;
+        return false;
       }
       this.logger.warn(`[DEV] Password reset link for ${to}: ${resetUrl}`);
-      return;
+      return false;
     }
 
     await this.transporter.sendMail({
@@ -141,6 +147,7 @@ export class MailService implements OnModuleInit {
       html,
       text,
     });
+    return true;
   }
 
   /**

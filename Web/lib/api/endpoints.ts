@@ -554,8 +554,11 @@ export const platformApi = {
   admins: (): Promise<{ data: PlatformAdminUser[] }> => api.get('/platform/admins'),
   setAdminStatus: (id: string, isActive: boolean) => api.patch(`/platform/admins/${id}/status`, { isActive }),
   /** They set their own password by email — this never takes one. */
-  inviteAdmin: (body: { email: string; firstName: string; lastName: string }): Promise<{ data: PlatformAdminUser }> =>
+  inviteAdmin: (body: { email: string; firstName: string; lastName: string }): Promise<{ data: PlatformAdminUser & InviteMailResult }> =>
     api.post('/platform/admins', body),
+  /** For an admin who was invited but has not signed in yet. */
+  resendInvite: (id: string): Promise<{ data: { id: string; email: string } & InviteMailResult }> =>
+    api.post(`/platform/admins/${id}/resend-invite`),
 };
 
 export interface PlatformStorage {
@@ -570,6 +573,12 @@ export interface PlatformStorage {
 export type PlatformStorageCheck =
   | { ok: true; base: string; home: string }
   | { ok: false; reason: string };
+
+/** What actually happened to the invite email — the server waits for the mail server and reports it. */
+export interface InviteMailResult {
+  emailSent: boolean;
+  emailError?: string;
+}
 
 export interface PlatformAdminUser {
   id: string;
