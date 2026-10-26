@@ -44,13 +44,15 @@ export class SocietiesService {
     });
   }
 
-  async findAll(page: number, limit: number) {
+  /** `deleted` lists the soft-deleted societies instead of the live ones. */
+  async findAll(page: number, limit: number, deleted = false) {
+    const deletedAt = deleted ? { not: null } : null;
     const { skip, take } = getPaginationParams({ page, limit });
     const [data, total] = await Promise.all([
       this.prisma.society.findMany({
         skip,
         take,
-        where: { deletedAt: null },
+        where: { deletedAt },
         include: {
           _count: { select: { memberships: true, buildings: true } },
           // Platform admin needs a real human to call, not just a member
@@ -65,7 +67,7 @@ export class SocietiesService {
         },
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.society.count({ where: { deletedAt: null } }),
+      this.prisma.society.count({ where: { deletedAt } }),
     ]);
 
     return {

@@ -4,6 +4,8 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
 import { SocietiesService } from './societies.service';
+import { SocietyPurgeService } from './society-purge.service';
+import { PurgeSocietyDto } from './dto/purge-society.dto';
 import { CreateSocietyDto } from './dto/create-society.dto';
 import { UpdateSocietyDto } from './dto/update-society.dto';
 import { SetSocietyStatusDto } from './dto/set-society-status.dto';
@@ -23,7 +25,10 @@ import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interfa
 @UseGuards(JwtAuthGuard)
 @Controller('societies')
 export class SocietiesController {
-  constructor(private readonly societiesService: SocietiesService) {}
+  constructor(
+    private readonly societiesService: SocietiesService,
+    private readonly purgeService: SocietyPurgeService,
+  ) {}
 
   @Post()
   @UseGuards(PlatformAdminGuard)
@@ -34,11 +39,16 @@ export class SocietiesController {
 
   @Get()
   @UseGuards(PlatformAdminGuard)
-  @ApiOperation({ summary: '[Platform Admin] List all societies' })
+  @ApiOperation({ summary: '[Platform Admin] List all societies (deleted=true lists the removed ones instead)' })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  async findAll(@Query('page') page = 1, @Query('limit') limit = 20) {
-    return this.societiesService.findAll(+page, +limit);
+  @ApiQuery({ name: 'deleted', required: false })
+  async findAll(
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+    @Query('deleted') deleted?: string,
+  ) {
+    return this.societiesService.findAll(+page, +limit, deleted === 'true');
   }
 
   @Get('my')
@@ -147,6 +157,25 @@ export class SocietiesController {
   @ApiOperation({ summary: '[Platform Admin] Remove a society from the platform (soft delete — nothing is dropped)' })
   async remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.societiesService.softDelete(id, user.id);
+  }
+
+  /**
+   * Permanent delete: erases the society and everything in it, plus the
+   * accounts of people who belonged to no other society. A POST with the
+   * confirmation in the body rather than a DELETE, because the BFF proxy
+   * forwards DELETE without a body — and because this one needs to carry the
+   * name that was typed.
+   */
+  @Post(':id/purge')
+  @UseGuards(PlatformAdminGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '[Platform Admin] Permanently erase a society and its data (cannot be undone)' })
+  async purge(
+    @Param('id') id: string,
+    @Body() dto: PurgeSocietyDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.purgeService.purge(id, dto.confirmName, user.id);
   }
 
   // ─── Join-code endpoints ────────────────────────────────────────────────────
