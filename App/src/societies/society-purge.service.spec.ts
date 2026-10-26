@@ -1,4 +1,5 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { SocietyPurgeService } from './society-purge.service';
 import { lowerFirst, purgeOrder } from './society-purge.plan';
 
@@ -191,6 +192,39 @@ describe('SocietyPurgeService.purge', () => {
       expect(storage.remove).not.toHaveBeenCalled();
       expect(tx.society.delete).not.toHaveBeenCalled();
       expect(tx.auditLog.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a foreign-key failure', () => {
+    // What Postgres reports when a row is still referenced.
+    const fkError = () =>
+      new Prisma.PrismaClientKnownRequestError('Foreign key constraint failed', {
+        code: 'P2003',
+        clientVersion: 'test',
+        meta: { field_name: 'bill_line_items_billingRuleId_fkey (index)' },
+      });
+
+    it('is reported as a conflict that names the step and the constraint, and says nothing was deleted', async () => {
+      const { service, prisma } = build();
+      prisma.$transaction.mockRejectedValueOnce(fkError());
+      const err: any = await service.purge(SOCIETY_ID, 'Green Valley', ACTOR_ID).catch((e) => e);
+      expect(err).toBeInstanceOf(ConflictException);
+      expect(err.message).toMatch(/Nothing was deleted/);
+      expect(err.message).toContain('bill_line_items_billingRuleId_fkey');
+    });
+
+    it('says which table it was deleting when the database objected', async () => {
+      const { service, tx, prisma } = build();
+      tx.billingRule.deleteMany.mockRejectedValueOnce(fkError());
+      prisma.$transaction.mockImplementationOnce(async (fn: (t: unknown) => Promise<unknown>) => fn(tx));
+      const err: any = await service.purge(SOCIETY_ID, 'Green Valley', ACTOR_ID).catch((e) => e);
+      expect(err).toBeInstanceOf(ConflictException);
+      expect(err.message).toContain('deleting BillingRule rows');
+    });
+
+    it('leaves other failures alone', async () => {
+      const { service } = build({ failOn: 'Account' });
+      await expect(service.purge(SOCIETY_ID, 'Green Valley', ACTOR_ID)).rejects.toThrow('FK violation on Account');
     });
   });
 

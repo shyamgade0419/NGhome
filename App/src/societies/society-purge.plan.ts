@@ -21,9 +21,19 @@ export const hasSocietyId = (m: Model): boolean => m.fields.some((f) => f.name =
 /** A relation field that holds the foreign key (the child side). */
 const isForeignKey = (f: Field): boolean => f.kind === 'object' && !!f.relationFromFields && f.relationFromFields.length > 0;
 
-/** What the database does to this row when its parent is deleted. */
+/**
+ * What the database does to this row when its parent is deleted.
+ *
+ * Prisma's own default for an optional relation is SetNull, but the database
+ * here was built from hand-written migrations (0_init) that gave those keys
+ * no ON DELETE clause at all, i.e. NO ACTION — they BLOCK the parent's
+ * deletion. Trusting the schema's default made the first production purges
+ * fail with foreign-key errors on any society that had real data. So a
+ * relation with no stated action is treated as blocking, whether required or
+ * not: ordering children first is correct under either behaviour.
+ */
 export function onDeleteOf(f: Field): string {
-  return f.relationOnDelete ?? (f.isRequired ? 'Restrict' : 'SetNull');
+  return f.relationOnDelete ?? (f.isRequired ? 'Restrict' : 'NoAction');
 }
 
 /** Restrict / NoAction block the parent's deletion while this row exists. */
@@ -32,21 +42,72 @@ export const isBlocking = (f: Field): boolean => ['Restrict', 'NoAction'].includ
 export const lowerFirst = (s: string): string => s.charAt(0).toLowerCase() + s.slice(1);
 
 /**
+ * The scoped tables whose deletion removes rows of `model` through cascade,
+ * following required ON DELETE CASCADE keys upward through any number of
+ * unscoped tables (BillLineItem -> MaintenanceBill, Floor -> Building, …).
+ */
+export function cascadeOwners(model: Model, models: readonly Model[], seen = new Set<string>()): string[] {
+  const byName = new Map(models.map((m) => [m.name, m]));
+  const owners = new Set<string>();
+  for (const f of model.fields.filter(isForeignKey)) {
+    if (!f.isRequired || onDeleteOf(f) !== 'Cascade') continue;
+    const parent = byName.get(f.type);
+    if (!parent || seen.has(parent.name)) continue;
+    if (hasSocietyId(parent)) {
+      owners.add(parent.name);
+    } else {
+      seen.add(parent.name);
+      cascadeOwners(parent, models, seen).forEach((o) => owners.add(o));
+    }
+  }
+  return [...owners];
+}
+
+/**
+ * A child that carries no societyId but blocks a purged table. Such rows only
+ * disappear when their cascade owner is deleted, so that owner has to be
+ * removed before the table they block: BillLineItem blocks BillingRule, so
+ * MaintenanceBill, which owns the line items, must go before BillingRule.
+ */
+export interface IndirectBlocker {
+  child: string;
+  blocks: string;
+  owners: string[];
+}
+
+export function indirectBlockers(models: readonly Model[] = Prisma.dmmf.datamodel.models): IndirectBlocker[] {
+  const scoped = new Set(models.filter(hasSocietyId).map((m) => m.name));
+  const found: IndirectBlocker[] = [];
+  for (const m of models.filter((x) => !hasSocietyId(x))) {
+    for (const f of m.fields.filter(isForeignKey)) {
+      if (!scoped.has(f.type) || !isBlocking(f)) continue;
+      const owners = cascadeOwners(m, models).filter((o) => o !== f.type);
+      found.push({ child: `${m.name}.${f.name}`, blocks: f.type, owners });
+    }
+  }
+  return found;
+}
+
+/**
  * Models to purge by `societyId`, children before parents: a row that blocks
- * its parent's deletion (Restrict / NoAction) is removed first. Throws if the
- * blocking relations contain a cycle, which no order could satisfy.
+ * its parent's deletion (Restrict / NoAction) is removed first, and so is the
+ * owner of any cascade-deleted child that blocks it. Throws if the blocking
+ * relations contain a cycle, which no order could satisfy.
  */
 export function purgeOrder(models: readonly Model[] = Prisma.dmmf.datamodel.models): string[] {
   const scoped = models.filter(hasSocietyId);
   const names = scoped.map((m) => m.name);
   const inScope = new Set(names);
 
-  // blockers.get(parent) = children that must be gone before parent can be deleted
+  // blockers.get(parent) = tables that must be gone before parent can be deleted
   const blockers = new Map<string, Set<string>>(names.map((n) => [n, new Set<string>()]));
   for (const child of scoped) {
     for (const f of child.fields.filter(isForeignKey)) {
       if (f.type !== child.name && inScope.has(f.type) && isBlocking(f)) blockers.get(f.type)!.add(child.name);
     }
+  }
+  for (const { blocks, owners } of indirectBlockers(models)) {
+    for (const owner of owners) blockers.get(blocks)?.add(owner);
   }
 
   const order: string[] = [];
@@ -63,21 +124,4 @@ export function purgeOrder(models: readonly Model[] = Prisma.dmmf.datamodel.mode
     }
   }
   return order;
-}
-
-/**
- * Child tables that carry no societyId but hold a blocking foreign key to a
- * table that does. The purge relies on cascade for such rows, which cannot
- * also be ordered ahead of the table they block — so the spec requires this
- * list to be empty apart from the User references handled separately.
- */
-export function unscopedBlockers(models: readonly Model[] = Prisma.dmmf.datamodel.models): string[] {
-  const scoped = new Set(models.filter(hasSocietyId).map((m) => m.name));
-  const found: string[] = [];
-  for (const m of models.filter((x) => !hasSocietyId(x))) {
-    for (const f of m.fields.filter(isForeignKey)) {
-      if (scoped.has(f.type) && isBlocking(f)) found.push(`${m.name}.${f.name} -> ${f.type}`);
-    }
-  }
-  return found;
 }
