@@ -1,10 +1,17 @@
 import apiClient from '@/api/client';
 import { ApiResponse, PaginatedResponse, PaginationQuery } from '@/api/types';
 import { Society, Building, Flat, Announcement, Meeting } from '@/types/society.types';
+import type { Branding } from '@/utils/branding';
 
 export const societiesApi = {
   getMySociety: async () => {
     const { data } = await apiClient.get<ApiResponse<Society>>('/societies/my');
+    return data.data;
+  },
+
+  /** The app name, logo and colour a platform admin gave this society. Nulls when none. */
+  getBranding: async () => {
+    const { data } = await apiClient.get<ApiResponse<Branding>>('/societies/my/branding');
     return data.data;
   },
 

@@ -18,6 +18,8 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { Card, StatCard, SectionHeader } from '@/components/ui/Card';
 import { StatusBadge, billingStatusVariant } from '@/components/ui/StatusBadge';
 import { NotificationBell } from '@/components/ui/NotificationBell';
+import { BrandMark } from '@/components/ui/BrandMark';
+import { useBranding } from '@/hooks/useBranding';
 import { colors, spacing, typography, radius } from '@/theme';
 import { inrCompact } from '@/utils/format';
 
@@ -40,6 +42,7 @@ const QUICK_ACTIONS = [
 export default function AdminDashboard() {
   const router = useRouter();
   const { user } = useAuth();
+  const brand = useBranding();
 
   const { data: summary, isLoading, refetch: refetchSummary, isRefetching } = useQuery({
     queryKey: ['admin-dashboard'],
@@ -62,6 +65,7 @@ export default function AdminDashboard() {
       {/* Top bar */}
       <View style={styles.topBar}>
         <View style={{ flex: 1 }}>
+          <BrandMark />
           <Text style={styles.greeting}>
             Good {getTimeOfDay()}, {user?.firstName}
           </Text>
@@ -75,8 +79,8 @@ export default function AdminDashboard() {
             <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push('/(app)/admin/profile' as any)} hitSlop={8}>
-            <View style={styles.avatarCircle}>
-              <Text style={styles.avatarText}>
+            <View style={[styles.avatarCircle, { backgroundColor: brand.tint }]}>
+              <Text style={[styles.avatarText, { color: brand.onTint }]}>
                 {user?.firstName?.[0]}
                 {user?.lastName?.[0]}
               </Text>
@@ -88,13 +92,13 @@ export default function AdminDashboard() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />
+          <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={brand.color} />
         }
       >
         {/* Current period banner — tinted rather than another plain white
             card so it reads as the "headline" card of the dashboard. */}
         {currentPeriod && (
-          <Card style={[styles.periodBanner, { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight }]} padding="md">
+          <Card style={[styles.periodBanner, { backgroundColor: brand.tint, borderColor: brand.tint }]} padding="md">
             <View style={styles.periodRow}>
               <View>
                 <Text style={styles.periodLabel}>Current Billing Period</Text>

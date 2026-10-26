@@ -18,6 +18,8 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { Card, SectionHeader } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { NotificationBell } from '@/components/ui/NotificationBell';
+import { BrandMark } from '@/components/ui/BrandMark';
+import { useBranding } from '@/hooks/useBranding';
 import { colors, spacing, typography, radius } from '@/theme';
 import { Announcement } from '@/types/society.types';
 import { toNum, inr } from '@/utils/format';
@@ -25,6 +27,7 @@ import { toNum, inr } from '@/utils/format';
 export default function ResidentDashboard() {
   const router = useRouter();
   const { user } = useAuth();
+  const brand = useBranding();
 
   const { data: myBill, isLoading, refetch: refetchBill, isRefetching } = useQuery({
     queryKey: ['my-current-bill'],
@@ -66,6 +69,7 @@ export default function ResidentDashboard() {
       {/* Header */}
       <View style={styles.header}>
         <View>
+          <BrandMark />
           <Text style={styles.greeting}>Hello, {user?.firstName} 👋</Text>
           <Text style={styles.flatInfo}>
             {user?.flatNumber
@@ -76,8 +80,8 @@ export default function ResidentDashboard() {
         <View style={styles.headerActions}>
           <NotificationBell onPress={() => router.push('/(app)/notifications' as any)} size={24} color={colors.text} />
           <TouchableOpacity onPress={() => router.push('/(app)/resident/profile')} hitSlop={8}>
-            <View style={styles.avatarCircle}>
-              <Text style={styles.avatarText}>
+            <View style={[styles.avatarCircle, { backgroundColor: brand.tint }]}>
+              <Text style={[styles.avatarText, { color: brand.onTint }]}>
                 {user?.firstName?.[0]}{user?.lastName?.[0]}
               </Text>
             </View>
@@ -88,11 +92,11 @@ export default function ResidentDashboard() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={isRefetching} onRefresh={onRefresh} tintColor={colors.primary} />
+          <RefreshControl refreshing={isRefetching} onRefresh={onRefresh} tintColor={brand.color} />
         }
       >
         {/* Current bill hero card */}
-        <View style={styles.heroCard}>
+        <View style={[styles.heroCard, { backgroundColor: brand.color }]}>
           <View style={styles.heroTop}>
             <Text style={styles.heroLabel}>{periodLabel}</Text>
             {myBill && (
