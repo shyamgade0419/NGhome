@@ -18,7 +18,10 @@ import { PlatformShell } from '@/components/platform/PlatformShell';
 import { DButton, DModal, DTable, Empty, Loading, PageHeader, Pill, TableWrap, Td } from '@/components/platform/ui';
 import { formatDate, cn } from '@/lib/utils';
 
-type Filter = 'all' | 'active' | 'suspended';
+type Filter = 'all' | 'active' | 'suspended' | 'deleted';
+
+/** How a society is removed: hidden with its data kept, or erased for good. */
+type DeleteMode = 'soft' | 'hard';
 
 export default function PlatformSocietiesPage() {
   const { user } = useAuth();
@@ -28,10 +31,19 @@ export default function PlatformSocietiesPage() {
   const [confirming, setConfirming] = useState<PlatformSociety | null>(null);
   const [deleting, setDeleting] = useState<PlatformSociety | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteMode, setDeleteMode] = useState<DeleteMode>('soft');
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['platform-societies'],
     queryFn: () => platformApi.listSocieties({ limit: 100 }).then((r) => r.data),
+    enabled: !!user?.isPlatformAdmin,
+  });
+
+  // Societies that were removed with 'keep the data'. They are not in the list
+  // above, so this is the only place they can be erased for good.
+  const { data: deletedData } = useQuery({
+    queryKey: ['platform-societies-deleted'],
+    queryFn: () => platformApi.listSocieties({ limit: 100, deleted: true }).then((r) => r.data),
     enabled: !!user?.isPlatformAdmin,
   });
 
@@ -50,20 +62,54 @@ export default function PlatformSocietiesPage() {
     mutationFn: (id: string) => platformApi.deleteSociety(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['platform-societies'] });
+      qc.invalidateQueries({ queryKey: ['platform-societies-deleted'] });
       qc.invalidateQueries({ queryKey: ['platform-stats'] });
-      toast.success('Society deleted');
-      setDeleting(null);
-      setDeleteConfirmText('');
+      toast.success('Society removed — its data is kept');
+      closeDelete();
     },
     onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to delete society'),
   });
 
+  const purge = useMutation({
+    mutationFn: ({ id, confirmName }: { id: string; confirmName: string }) => platformApi.purgeSociety(id, confirmName),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['platform-societies'] });
+      qc.invalidateQueries({ queryKey: ['platform-societies-deleted'] });
+      qc.invalidateQueries({ queryKey: ['platform-stats'] });
+      qc.invalidateQueries({ queryKey: ['platform-users'] });
+      const people = res.data.usersRemoved;
+      toast.success(`Erased permanently${people ? ` — ${people} account${people === 1 ? '' : 's'} removed` : ''}`);
+      closeDelete();
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Could not erase the society — nothing was deleted'),
+  });
+
+  function closeDelete() {
+    setDeleting(null);
+    setDeleteConfirmText('');
+    setDeleteMode('soft');
+  }
+
+  /** A society that is already hidden can only be erased, so skip the choice. */
+  function openDelete(s: PlatformSociety, mode: DeleteMode) {
+    setDeleting(s);
+    setDeleteConfirmText('');
+    setDeleteMode(mode);
+  }
+
   const all = useMemo(() => data?.data ?? [], [data]);
-  const counts = { all: all.length, active: all.filter((s) => s.isActive).length, suspended: all.filter((s) => !s.isActive).length };
+  const removed = useMemo(() => deletedData?.data ?? [], [deletedData]);
+  const counts = {
+    all: all.length,
+    active: all.filter((s) => s.isActive).length,
+    suspended: all.filter((s) => !s.isActive).length,
+    deleted: removed.length,
+  };
+  const showingDeleted = filter === 'deleted';
 
   const societies = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return all.filter((s) => {
+    return (showingDeleted ? removed : all).filter((s) => {
       if (filter === 'active' && !s.isActive) return false;
       if (filter === 'suspended' && s.isActive) return false;
       if (!term) return true;
@@ -71,12 +117,13 @@ export default function PlatformSocietiesPage() {
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(term));
     });
-  }, [all, filter, search]);
+  }, [all, removed, showingDeleted, filter, search]);
 
   const chips: { key: Filter; label: string }[] = [
     { key: 'all', label: 'All' },
     { key: 'active', label: 'Active' },
     { key: 'suspended', label: 'Suspended' },
+    { key: 'deleted', label: 'Deleted' },
   ];
 
   return (
@@ -120,8 +167,14 @@ export default function PlatformSocietiesPage() {
       ) : societies.length === 0 ? (
         <Empty
           icon={Building2}
-          title={all.length === 0 ? 'No societies yet' : 'No matching societies'}
-          description={all.length === 0 ? 'Societies appear here once they register.' : 'Try another filter or search term.'}
+          title={showingDeleted ? 'No deleted societies' : all.length === 0 ? 'No societies yet' : 'No matching societies'}
+          description={
+            showingDeleted
+              ? 'Societies you remove with "keep the data" are listed here, where they can be erased for good.'
+              : all.length === 0
+                ? 'Societies appear here once they register.'
+                : 'Try another filter or search term.'
+          }
         />
       ) : (
         <TableWrap>
@@ -163,28 +216,33 @@ export default function PlatformSocietiesPage() {
                   )}
                 </Td>
                 <Td>
-                  <Pill tone={s.isActive ? 'green' : 'red'}>{s.isActive ? 'Active' : 'Suspended'}</Pill>
+                  {showingDeleted ? (
+                    <Pill tone="slate">Deleted</Pill>
+                  ) : (
+                    <Pill tone={s.isActive ? 'green' : 'red'}>{s.isActive ? 'Active' : 'Suspended'}</Pill>
+                  )}
                 </Td>
                 <Td className="whitespace-nowrap text-xs text-gray-400">{formatDate(s.createdAt)}</Td>
                 <Td className="text-right">
                   <div className="flex justify-end gap-2">
-                    <DButton size="sm" onClick={() => setConfirming(s)}>
-                      {s.isActive ? (
-                        <><Ban size={13} /> Suspend</>
-                      ) : (
-                        <><RotateCcw size={13} /> Reinstate</>
-                      )}
-                    </DButton>
-                    <DButton
-                      size="sm"
-                      variant="danger"
-                      onClick={() => {
-                        setDeleting(s);
-                        setDeleteConfirmText('');
-                      }}
-                    >
-                      <Trash2 size={13} />
-                    </DButton>
+                    {showingDeleted ? (
+                      <DButton size="sm" variant="danger" onClick={() => openDelete(s, 'hard')}>
+                        <Trash2 size={13} /> Delete permanently
+                      </DButton>
+                    ) : (
+                      <>
+                        <DButton size="sm" onClick={() => setConfirming(s)}>
+                          {s.isActive ? (
+                            <><Ban size={13} /> Suspend</>
+                          ) : (
+                            <><RotateCcw size={13} /> Reinstate</>
+                          )}
+                        </DButton>
+                        <DButton size="sm" variant="danger" aria-label="Delete society" onClick={() => openDelete(s, 'soft')}>
+                          <Trash2 size={13} />
+                        </DButton>
+                      </>
+                    )}
                   </div>
                 </Td>
               </tr>
@@ -237,17 +295,77 @@ export default function PlatformSocietiesPage() {
         )}
       </DModal>
 
-      <DModal open={!!deleting} onClose={() => setDeleting(null)} title="Delete society">
+      <DModal
+        open={!!deleting}
+        onClose={() => !(remove.isPending || purge.isPending) && closeDelete()}
+        title={deleteMode === 'hard' ? 'Delete society permanently' : 'Delete society'}
+      >
         {deleting && (
           <div className="space-y-4">
             <p className="text-sm text-gray-300">
-              Delete <strong className="text-white">{deleting.displayName ?? deleting.name}</strong>? It will stop
-              appearing anywhere on the platform, and no one there will be able to sign in.
+              <strong className="text-white">{deleting.displayName ?? deleting.name}</strong> has{' '}
+              {deleting._count.memberships} member{deleting._count.memberships === 1 ? '' : 's'}.
             </p>
-            <p className="rounded-lg bg-gray-800/60 px-3 py-2.5 text-xs text-gray-400">
-              Its data — memberships, bills, expenses, documents, audit history — is kept, not erased. There is no
-              undo button in this console, though: getting it back would mean asking for it directly.
-            </p>
+
+            {/* A society already hidden can only be erased, so there is nothing to choose. */}
+            {!deleting.deletedAt && (
+              <div role="radiogroup" aria-label="How to delete" className="space-y-2">
+                {(
+                  [
+                    {
+                      mode: 'soft' as const,
+                      title: 'Remove from the platform — keep the data',
+                      body: 'It disappears everywhere and nobody there can sign in. Memberships, bills, expenses, documents and history stay in the database, and the members’ email addresses stay taken.',
+                    },
+                    {
+                      mode: 'hard' as const,
+                      title: 'Delete permanently',
+                      body: 'Erases the society and everything in it, for good. The accounts of people who belong to no other society are deleted too, which frees their email addresses. This cannot be undone.',
+                    },
+                  ]
+                ).map((o) => (
+                  <button
+                    key={o.mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={deleteMode === o.mode}
+                    onClick={() => setDeleteMode(o.mode)}
+                    className={cn(
+                      'w-full rounded-lg border px-3.5 py-3 text-left transition-colors',
+                      deleteMode === o.mode
+                        ? o.mode === 'hard'
+                          ? 'border-red-500/60 bg-red-500/10'
+                          : 'border-teal-500/50 bg-teal-500/10'
+                        : 'border-gray-700 hover:bg-gray-800/60',
+                    )}
+                  >
+                    <span className="flex items-center gap-2 text-sm font-medium text-white">
+                      <span
+                        className={cn(
+                          'flex h-4 w-4 items-center justify-center rounded-full border',
+                          deleteMode === o.mode ? (o.mode === 'hard' ? 'border-red-400' : 'border-teal-400') : 'border-gray-600',
+                        )}
+                      >
+                        {deleteMode === o.mode && (
+                          <span className={cn('h-2 w-2 rounded-full', o.mode === 'hard' ? 'bg-red-400' : 'bg-teal-400')} />
+                        )}
+                      </span>
+                      {o.title}
+                    </span>
+                    <span className="mt-1 block pl-6 text-xs leading-relaxed text-gray-400">{o.body}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {deleteMode === 'hard' && (
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-xs leading-relaxed text-red-200">
+                Everything is erased: members, flats, bills, payments, expenses, accounts, documents and their stored
+                files, forum posts, messages and the society&rsquo;s audit history. Only a record that this was done, and
+                by whom, is kept.
+              </div>
+            )}
+
             <div>
               <label htmlFor="confirm-name" className="mb-1 block text-xs font-medium text-gray-300">
                 Type <span className="font-mono text-gray-200">{deleting.displayName ?? deleting.name}</span> to confirm
@@ -261,16 +379,20 @@ export default function PlatformSocietiesPage() {
               />
             </div>
             <div className="flex justify-end gap-3 pt-1">
-              <DButton onClick={() => setDeleting(null)}>Cancel</DButton>
+              <DButton onClick={closeDelete} disabled={remove.isPending || purge.isPending}>Cancel</DButton>
               <DButton
                 variant="danger"
-                loading={remove.isPending}
+                loading={deleteMode === 'hard' ? purge.isPending : remove.isPending}
                 // Both sides trimmed: a society saved with a stray trailing
                 // space ("Name ") could otherwise never be confirmed.
                 disabled={deleteConfirmText.trim() !== (deleting.displayName ?? deleting.name).trim()}
-                onClick={() => remove.mutate(deleting.id)}
+                onClick={() =>
+                  deleteMode === 'hard'
+                    ? purge.mutate({ id: deleting.id, confirmName: deleteConfirmText })
+                    : remove.mutate(deleting.id)
+                }
               >
-                <Trash2 size={13} /> Delete society
+                <Trash2 size={13} /> {deleteMode === 'hard' ? 'Delete permanently' : 'Remove society'}
               </DButton>
             </div>
           </div>

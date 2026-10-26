@@ -492,12 +492,22 @@ export interface PlatformSociety {
   state: string | null;
   isActive: boolean;
   joinCode: string | null;
+  /** Set when the society was removed with "keep the data". */
+  deletedAt?: string | null;
   createdAt: string;
   _count: { memberships: number; buildings: number };
   admins: PlatformSocietyAdmin[];
 }
+export interface PurgeSocietyResult {
+  id: string;
+  name: string;
+  deleted: Record<string, number>;
+  usersRemoved: number;
+  filesQueued: number;
+}
 export const platformApi = {
-  listSocieties: (params?: { page?: number; limit?: number }): Promise<{ data: PaginatedResponse<PlatformSociety> }> =>
+  /** `deleted: true` lists the societies that were removed (soft-deleted) instead of the live ones. */
+  listSocieties: (params?: { page?: number; limit?: number; deleted?: boolean }): Promise<{ data: PaginatedResponse<PlatformSociety> }> =>
     api.get('/societies', { params }),
   getSociety: (id: string): Promise<{ data: PlatformSociety }> => api.get(`/societies/${id}`),
 
@@ -521,6 +531,11 @@ export const platformApi = {
 
   /** Soft delete — nothing is dropped, the society just stops appearing on the platform. */
   deleteSociety: (id: string) => api.delete(`/societies/${id}`),
+
+  /** Permanent delete: erases the society, its data and the accounts of people who belonged to nothing else.
+   *  `confirmName` is checked again on the server. There is no undo. */
+  purgeSociety: (id: string, confirmName: string): Promise<{ data: PurgeSocietyResult }> =>
+    api.post(`/societies/${id}/purge`, { confirmName }),
 
   listUsers: (params?: { page?: number; limit?: number; search?: string }): Promise<{ data: PaginatedResponse<PlatformUser> }> =>
     api.get('/societies/platform/users', { params }),
