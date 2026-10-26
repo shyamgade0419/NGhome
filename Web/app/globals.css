@@ -6,6 +6,19 @@
 @layer base {
   :root {
     --sidebar-width: 240px;
+
+    /* NG Home navy. A society with its own brand colour overrides these at
+       runtime (lib/branding.ts); with none set, this is what everyone sees. */
+    --primary-50: 239 233 220; /* #EFE9DC */
+    --primary-100: 228 218 198; /* #E4DAC6 */
+    --primary-200: 211 197 169; /* #D3C5A9 */
+    --primary-300: 124 138 166; /* #7C8AA6 */
+    --primary-400: 78 98 136; /* #4E6288 */
+    --primary-500: 36 64 107; /* #24406B */
+    --primary-600: 13 33 71; /* #0D2147 */
+    --primary-700: 10 26 56; /* #0A1A38 */
+    --primary-800: 7 20 40; /* #071428 */
+    --primary-900: 5 14 28; /* #050E1C */
   }
 
   * {

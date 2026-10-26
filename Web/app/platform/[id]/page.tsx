@@ -15,6 +15,7 @@ import { useAuth } from '@/lib/auth/AuthContext';
 import { platformApi } from '@/lib/api/endpoints';
 import { PlatformShell } from '@/components/platform/PlatformShell';
 import { Card, Empty, Loading, Pill, StatTile } from '@/components/platform/ui';
+import { BrandingCard } from '@/components/platform/BrandingCard';
 import { formatCurrency, formatDate, formatDateTime, parseDecimalLike, roleLabel } from '@/lib/utils';
 
 function Breakdown({ counts, empty }: { counts: Record<string, number>; empty: string }) {
@@ -151,6 +152,8 @@ export default function PlatformSocietyPage() {
             <Breakdown counts={members.byRole} empty="No active members" />
           </Card>
         </div>
+
+        <BrandingCard societyId={society.id} societyName={society.displayName ?? society.name} />
 
         <Card title="Recent activity" bodyClassName="p-0">
           {recentActivity.length === 0 ? (

@@ -32,6 +32,7 @@ import {
 import { cn, initials } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { useSidebar } from './SidebarContext';
+import { useBranding } from '@/components/BrandingProvider';
 
 /* Admin + Staff nav */
 const ADMIN_NAV = [
@@ -76,6 +77,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const { user, activeMembership, logout } = useAuth();
   const { isOpen, close } = useSidebar();
+  const branding = useBranding();
 
   // Auto-close on mobile when navigating to a new route
   useEffect(() => {
@@ -111,12 +113,19 @@ export function Sidebar() {
       >
         {/* Logo */}
         <div className="flex h-16 flex-shrink-0 items-center gap-2.5 border-b border-slate-100 px-5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600">
-            <Building2 size={16} className="text-white" />
-          </div>
-          <div>
-            <p className="text-sm font-bold text-slate-900 leading-none">NG Home</p>
-            <p className="text-[10px] text-slate-400 leading-none mt-0.5">by NovaGade</p>
+          {branding?.logoDataUri ? (
+            // eslint-disable-next-line @next/next/no-img-element -- a small data URI; next/image adds nothing here
+            <img src={branding.logoDataUri} alt="" className="h-8 w-8 flex-shrink-0 rounded-lg object-contain" />
+          ) : (
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600">
+              <Building2 size={16} className="text-white" />
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-slate-900 leading-none">{branding?.appName ?? 'NG Home'}</p>
+            <p className="text-[10px] text-slate-400 leading-none mt-0.5">
+              {branding?.appName ? 'Powered by NovaGade' : 'by NovaGade'}
+            </p>
           </div>
         </div>
 

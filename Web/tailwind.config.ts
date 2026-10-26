@@ -41,18 +41,22 @@ const config: Config = {
         // these shades are used as backgrounds behind navy text (active nav
         // items, badges), and a cool blue chip on a beige card reads as
         // something pasted in from another design.
+        // Each shade reads a CSS variable so a society can carry its own brand
+        // colour (lib/branding.ts sets them after login). The defaults in
+        // globals.css are exactly the navy below, so nothing changes until a
+        // society has a colour. <alpha-value> keeps bg-primary-600/10 working.
         primary: {
-          DEFAULT: '#0D2147',
-          50: '#EFE9DC',
-          100: '#E4DAC6',
-          200: '#D3C5A9',
-          300: '#7C8AA6',
-          400: '#4E6288',
-          500: '#24406B',
-          600: '#0D2147',
-          700: '#0A1A38',
-          800: '#071428',
-          900: '#050E1C',
+          DEFAULT: 'rgb(var(--primary-600) / <alpha-value>)',
+          50: 'rgb(var(--primary-50) / <alpha-value>)',
+          100: 'rgb(var(--primary-100) / <alpha-value>)',
+          200: 'rgb(var(--primary-200) / <alpha-value>)',
+          300: 'rgb(var(--primary-300) / <alpha-value>)',
+          400: 'rgb(var(--primary-400) / <alpha-value>)',
+          500: 'rgb(var(--primary-500) / <alpha-value>)',
+          600: 'rgb(var(--primary-600) / <alpha-value>)',
+          700: 'rgb(var(--primary-700) / <alpha-value>)',
+          800: 'rgb(var(--primary-800) / <alpha-value>)',
+          900: 'rgb(var(--primary-900) / <alpha-value>)',
         },
         // Warm neutral ramp replacing Tailwind's cool slate.
         slate: {

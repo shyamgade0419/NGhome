@@ -9,6 +9,7 @@ import type {
   PaginatedResponse,
 } from '@/lib/types';
 import type { Amenity, AmenityBooking, AmenityPayload } from '@/lib/amenities';
+import type { Branding } from '@/lib/branding';
 
 // Dashboard — composites several report endpoints
 export const dashboardApi = {
@@ -512,6 +513,11 @@ export const platformApi = {
   listSocieties: (params?: { page?: number; limit?: number; deleted?: boolean }): Promise<{ data: PaginatedResponse<PlatformSociety> }> =>
     api.get('/societies', { params }),
   getSociety: (id: string): Promise<{ data: PlatformSociety }> => api.get(`/societies/${id}`),
+
+  /** A society's app name, logo and colour. A field left out is kept; null clears it. */
+  getBranding: (id: string): Promise<{ data: Branding }> => api.get(`/societies/${id}/branding`),
+  setBranding: (id: string, body: Partial<Branding>): Promise<{ data: Branding }> =>
+    api.put(`/societies/${id}/branding`, body),
 
   stats: (): Promise<{
     data: {
