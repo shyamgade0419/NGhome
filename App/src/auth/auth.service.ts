@@ -809,9 +809,12 @@ export class AuthService {
    * Creates: User (if new) + SocietyMembership (RESIDENT, ACTIVE).
    * Issues a fully scoped session so the resident lands in the app immediately.
    *
-   * If the email already exists globally but has no membership in this society,
-   * a membership is added to the existing account. The supplied password is
-   * ignored in that case — the resident uses their existing password.
+   * If the email already has an account, the supplied password must be that
+   * account's own: joining is the same as signing in as that person, and this
+   * endpoint issues a session. (It used to ignore the password for an existing
+   * account, which let anyone holding a join code take over any account whose
+   * email they knew.) A member who was removed from this flat earlier is
+   * brought back on their old membership rather than refused as a duplicate.
    */
   async joinSociety(
     dto: JoinSocietyDto,
@@ -859,13 +862,35 @@ export class AuthService {
       },
     });
 
-    if (existingUser?.memberships?.some((m) => m.flatId === dto.flatId)) {
+    if (existingUser) {
+      // An existing account is proven by its password, before anything about it
+      // — including whether it already sits on this flat — is revealed.
+      const owns =
+        existingUser.isActive &&
+        !existingUser.deletedAt &&
+        (await argon2.verify(existingUser.passwordHash, dto.password).catch(() => false));
+      if (!owns) {
+        throw new ConflictException(
+          'An account with this email already exists. Enter the password you already use for NG Home to join with it, or use Forgot password on the sign-in screen.',
+        );
+      }
+    }
+
+    const onThisFlat = existingUser?.memberships?.find((m) => m.flatId === dto.flatId);
+    if (onThisFlat?.status === 'ACTIVE') {
       throw new ConflictException(
         'An account with this email is already registered on this flat. Please log in.',
       );
     }
+    if (onThisFlat?.status === 'PENDING') {
+      throw new ConflictException(
+        "Your request to join this flat is already waiting for the admin's approval.",
+      );
+    }
+    // Anything else on this flat is an INACTIVE membership: the person was removed
+    // and is coming back. It is reused below, since (society, user, flat) is unique.
 
-    const passwordHash = await argon2.hash(dto.password);
+    const passwordHash = existingUser ? existingUser.passwordHash : await argon2.hash(dto.password);
 
     const result = await this.prisma.$transaction(async (tx) => {
       // Create user if first-time registrant
@@ -906,17 +931,21 @@ export class AuthService {
       // before that person can see the flat's bills or statements.
       const isFirstClaimant = existingActiveOnFlat === 0;
 
-      // Create RESIDENT membership
-      const membership = await tx.societyMembership.create({
-        data: {
-          societyId: society.id,
-          userId: user.id,
-          flatId: flat.id,
-          role: SystemRole.RESIDENT,
-          status: isFirstClaimant ? 'ACTIVE' : 'PENDING',
-          isPrimary: isFirstClaimant,
-        },
-      });
+      // Create the RESIDENT membership — or bring back the one a removed member
+      // had on this flat, under the same first-claimant / approval rule.
+      const membershipData = {
+        role: SystemRole.RESIDENT,
+        status: isFirstClaimant ? ('ACTIVE' as const) : ('PENDING' as const),
+        isPrimary: isFirstClaimant,
+      };
+      const membership = onThisFlat
+        ? await tx.societyMembership.update({
+            where: { id: onThisFlat.id },
+            data: { ...membershipData, leftAt: null },
+          })
+        : await tx.societyMembership.create({
+            data: { societyId: society.id, userId: user.id, flatId: flat.id, ...membershipData },
+          });
 
       // Audit trail so admin can review new joins
       await tx.auditLog.create({
@@ -929,7 +958,7 @@ export class AuthService {
           newValues: {
             email,
             flatCode: flat.flatCode,
-            method: 'join_code',
+            method: onThisFlat ? 'join_code_rejoin' : 'join_code',
             status: membership.status,
           } as Record<string, string>,
           ipAddress,
