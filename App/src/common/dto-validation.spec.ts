@@ -348,6 +348,21 @@ describe('Admin action DTO validation', () => {
     it('rejects a missing role', async () => {
       await expect(run({ userId: 'user-1' }, AddMemberDto)).rejects.toThrow(BadRequestException);
     });
+
+    it('will not let a society admin hand out PLATFORM_ADMIN', async () => {
+      await expect(run({ userId: 'user-1', role: SystemRole.PLATFORM_ADMIN }, AddMemberDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it.each([
+      SystemRole.SOCIETY_ADMIN,
+      SystemRole.COMMITTEE_MEMBER,
+      SystemRole.SOCIETY_ACCOUNTANT,
+      SystemRole.SOCIETY_STAFF,
+      SystemRole.RESIDENT,
+      SystemRole.SECURITY_GUARD,
+    ])('still allows %s, so the Roles screen can assign it', async (role) => {
+      await expect(run({ userId: 'user-1', role }, AddMemberDto)).resolves.toMatchObject({ role });
+    });
   });
 });
 

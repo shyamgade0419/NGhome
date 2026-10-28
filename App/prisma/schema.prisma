@@ -21,6 +21,9 @@ enum SystemRole {
   SOCIETY_STAFF
   RESIDENT
   COMMITTEE_MEMBER
+  // Operates the gate only: registers visitors, checks invitation codes, records
+  // entry and exit. No access to billing, residents or documents.
+  SECURITY_GUARD
 }
 
 enum BillingCycleType {
@@ -378,6 +381,8 @@ model Society {
   conversations       Conversation[]
   amenities           Amenity[]
   amenityBookings     AmenityBooking[]
+  visitorInvitations  VisitorInvitation[]
+  visitorEntries      VisitorEntry[]
 
   @@map("societies")
 }
@@ -481,6 +486,8 @@ model Flat {
   maintenanceRequests MaintenanceRequest[]
   documents           Document[]
   amenityBookings     AmenityBooking[]
+  visitorInvitations  VisitorInvitation[]
+  visitorEntries      VisitorEntry[]
 
   @@unique([societyId, flatCode])
   @@index([societyId])
@@ -1442,4 +1449,99 @@ model AmenityBooking {
   @@index([flatId])
   @@index([userId])
   @@map("amenity_bookings")
+}
+
+// ─── Visitor and gate management ─────────────────────────────────────────────
+
+enum VisitorType {
+  GUEST
+  CAB
+  DELIVERY
+  SERVICE
+  OTHER
+}
+
+enum VisitorEntryStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  CHECKED_IN
+  CHECKED_OUT
+  EXPIRED
+}
+
+enum VisitorInvitationStatus {
+  ACTIVE
+  REVOKED
+}
+
+/// A resident's pre-approval of a guest. The code that unlocks it is shown once
+/// and only its hash is stored; usedCount and the validity window are enforced
+/// by one atomic update at the gate, so a code cannot be replayed.
+model VisitorInvitation {
+  id           String                  @id @default(uuid())
+  societyId    String
+  flatId       String
+  createdById  String
+  visitorName  String
+  visitorPhone String?
+  visitorType  VisitorType             @default(GUEST)
+  note         String?
+  validFrom    DateTime
+  validUntil   DateTime
+  maxUses      Int                     @default(1)
+  usedCount    Int                     @default(0)
+  codeHash     String                  @unique
+  status       VisitorInvitationStatus @default(ACTIVE)
+  revokedAt    DateTime?
+  revokedById  String?
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  society Society        @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  flat    Flat           @relation(fields: [flatId], references: [id], onDelete: Cascade)
+  entries VisitorEntry[]
+
+  @@index([societyId, flatId, status])
+  @@index([createdById])
+  @@map("visitor_invitations")
+}
+
+/// One visit: arrival at the gate, the resident's decision, entry and exit.
+/// clientRequestId makes a guard's retried submission safe.
+model VisitorEntry {
+  id              String             @id @default(uuid())
+  societyId       String
+  flatId          String
+  invitationId    String?
+  visitorName     String
+  visitorPhone    String?
+  visitorType     VisitorType        @default(GUEST)
+  vehicleNumber   String?
+  purpose         String?
+  status          VisitorEntryStatus @default(PENDING_APPROVAL)
+  requestedAt     DateTime           @default(now())
+  registeredById  String?
+  decidedAt       DateTime?
+  decidedById     String?
+  decisionNote    String?
+  /// RESIDENT | POLICY | INVITATION | ADMIN_OVERRIDE
+  decisionMethod  String?
+  checkedInAt     DateTime?
+  checkedInById   String?
+  checkedOutAt    DateTime?
+  checkedOutById  String?
+  clientRequestId String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  society    Society            @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  flat       Flat               @relation(fields: [flatId], references: [id], onDelete: Cascade)
+  invitation VisitorInvitation? @relation(fields: [invitationId], references: [id], onDelete: SetNull)
+
+  @@unique([societyId, clientRequestId])
+  @@index([societyId, requestedAt])
+  @@index([flatId, requestedAt])
+  @@index([societyId, status])
+  @@map("visitor_entries")
 }

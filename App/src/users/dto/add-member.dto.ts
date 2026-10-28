@@ -1,6 +1,21 @@
-import { IsString, IsOptional, IsEnum, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsIn, IsBoolean } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
+
+/**
+ * The roles a society admin may give someone in their own society. PLATFORM_ADMIN
+ * is deliberately not here: it is a platform-level account flag, not a society
+ * role, and a membership carrying it would just strip that person of every
+ * society permission.
+ */
+export const ASSIGNABLE_ROLES: SystemRole[] = [
+  SystemRole.SOCIETY_ADMIN,
+  SystemRole.COMMITTEE_MEMBER,
+  SystemRole.SOCIETY_ACCOUNTANT,
+  SystemRole.SOCIETY_STAFF,
+  SystemRole.SECURITY_GUARD,
+  SystemRole.RESIDENT,
+];
 
 // Previously a plain `{ userId; flatId?; role; isPrimary? }` inline type —
 // invisible to the global ValidationPipe, so `role` (a privilege
@@ -19,8 +34,8 @@ export class AddMemberDto {
   @IsString()
   flatId?: string;
 
-  @ApiProperty({ enum: SystemRole })
-  @IsEnum(SystemRole)
+  @ApiProperty({ enum: ASSIGNABLE_ROLES })
+  @IsIn(ASSIGNABLE_ROLES, { message: 'role must be one of: ' + ASSIGNABLE_ROLES.join(', ') })
   role: SystemRole;
 
   @ApiPropertyOptional()
