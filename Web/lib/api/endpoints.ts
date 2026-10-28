@@ -564,6 +564,8 @@ export const platformApi = {
   /** They set their own password by email — this never takes one. */
   inviteAdmin: (body: { email: string; firstName: string; lastName: string }): Promise<{ data: PlatformAdminUser & InviteMailResult }> =>
     api.post('/platform/admins', body),
+  /** Logs in to the mail server and sends a real test message to the admin asking. */
+  checkMail: (): Promise<{ data: MailCheckResult }> => api.post('/platform/mail/check'),
   /** For an admin who was invited but has not signed in yet. */
   resendInvite: (id: string): Promise<{ data: { id: string; email: string } & InviteMailResult }> =>
     api.post(`/platform/admins/${id}/resend-invite`),
@@ -586,6 +588,13 @@ export type PlatformStorageCheck =
 export interface InviteMailResult {
   emailSent: boolean;
   emailError?: string;
+}
+
+/** The outcome of the console's email check. The password is never part of it. */
+export interface MailCheckResult {
+  setup: { configured: boolean; host: string | null; port: number | null; user: string | null; from: string; appUrl: string; warnings: string[] };
+  connection: { ok: true } | { ok: false; reason: string };
+  test: { to: string; ok: true } | { to: string; ok: false; reason: string } | null;
 }
 
 export interface PlatformAdminUser {

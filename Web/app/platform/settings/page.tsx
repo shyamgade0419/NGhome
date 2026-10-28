@@ -15,6 +15,7 @@ import { platformApi, PlatformAdminUser } from '@/lib/api/endpoints';
 import { PlatformShell } from '@/components/platform/PlatformShell';
 import { PricingSupportCard } from '@/components/platform/PricingSupportCard';
 import { Card, DButton, DModal, DTable, Empty, Loading, PageHeader, Pill, TableWrap, Td } from '@/components/platform/ui';
+import { EmailCheckCard } from '@/components/platform/EmailCheckCard';
 import { formatDate, formatDateTime } from '@/lib/utils';
 
 const inputClass =
@@ -197,6 +198,8 @@ export default function PlatformSettingsPage() {
             </TableWrap>
           )}
         </section>
+
+        <EmailCheckCard />
 
         <Card title="Adding a platform admin from the server" icon={Terminal}>
           <p className="text-sm text-gray-300">

@@ -6,6 +6,7 @@ import { PlatformAdminGuard } from '../common/guards/platform-admin.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { PlatformService } from './platform.service';
+import { PlatformMailService } from './platform-mail.service';
 import { SetAdminStatusDto } from './dto/set-admin-status.dto';
 import { UpdatePlatformSettingsDto } from './dto/update-platform-settings.dto';
 import { InvitePlatformAdminDto } from './dto/invite-platform-admin.dto';
@@ -15,7 +16,10 @@ import { InvitePlatformAdminDto } from './dto/invite-platform-admin.dto';
 @UseGuards(JwtAuthGuard, PlatformAdminGuard)
 @Controller('platform')
 export class PlatformController {
-  constructor(private readonly platform: PlatformService) {}
+  constructor(
+    private readonly platform: PlatformService,
+    private readonly platformMail: PlatformMailService,
+  ) {}
 
   @Get('storage')
   @ApiOperation({ summary: '[Platform Admin] File storage used per society' })
@@ -30,6 +34,16 @@ export class PlatformController {
   @ApiOperation({ summary: '[Platform Admin] Test the SFTP connection (connect + write)' })
   checkStorage() {
     return this.platform.checkStorageConnection();
+  }
+
+  // Logs in to the mail server and sends a real message to the admin asking, so
+  // it is throttled like the storage check.
+  @Post('mail/check')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({ summary: '[Platform Admin] Check the email setup: log in to SMTP and send a test message to yourself' })
+  checkMail(@CurrentUser() user: AuthenticatedUser) {
+    return this.platformMail.check(user.id);
   }
 
   @Get('settings')

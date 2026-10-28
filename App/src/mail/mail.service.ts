@@ -2,6 +2,25 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 
+export interface MailSetup {
+  configured: boolean;
+  host: string | null;
+  port: number | null;
+  /** The login, partly hidden: ab***@example.com */
+  user: string | null;
+  from: string;
+  appUrl: string;
+  warnings: string[];
+}
+
+/** Enough of an address to recognise it, not enough to use it. */
+export function maskEmail(value: string | null): string | null {
+  if (!value) return null;
+  const at = value.indexOf('@');
+  if (at < 1) return value.length > 2 ? value.slice(0, 2) + '***' : '***';
+  return value.slice(0, Math.min(2, at)) + '***' + value.slice(at);
+}
+
 @Injectable()
 export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
@@ -148,6 +167,57 @@ export class MailService implements OnModuleInit {
       text,
     });
     return true;
+  }
+
+  /**
+   * The mail setup as the server sees it — never the password — plus anything
+   * that is likely to stop mail arriving. For the platform console's email
+   * check, so a misconfiguration can be seen without reading container logs.
+   */
+  describe(): MailSetup {
+    const host = this.config.get<string>('mail.host') || null;
+    const user = this.config.get<string>('mail.user') || null;
+    const from = this.config.get<string>('mail.from') || '';
+    const appUrl = this.config.get<string>('mail.appUrl') || '';
+    const production = this.config.get<string>('nodeEnv') === 'production';
+
+    const warnings: string[] = [];
+    if (!host) warnings.push('SMTP_HOST is not set, so no email can be sent at all.');
+    if (host && !user) warnings.push('SMTP_USER is not set. Most mail servers refuse to send without logging in.');
+    if (/@nghome.app/i.test(from)) {
+      warnings.push(
+        'SMTP_FROM is not set (or still the placeholder no-reply@nghome.app). Mail is sent as a domain you do not own, which many providers reject or put in spam. Set SMTP_FROM to an address on your own domain.',
+      );
+    }
+    if (production && /localhost|127.0.0.1/.test(appUrl)) {
+      warnings.push('APP_URL points at localhost, so the link inside every reset email would not open. Set APP_URL to your web address.');
+    }
+
+    return {
+      configured: !!host,
+      host,
+      port: this.config.get<number>('mail.port') ?? null,
+      user: maskEmail(user),
+      from,
+      appUrl,
+      warnings,
+    };
+  }
+
+  /** Sends a short plain message to one address and reports what the mail server said. */
+  async sendTest(to: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    if (!this.transporter) return { ok: false, reason: 'SMTP_HOST is not set' };
+    try {
+      await this.transporter.sendMail({
+        from: this.config.get<string>('mail.from'),
+        to,
+        subject: 'NG Home email test',
+        text: 'This is a test message from NG Home. If you can read it, the server can send email.',
+      });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, reason: (err instanceof Error ? err.message : String(err)).slice(0, 300) };
+    }
   }
 
   /**
