@@ -28,6 +28,7 @@ import {
   HelpCircle,
   PiggyBank,
   CalendarCheck,
+  DoorOpen,
 } from 'lucide-react';
 import { cn, initials } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -52,6 +53,7 @@ const ADMIN_NAV = [
   { href: '/meetings', icon: CalendarDays, label: 'Meetings' },
   { href: '/documents', icon: FolderOpen, label: 'Documents' },
   { href: '/amenities', icon: CalendarCheck, label: 'Amenities' },
+  { href: '/visitors', icon: DoorOpen, label: 'Visitors' },
   { href: '/salaries', icon: UserCircle, label: 'Salaries' },
   { href: '/audit-logs', icon: ShieldCheck, label: 'Audit Logs' },
   { href: '/notifications', icon: Bell, label: 'Notifications' },
@@ -86,7 +88,8 @@ export function Sidebar() {
 
   const role = activeMembership?.role ?? user?.currentRole ?? '';
   const isAdmin = ADMIN_ROLES.includes(role) || !!user?.isPlatformAdmin;
-  const NAV = isAdmin ? ADMIN_NAV : RESIDENT_NAV;
+  // Gate staff work in the mobile app: there is nothing for them to open on the web.
+  const NAV = role === 'SECURITY_GUARD' && !user?.isPlatformAdmin ? [] : isAdmin ? ADMIN_NAV : RESIDENT_NAV;
 
   return (
     <>

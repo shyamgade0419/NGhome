@@ -10,6 +10,7 @@ import type {
 } from '@/lib/types';
 import type { Amenity, AmenityBooking, AmenityPayload } from '@/lib/amenities';
 import type { Branding } from '@/lib/branding';
+import type { VisitorEntryStatus, VisitorLogEntry, VisitorPolicy, VisitorType } from '@/lib/visitors';
 
 // Dashboard — composites several report endpoints
 export const dashboardApi = {
@@ -691,4 +692,17 @@ export const amenityBookingsApi = {
   /** Records the fee as received into the account: credits its balance and writes the ledger entry. */
   collectFee: (id: string, accountId: string) => api.post(`/amenity-bookings/${id}/fee/collect`, { accountId }),
   waiveFee: (id: string) => api.post(`/amenity-bookings/${id}/fee/waive`),
+};
+
+// Visitor and gate — committee side. Guards and residents use the mobile app.
+export const visitorsApi = {
+  log: (params?: {
+    page?: number; limit?: number; from?: string; to?: string;
+    status?: VisitorEntryStatus; visitorType?: VisitorType; search?: string;
+  }): Promise<{ data: PaginatedResponse<VisitorLogEntry> }> => api.get('/visitors', { params }),
+  /** Decide a request nobody answered. A reason is required and goes in the audit trail. */
+  override: (id: string, action: 'APPROVE' | 'REJECT', reason: string) =>
+    api.post(`/visitors/${id}/override`, { action, reason }),
+  policy: (): Promise<{ data: VisitorPolicy }> => api.get('/visitors/policy'),
+  updatePolicy: (patch: Partial<VisitorPolicy>): Promise<{ data: VisitorPolicy }> => api.put('/visitors/policy', patch),
 };

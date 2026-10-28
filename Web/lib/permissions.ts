@@ -19,6 +19,7 @@ export const ROLE = {
   ACCOUNTANT: 'SOCIETY_ACCOUNTANT',
   STAFF:      'SOCIETY_STAFF',
   COMMITTEE:  'COMMITTEE_MEMBER',
+  GUARD:      'SECURITY_GUARD',
   RESIDENT:   'RESIDENT',
   PLATFORM:   'PLATFORM_ADMIN',
 } as const satisfies Record<string, Role>;

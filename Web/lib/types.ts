@@ -4,6 +4,7 @@ export type Role =
   | 'SOCIETY_ACCOUNTANT'
   | 'SOCIETY_STAFF'
   | 'COMMITTEE_MEMBER'
+  | 'SECURITY_GUARD'
   | 'RESIDENT';
 
 export interface User {
