@@ -34,6 +34,7 @@ const QUICK_ACTIONS = [
   { label: 'Helpdesk', icon: 'construct-outline', route: '/(app)/admin/helpdesk' },
   { label: 'Announce', icon: 'megaphone-outline', route: '/(app)/admin/announcements' },
   { label: 'Amenities', icon: 'calendar-outline', route: '/(app)/admin/amenities' },
+  { label: 'Gate Log', icon: 'walk-outline', route: '/(app)/admin/visitors' },
   { label: 'Directory', icon: 'people-outline', route: '/(app)/directory' },
   { label: 'Community Board', icon: 'chatbubbles-outline', route: '/(app)/forum' },
   { label: 'Messages', icon: 'chatbox-ellipses-outline', route: '/(app)/chat' },

@@ -60,8 +60,17 @@ export default function RootLayout() {
   // eventually lands — never a hard replace that could fight the auth
   // redirect logic in (app)/_layout.tsx.
   useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener(() => {
-      router.push('/(app)/notifications' as any);
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const type = (response.notification.request.content.data as { type?: unknown } | undefined)?.type;
+      // A visitor at the gate needs an answer now: go straight to the right screen for this person.
+      // Anything else lands on the notification list, as before.
+      if (type === 'VISITOR_REQUEST' || type === 'VISITOR_ARRIVED' || type === 'VISITOR_OVERRIDE') {
+        router.push('/(app)/visitors' as any);
+      } else if (type === 'VISITOR_DECISION') {
+        router.push('/(app)/guard' as any);
+      } else {
+        router.push('/(app)/notifications' as any);
+      }
     });
     return () => sub.remove();
   }, []);

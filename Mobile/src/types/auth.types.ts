@@ -4,6 +4,7 @@ export type SystemRole =
   | 'SOCIETY_ACCOUNTANT'
   | 'SOCIETY_STAFF'
   | 'COMMITTEE_MEMBER'
+  | 'SECURITY_GUARD'
   | 'RESIDENT';
 
 // Matches backend UserDto

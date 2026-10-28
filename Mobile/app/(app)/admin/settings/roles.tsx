@@ -23,6 +23,7 @@ const ROLES = [
   { value: 'SOCIETY_ADMIN', label: 'Admin', color: '#DC2626', bg: '#FEE2E2' },
   { value: 'SOCIETY_ACCOUNTANT', label: 'Accountant', color: '#D97706', bg: '#FEF3C7' },
   { value: 'SOCIETY_STAFF', label: 'Staff', color: '#2563EB', bg: '#DBEAFE' },
+  { value: 'SECURITY_GUARD', label: 'Security guard', color: '#7C3AED', bg: '#EDE9FE' },
   { value: 'RESIDENT', label: 'Resident', color: '#059669', bg: '#D1FAE5' },
 ] as const;
 

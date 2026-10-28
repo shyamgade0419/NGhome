@@ -19,6 +19,7 @@ import { Card, SectionHeader } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { NotificationBell } from '@/components/ui/NotificationBell';
 import { BrandMark } from '@/components/ui/BrandMark';
+import { PendingVisitorBanner } from '@/components/visitors/PendingVisitorBanner';
 import { useBranding } from '@/hooks/useBranding';
 import { colors, spacing, typography, radius } from '@/theme';
 import { Announcement } from '@/types/society.types';
@@ -95,6 +96,9 @@ export default function ResidentDashboard() {
           <RefreshControl refreshing={isRefetching} onRefresh={onRefresh} tintColor={brand.color} />
         }
       >
+        {/* Someone at the gate is the most urgent thing there is. */}
+        <PendingVisitorBanner />
+
         {/* Current bill hero card */}
         <View style={[styles.heroCard, { backgroundColor: brand.color }]}>
           <View style={styles.heroTop}>
@@ -288,6 +292,19 @@ export default function ResidentDashboard() {
             </View>
             <Text style={styles.quickLinkText} numberOfLines={2}>Amenities</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Gate — visitors and invitations */}
+        <View style={styles.quickLinksRow}>
+          <TouchableOpacity style={styles.quickLink} activeOpacity={0.8} onPress={() => router.push('/(app)/visitors' as any)}>
+            <View style={[styles.quickLinkIcon, { backgroundColor: colors.accentLight }]}>
+              <Ionicons name="walk-outline" size={20} color={colors.accent} />
+            </View>
+            <Text style={styles.quickLinkText} numberOfLines={2}>Visitors</Text>
+          </TouchableOpacity>
+          <View style={[styles.quickLink, { opacity: 0 }]} pointerEvents="none" />
+          <View style={[styles.quickLink, { opacity: 0 }]} pointerEvents="none" />
+          <View style={[styles.quickLink, { opacity: 0 }]} pointerEvents="none" />
         </View>
 
         {/* Announcements preview */}

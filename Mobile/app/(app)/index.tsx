@@ -15,6 +15,11 @@ export default function AppIndex() {
 
   if (isLoading || !user) return <LoadingState fullscreen message="Loading..." />;
 
+  // Gate staff see only the gate.
+  if (user.currentRole === 'SECURITY_GUARD') {
+    return <Redirect href="/(app)/guard" />;
+  }
+
   if (user.isPlatformAdmin || ADMIN_ROLES.has(user.currentRole ?? '')) {
     return <Redirect href="/(app)/admin" />;
   }
