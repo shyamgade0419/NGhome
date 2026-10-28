@@ -546,8 +546,17 @@ export const platformApi = {
   purgeSociety: (id: string, confirmName: string): Promise<{ data: PurgeSocietyResult }> =>
     api.post(`/societies/${id}/purge`, { confirmName }),
 
-  listUsers: (params?: { page?: number; limit?: number; search?: string }): Promise<{ data: PaginatedResponse<PlatformUser> }> =>
+  /** `withoutSociety` lists accounts that belong to no live society — for example residents who were removed. */
+  listUsers: (params?: { page?: number; limit?: number; search?: string; withoutSociety?: boolean }): Promise<{ data: PaginatedResponse<PlatformUser> }> =>
     api.get('/societies/platform/users', { params }),
+
+  /** What deleting this account would remove, and anything that stops it. */
+  userDeletionPreview: (id: string): Promise<{ data: PlatformUserDeletionPreview }> =>
+    api.get(`/platform/users/${id}/deletion-preview`),
+
+  /** Permanent delete of one account. `confirmEmail` is checked again on the server. There is no undo. */
+  deleteUser: (id: string, confirmEmail: string): Promise<{ data: { id: string; name: string; email: string } }> =>
+    api.post(`/platform/users/${id}/delete`, { confirmEmail }),
 
   overview: (id: string): Promise<{ data: PlatformSocietyOverview }> =>
     api.get(`/societies/${id}/overview`),
@@ -624,6 +633,15 @@ export interface PlatformUser {
     society: { id: string; name: string; displayName: string | null };
     flat: { flatCode: string } | null;
   }[];
+}
+
+export interface PlatformUserDeletionPreview {
+  user: { id: string; name: string; email: string; phone: string | null; isActive: boolean; isPlatformAdmin: boolean };
+  memberships: { society: string; role: string; status: string }[];
+  willRemove: { label: string; count: number }[];
+  blockedBy: { label: string; count: number }[];
+  reasons: string[];
+  canDelete: boolean;
 }
 
 export interface PlatformSocietyOverview {

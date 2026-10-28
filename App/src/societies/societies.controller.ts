@@ -130,12 +130,19 @@ export class SocietiesController {
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'withoutSociety', required: false, description: 'true = only accounts with no active society' })
   async platformUsers(
     @Query('page') page = 1,
     @Query('limit') limit = 20,
     @Query('search') search?: string,
+    @Query('withoutSociety') withoutSociety?: string,
   ) {
-    return this.societiesService.listPlatformUsers({ page: +page, limit: +limit, search });
+    return this.societiesService.listPlatformUsers({
+      page: +page,
+      limit: +limit,
+      search,
+      withoutSociety: withoutSociety === 'true',
+    });
   }
 
   @Get(':id/branding')

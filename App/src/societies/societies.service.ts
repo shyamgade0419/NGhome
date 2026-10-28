@@ -279,7 +279,7 @@ export class SocietiesService {
    * selects passwordHash — an explicit select, not an include, so a column
    * added to User later doesn't start leaking through here.
    */
-  async listPlatformUsers(params: { page: number; limit: number; search?: string }) {
+  async listPlatformUsers(params: { page: number; limit: number; search?: string; withoutSociety?: boolean }) {
     const { skip, take, page, limit } = getPaginationParams({ page: params.page, limit: params.limit });
     const term = params.search?.trim().slice(0, 100);
 
@@ -292,10 +292,19 @@ export class SocietiesService {
       OR: [{ isPlatformAdmin: true }, { memberships: { some: { status: 'ACTIVE', society: { deletedAt: null } } } }],
     };
 
+    // The other side of the same split: accounts that no longer belong to
+    // anything live — removed from their society, or left behind by a deleted
+    // one. They are hidden from the default list, but their email and phone
+    // stay taken, so the platform admin needs a way to find them to erase them.
+    const withoutSociety: Prisma.UserWhereInput = {
+      isPlatformAdmin: false,
+      NOT: { memberships: { some: { status: 'ACTIVE', society: { deletedAt: null } } } },
+    };
+
     const where: Prisma.UserWhereInput = {
       deletedAt: null,
       AND: [
-        belongsToLivePlatform,
+        params.withoutSociety ? withoutSociety : belongsToLivePlatform,
         ...(term
           ? [
               {

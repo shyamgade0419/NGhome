@@ -7,6 +7,8 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { PlatformService } from './platform.service';
 import { PlatformMailService } from './platform-mail.service';
+import { PlatformUserDeleteService } from './platform-user-delete.service';
+import { DeletePlatformUserDto } from './dto/delete-platform-user.dto';
 import { SetAdminStatusDto } from './dto/set-admin-status.dto';
 import { UpdatePlatformSettingsDto } from './dto/update-platform-settings.dto';
 import { InvitePlatformAdminDto } from './dto/invite-platform-admin.dto';
@@ -19,6 +21,7 @@ export class PlatformController {
   constructor(
     private readonly platform: PlatformService,
     private readonly platformMail: PlatformMailService,
+    private readonly userDelete: PlatformUserDeleteService,
   ) {}
 
   @Get('storage')
@@ -75,6 +78,22 @@ export class PlatformController {
   @ApiOperation({ summary: '[Platform Admin] Re-send the set-your-password email to an admin who has not signed in yet' })
   resendInvite(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.platform.resendInvite(id, user.id);
+  }
+
+  @Get('users/:id/deletion-preview')
+  @ApiOperation({ summary: '[Platform Admin] What deleting this account would remove, and what stops it' })
+  deletionPreview(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.userDelete.preview(id, user.id);
+  }
+
+  // POST rather than DELETE: the confirmation email travels in the body, and
+  // the web proxy forwards DELETE without one.
+  @Post('users/:id/delete')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: '[Platform Admin] Permanently delete an account (cannot be undone)' })
+  deleteUser(@Param('id') id: string, @Body() dto: DeletePlatformUserDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.userDelete.deleteUser(id, dto.confirmEmail, user.id);
   }
 
   @Patch('admins/:id/status')
