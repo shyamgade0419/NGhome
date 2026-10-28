@@ -8,6 +8,35 @@ export function stripTrailingSlashes(url: string): string {
   return url.trim().replace(/\/+$/, '');
 }
 
+/** The bare address inside "Name <a@b.com>" or "a@b.com"; null when there is none. */
+export function addressOf(value: string | undefined | null): string | null {
+  const m = /<([^<>\s]+@[^<>\s]+)>/.exec(value ?? '') ?? /^\s*([^<>\s]+@[^<>\s]+)\s*$/.exec(value ?? '');
+  return m ? m[1] : null;
+}
+
+/**
+ * The From address for outgoing mail.
+ *
+ * Mail servers only accept a sender they own: Gmail, Zoho and most hosted
+ * SMTP refuse (553 "sender address rejected") or silently spam-fold mail whose
+ * From is a domain the login does not control. The sample .env ships
+ * SMTP_FROM=…@nghome.app — a domain nobody here owns — and the code used the
+ * same placeholder when SMTP_FROM was unset, so a deployment that copied the
+ * sample sent every reset email from an address its server would not relay.
+ *
+ * So an unset or placeholder SMTP_FROM now falls back to the mailbox the
+ * server logs in as, when that login is an email address. An address set on
+ * purpose (anything that is not the placeholder) is left exactly as written.
+ */
+export function resolveMailFrom(from: string | undefined, login: string | undefined): string {
+  const placeholder = 'NG Home <no-reply@nghome.app>';
+  const configured = (from ?? '').trim();
+  const isPlaceholder = !configured || /@nghome\.app>?$/i.test(configured);
+  if (!isPlaceholder) return configured;
+  const mailbox = addressOf(login);
+  return mailbox ? `NG Home <${mailbox}>` : placeholder;
+}
+
 export default () => ({
   port: parseInt(process.env.PORT ?? '3000', 10),
   nodeEnv: process.env.NODE_ENV ?? 'development',
@@ -55,7 +84,7 @@ export default () => ({
     port: parseInt(process.env.SMTP_PORT ?? '587', 10),
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
-    from: process.env.SMTP_FROM ?? 'NG Home <no-reply@nghome.app>',
+    from: resolveMailFrom(process.env.SMTP_FROM, process.env.SMTP_USER),
     appUrl: stripTrailingSlashes(process.env.APP_URL ?? 'http://localhost:3001'),
   },
 });

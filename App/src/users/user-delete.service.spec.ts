@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { PlatformUserDeleteService, USER_REFERENCES } from './platform-user-delete.service';
+import { UserDeleteService, USER_REFERENCES } from './user-delete.service';
 
 describe('USER_REFERENCES', () => {
   const pointingAtUser = Prisma.dmmf.datamodel.models.flatMap((m) =>
@@ -32,7 +32,7 @@ describe('USER_REFERENCES', () => {
   });
 });
 
-describe('PlatformUserDeleteService', () => {
+describe('UserDeleteService', () => {
   const ACTOR = 'actor-1';
   const TARGET = 'user-1';
 
@@ -73,7 +73,7 @@ describe('PlatformUserDeleteService', () => {
     }
     tx.auditLog.count = countFor('AuditLog');
     const prisma = { ...tx, $transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn(tx)) };
-    return { svc: new PlatformUserDeleteService(prisma as never), tx, prisma };
+    return { svc: new UserDeleteService(prisma as never), tx, prisma };
   }
 
   it('says 404 for an unknown account', async () => {
@@ -169,5 +169,96 @@ describe('PlatformUserDeleteService', () => {
     const { svc, tx } = build();
     tx.user.delete.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('x', { code: 'P2003', clientVersion: '5', meta: { field_name: 'thing_fkey' } }));
     await expect(svc.deleteUser(TARGET, 'anil@example.com', ACTOR)).rejects.toThrow(/deleting the account.*thing_fkey/);
+  });
+});
+
+describe('UserDeleteService — society admin scope', () => {
+  const SOCIETY = 's1';
+  const ACTOR = 'admin-1';
+  const TARGET = 'user-1';
+  const scope = { societyId: SOCIETY };
+
+  const person = (over: Record<string, unknown> = {}) => ({
+    id: TARGET, firstName: 'Anil', lastName: 'Reddy', email: 'anil@example.com', phone: '9000000001', isActive: true, isPlatformAdmin: false,
+    memberships: [{ role: 'RESIDENT', status: 'INACTIVE', societyId: SOCIETY, society: { name: 'Green', displayName: null, deletedAt: null } }],
+    ...over,
+  });
+
+  function build(user: unknown, otherAdmins = 1) {
+    const zero = { count: jest.fn().mockResolvedValue(0) };
+    const tx: Record<string, any> = {
+      user: { findUnique: jest.fn().mockResolvedValue(user), count: jest.fn().mockResolvedValue(1), delete: jest.fn().mockResolvedValue({}) },
+      societyMembership: { count: jest.fn().mockResolvedValue(otherAdmins) },
+      auditLog: { ...zero, deleteMany: jest.fn().mockResolvedValue({}), create: jest.fn().mockResolvedValue({}) },
+      maintenanceRequest: { ...zero, updateMany: jest.fn().mockResolvedValue({}) },
+      notificationRecord: { ...zero, deleteMany: jest.fn().mockResolvedValue({}) },
+      directMessage: { ...zero, deleteMany: jest.fn().mockResolvedValue({}) },
+    };
+    for (const m of ['refreshToken', 'pushToken', 'passwordResetToken', 'conversationParticipant', 'expense', 'paymentSubmission', 'announcement', 'meeting', 'event', 'document', 'maintenanceRequestComment', 'forumTopic', 'forumReply', 'amenityBooking']) tx[m] = zero;
+    const prisma = { ...tx, $transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn(tx)) };
+    return { svc: new UserDeleteService(prisma as never), tx };
+  }
+
+  it('deletes a removed member of the admin’s own society', async () => {
+    const { svc, tx } = build(person());
+    await svc.deleteUser(TARGET, 'anil@example.com', ACTOR, scope);
+    expect(tx.user.delete).toHaveBeenCalledWith({ where: { id: TARGET } });
+  });
+
+  it('answers "not found" for someone who is not in this society — even if the account exists', async () => {
+    const stranger = person({ memberships: [{ role: 'RESIDENT', status: 'ACTIVE', societyId: 'other', society: { name: 'Other', displayName: null, deletedAt: null } }] });
+    const { svc, tx } = build(stranger);
+    await expect(svc.preview(TARGET, ACTOR, scope)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.deleteUser(TARGET, 'anil@example.com', ACTOR, scope)).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.user.delete).not.toHaveBeenCalled();
+  });
+
+  it('refuses a person who also belongs to another society, and does not name it', async () => {
+    const both = person({
+      memberships: [
+        { role: 'RESIDENT', status: 'ACTIVE', societyId: SOCIETY, society: { name: 'Green', displayName: null, deletedAt: null } },
+        { role: 'RESIDENT', status: 'ACTIVE', societyId: 'other', society: { name: 'Secret Heights', displayName: null, deletedAt: null } },
+      ],
+    });
+    const { svc, tx } = build(both);
+    const p = await svc.preview(TARGET, ACTOR, scope);
+    expect(p.canDelete).toBe(false);
+    expect(p.reasons.join(' ')).toMatch(/also belongs to another society/);
+    expect(JSON.stringify(p)).not.toContain('Secret Heights');
+    expect(p.memberships).toHaveLength(1);
+    await expect(svc.deleteUser(TARGET, 'anil@example.com', ACTOR, scope)).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.user.delete).not.toHaveBeenCalled();
+  });
+
+  it('never deletes a platform admin from a society', async () => {
+    const { svc, tx } = build(person({ isPlatformAdmin: true }));
+    const p = await svc.preview(TARGET, ACTOR, scope);
+    expect(p.reasons.join(' ')).toMatch(/Platform admins cannot be deleted/);
+    await expect(svc.deleteUser(TARGET, 'anil@example.com', ACTOR, scope)).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.user.delete).not.toHaveBeenCalled();
+  });
+
+  it('still protects the only admin of the society', async () => {
+    const admin = person({ memberships: [{ role: 'SOCIETY_ADMIN', status: 'ACTIVE', societyId: SOCIETY, society: { name: 'Green', displayName: null, deletedAt: null } }] });
+    const { svc } = build(admin, 0);
+    expect((await svc.preview(TARGET, ACTOR, scope)).reasons.join(' ')).toMatch(/only admin of Green/);
+  });
+
+  it('keeps no personal details in the audit record, only a masked address, filed under the society', async () => {
+    const { svc, tx } = build(person());
+    await svc.deleteUser(TARGET, 'anil@example.com', ACTOR, scope);
+    const row = tx.auditLog.create.mock.calls[0][0].data;
+    expect(row).toMatchObject({ societyId: SOCIETY, actorId: ACTOR, action: 'USER_DELETED', oldValues: { email: 'an***@example.com' } });
+    const text = JSON.stringify(row);
+    expect(text).not.toContain('Anil');
+    expect(text).not.toContain('Reddy');
+    expect(text).not.toContain('9000000001');
+    expect(text).not.toContain('anil@example.com');
+  });
+
+  it('still names the person in a platform admin’s record', async () => {
+    const { svc, tx } = build(person());
+    await svc.deleteUser(TARGET, 'anil@example.com', 'platform-1');
+    expect(tx.auditLog.create.mock.calls[0][0].data).toMatchObject({ societyId: null, oldValues: { email: 'anil@example.com', name: 'Anil Reddy' } });
   });
 });

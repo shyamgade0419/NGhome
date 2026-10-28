@@ -7,8 +7,8 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { PlatformService } from './platform.service';
 import { PlatformMailService } from './platform-mail.service';
-import { PlatformUserDeleteService } from './platform-user-delete.service';
-import { DeletePlatformUserDto } from './dto/delete-platform-user.dto';
+import { UserDeleteService } from '../users/user-delete.service';
+import { DeleteUserDto } from '../users/dto/delete-user.dto';
 import { SetAdminStatusDto } from './dto/set-admin-status.dto';
 import { UpdatePlatformSettingsDto } from './dto/update-platform-settings.dto';
 import { InvitePlatformAdminDto } from './dto/invite-platform-admin.dto';
@@ -21,7 +21,7 @@ export class PlatformController {
   constructor(
     private readonly platform: PlatformService,
     private readonly platformMail: PlatformMailService,
-    private readonly userDelete: PlatformUserDeleteService,
+    private readonly userDelete: UserDeleteService,
   ) {}
 
   @Get('storage')
@@ -92,7 +92,7 @@ export class PlatformController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: '[Platform Admin] Permanently delete an account (cannot be undone)' })
-  deleteUser(@Param('id') id: string, @Body() dto: DeletePlatformUserDto, @CurrentUser() user: AuthenticatedUser) {
+  deleteUser(@Param('id') id: string, @Body() dto: DeleteUserDto, @CurrentUser() user: AuthenticatedUser) {
     return this.userDelete.deleteUser(id, dto.confirmEmail, user.id);
   }
 

@@ -4,7 +4,10 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
+import { Throttle } from '@nestjs/throttler';
 import { UsersService } from './users.service';
+import { UserDeleteService } from './user-delete.service';
+import { DeleteUserDto } from './dto/delete-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 import { AssignFlatDto } from './dto/assign-flat.dto';
@@ -21,7 +24,10 @@ import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interfa
 @UseGuards(JwtAuthGuard)
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly userDelete: UserDeleteService,
+  ) {}
 
   @Get('society')
   @UseGuards(TenantGuard, RolesGuard)
@@ -100,6 +106,43 @@ export class UsersController {
   @ApiOperation({ summary: 'Remove user from current society' })
   async removeMember(@SocietyId() societyId: string, @Param('userId') userId: string) {
     await this.usersService.removeFromSociety(societyId, userId);
+  }
+
+  @Get('society/removed')
+  @UseGuards(TenantGuard, RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @ApiOperation({ summary: 'People removed from this society whose accounts still exist' })
+  async listRemoved(@SocietyId() societyId: string) {
+    return this.usersService.listRemovedMembers(societyId);
+  }
+
+  @Get('society/:userId/deletion-preview')
+  @UseGuards(TenantGuard, RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @ApiOperation({ summary: 'What deleting this member’s account would remove, and anything that stops it' })
+  async deletionPreview(
+    @SocietyId() societyId: string,
+    @Param('userId') userId: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.userDelete.preview(userId, actor.id, { societyId });
+  }
+
+  // POST rather than DELETE: the confirmation email travels in the body, and
+  // the web proxy forwards DELETE without one.
+  @Post('society/:userId/delete')
+  @UseGuards(TenantGuard, RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Permanently delete a member’s account (cannot be undone)' })
+  async deleteMember(
+    @SocietyId() societyId: string,
+    @Param('userId') userId: string,
+    @Body() dto: DeleteUserDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.userDelete.deleteUser(userId, dto.confirmEmail, actor.id, { societyId });
   }
 
   @Get('society/pending')

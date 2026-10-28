@@ -63,6 +63,19 @@ export interface UserDeletionPreview {
 type Db = Prisma.TransactionClient | PrismaService;
 
 /**
+ * Narrows a delete to one society's admin: the person must belong to that
+ * society, and to no other, so nothing outside it can be reached or erased.
+ */
+export interface DeleteScope {
+  societyId: string;
+}
+
+const maskedEmail = (email: string): string => {
+  const at = email.indexOf('@');
+  return at < 1 ? '***' : email.slice(0, Math.min(2, at)) + '***' + email.slice(at);
+};
+
+/**
  * Permanent delete of one account — what the platform admin needs when a
  * person was "removed" from a society (which only ends their membership and
  * leaves the account, and so their email and phone, taken) or has to be erased
@@ -70,8 +83,8 @@ type Db = Prisma.TransactionClient | PrismaService;
  * hangs on it; otherwise the answer is a clear list of what is in the way.
  */
 @Injectable()
-export class PlatformUserDeleteService {
-  private readonly logger = new Logger(PlatformUserDeleteService.name);
+export class UserDeleteService {
+  private readonly logger = new Logger(UserDeleteService.name);
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -81,7 +94,7 @@ export class PlatformUserDeleteService {
     return delegate.count({ where: { [field]: userId } });
   }
 
-  private async assess(db: Db, userId: string, actorId: string): Promise<UserDeletionPreview> {
+  private async assess(db: Db, userId: string, actorId: string, scope?: DeleteScope): Promise<UserDeletionPreview> {
     const user = await db.user.findUnique({
       where: { id: userId },
       select: {
@@ -98,6 +111,11 @@ export class PlatformUserDeleteService {
       },
     });
     if (!user) throw new NotFoundException('User not found');
+    // A society admin only ever sees people of their own society; anyone else
+    // is "not found", whether or not the account exists elsewhere.
+    if (scope && !user.memberships.some((m) => m.societyId === scope.societyId)) {
+      throw new NotFoundException('Member not found');
+    }
 
     const willRemove: CountLine[] = [];
     const blockedBy: CountLine[] = [];
@@ -111,8 +129,20 @@ export class PlatformUserDeleteService {
     const reasons: string[] = [];
     if (userId === actorId) reasons.push('You cannot delete your own account.');
 
+    if (scope) {
+      if (user.isPlatformAdmin) reasons.push('Platform admins cannot be deleted from a society.');
+      // Erasing the account would also take them out of every other society,
+      // which is not this admin's call (and must not be learnt from here).
+      if (user.memberships.some((m) => m.societyId !== scope.societyId)) {
+        reasons.push(
+          'This person also belongs to another society, so their account cannot be deleted from here. Remove them from your society instead.',
+        );
+      }
+    }
+
     // A live society must not be left with nobody to run it.
     for (const m of user.memberships) {
+      if (scope && m.societyId !== scope.societyId) continue;
       if (m.status !== 'ACTIVE' || m.role !== 'SOCIETY_ADMIN' || m.society.deletedAt) continue;
       const others = await db.societyMembership.count({
         where: { societyId: m.societyId, role: 'SOCIETY_ADMIN', status: 'ACTIVE', userId: { not: userId } },
@@ -122,7 +152,7 @@ export class PlatformUserDeleteService {
         reasons.push(`They are the only admin of ${name}. Make someone else an admin first, or delete the society.`);
       }
     }
-    if (user.isPlatformAdmin) {
+    if (user.isPlatformAdmin && !scope) {
       const others = await db.user.count({
         where: { isPlatformAdmin: true, isActive: true, deletedAt: null, id: { not: userId } },
       });
@@ -138,7 +168,9 @@ export class PlatformUserDeleteService {
         isActive: user.isActive,
         isPlatformAdmin: user.isPlatformAdmin,
       },
-      memberships: user.memberships.map((m) => ({
+      memberships: user.memberships
+        .filter((m) => !scope || m.societyId === scope.societyId)
+        .map((m) => ({
         society: m.society.displayName ?? m.society.name,
         role: m.role,
         status: m.status,
@@ -150,16 +182,16 @@ export class PlatformUserDeleteService {
     };
   }
 
-  preview(userId: string, actorId: string): Promise<UserDeletionPreview> {
-    return this.assess(this.prisma, userId, actorId);
+  preview(userId: string, actorId: string, scope?: DeleteScope): Promise<UserDeletionPreview> {
+    return this.assess(this.prisma, userId, actorId, scope);
   }
 
-  async deleteUser(userId: string, confirmEmail: string, actorId: string) {
+  async deleteUser(userId: string, confirmEmail: string, actorId: string, scope?: DeleteScope) {
     let step = 'checking the account';
     try {
       return await this.prisma.$transaction(
         async (tx) => {
-          const p = await this.assess(tx, userId, actorId);
+          const p = await this.assess(tx, userId, actorId, scope);
 
           if ((confirmEmail ?? '').trim().toLowerCase() !== p.user.email.toLowerCase()) {
             throw new BadRequestException('The email you typed does not match this account, so nothing was deleted.');
@@ -184,22 +216,28 @@ export class PlatformUserDeleteService {
           step = 'deleting the account';
           await tx.user.delete({ where: { id: userId } });
 
-          // The one record that survives: who erased which account, and what went with it.
+          // The one record that survives: who erased an account, and when. A
+          // platform admin's record names the person (accountability across
+          // societies). A society admin's keeps no personal details at all —
+          // only a masked address, so a deleted resident leaves no profile
+          // behind, while "an admin deleted an account on this date" stays.
           step = 'writing the audit record';
           await tx.auditLog.create({
             data: {
-              societyId: null,
+              societyId: scope?.societyId ?? null,
               actorId,
               action: AuditAction.USER_DELETED,
               entityType: 'User',
               entityId: userId,
-              oldValues: {
-                name: p.user.name,
-                email: p.user.email,
-                phone: p.user.phone,
-                isPlatformAdmin: p.user.isPlatformAdmin,
-                memberships: p.memberships,
-              } as unknown as Prisma.InputJsonValue,
+              oldValues: (scope
+                ? { email: maskedEmail(p.user.email) }
+                : {
+                    name: p.user.name,
+                    email: p.user.email,
+                    phone: p.user.phone,
+                    isPlatformAdmin: p.user.isPlatformAdmin,
+                    memberships: p.memberships,
+                  }) as unknown as Prisma.InputJsonValue,
               newValues: { action: 'USER_DELETED_PERMANENTLY', removed: p.willRemove } as unknown as Prisma.InputJsonValue,
             },
           });

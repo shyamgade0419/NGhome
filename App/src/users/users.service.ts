@@ -300,6 +300,46 @@ export class UsersService {
     });
   }
 
+  /**
+   * People this society has removed. "Remove" only ends the membership, so the
+   * account lingers (still holding its email and phone) but drops out of every
+   * member list — this is how an admin finds them again to erase them.
+   */
+  async listRemovedMembers(societyId: string) {
+    const rows = await this.prisma.societyMembership.findMany({
+      where: {
+        societyId,
+        status: 'INACTIVE',
+        user: {
+          deletedAt: null,
+          isPlatformAdmin: false,
+          // Someone who rejoined is a current member, not a removed one.
+          memberships: { none: { societyId, status: { in: ['ACTIVE', 'PENDING'] } } },
+        },
+      },
+      orderBy: { leftAt: 'desc' },
+      select: {
+        userId: true,
+        leftAt: true,
+        role: true,
+        user: { select: { firstName: true, lastName: true, email: true, phone: true } },
+        flat: { select: { flatCode: true } },
+      },
+    });
+    const seen = new Set<string>();
+    return rows
+      .filter((r) => (seen.has(r.userId) ? false : (seen.add(r.userId), true)))
+      .map((r) => ({
+        userId: r.userId,
+        name: `${r.user.firstName} ${r.user.lastName}`.trim(),
+        email: r.user.email,
+        phone: r.user.phone,
+        flatCode: r.flat?.flatCode ?? null,
+        role: r.role,
+        removedAt: r.leftAt,
+      }));
+  }
+
   async removeFromSociety(societyId: string, userId: string) {
     await this.prisma.societyMembership.updateMany({
       where: { societyId, userId },

@@ -12,7 +12,8 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { initials, cn } from '@/lib/utils';
+import { initials, cn, formatDate } from '@/lib/utils';
+import { DeleteMemberModal, type MemberToDelete } from '@/components/residents/DeleteMemberModal';
 import toast from 'react-hot-toast';
 
 interface Resident {
@@ -278,11 +279,19 @@ export default function ResidentsPage() {
   const qc = useQueryClient();
   const [page] = useState(1);
   const [editingResident, setEditingResident] = useState<Resident | null>(null);
+  const [deleting, setDeleting] = useState<MemberToDelete | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['residents', page],
     queryFn: () =>
       societyApi.residents({ page, limit: 100 }).then((r: any) => r.data),
+  });
+
+  // People removed earlier. Removing only ends the membership, so their
+  // accounts still hold an email and phone and could never be added again.
+  const { data: removed = [] } = useQuery({
+    queryKey: ['removed-members'],
+    queryFn: () => societyApi.removedMembers().then((r) => r.data),
   });
 
   const removeMutation = useMutation({
@@ -291,6 +300,7 @@ export default function ResidentsPage() {
     onSuccess: () => {
       toast.success('Member removed from society');
       qc.invalidateQueries({ queryKey: ['residents'] });
+      qc.invalidateQueries({ queryKey: ['removed-members'] });
     },
     onError: (e: any) =>
       toast.error(e?.response?.data?.message ?? 'Failed to remove member'),
@@ -457,6 +467,19 @@ export default function ResidentsPage() {
                             Remove
                           </Button>
                         )}
+
+                        {/* Delete account — erases it, freeing their email and phone */}
+                        {r.role !== 'SOCIETY_ADMIN' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-600 hover:bg-red-50"
+                            title="Delete this account permanently"
+                            onClick={() => setDeleting({ userId: r.userId, name: r.displayName, email: r.email, phone: r.phone })}
+                          >
+                            Delete…
+                          </Button>
+                        )}
                       </div>
                     </Td>
                   </Tr>
@@ -465,6 +488,41 @@ export default function ResidentsPage() {
             </Table>
           </div>
         )}
+
+        {/* Removed members — their accounts still exist until deleted here */}
+        {removed.length > 0 && (
+          <section className="mt-8" aria-label="Removed members">
+            <h2 className="text-sm font-semibold text-slate-900">Removed members ({removed.length})</h2>
+            <p className="mt-1 max-w-2xl text-xs text-slate-500">
+              These people no longer have access, but their accounts still exist, so their email and phone cannot be
+              used to sign up again. Delete an account to free them.
+            </p>
+            <div className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
+              {removed.map((m) => (
+                <div key={m.userId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-slate-900">{m.name}</p>
+                    <p className="truncate text-xs text-slate-500">
+                      {m.email}
+                      {m.flatCode ? ` · ${m.flatCode}` : ''}
+                      {m.removedAt ? ` · removed ${formatDate(m.removedAt)}` : ''}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-600 hover:bg-red-50"
+                    onClick={() => setDeleting({ userId: m.userId, name: m.name, email: m.email, phone: m.phone })}
+                  >
+                    Delete account…
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <DeleteMemberModal member={deleting} onClose={() => setDeleting(null)} />
 
         {/* Edit modal */}
         {editingResident && (

@@ -246,6 +246,15 @@ export const societyApi = {
   // Member management
   removeMember: (userId: string) => api.delete(`/users/society/${userId}/remove`),
 
+  /** People this society removed whose accounts still exist (they still hold their email and phone). */
+  removedMembers: (): Promise<{ data: RemovedMember[] }> => api.get('/users/society/removed'),
+  /** What deleting this member's account would remove, and anything that stops it. */
+  memberDeletionPreview: (userId: string): Promise<{ data: PlatformUserDeletionPreview }> =>
+    api.get(`/users/society/${userId}/deletion-preview`),
+  /** Permanent delete of a member's account. `confirmEmail` is checked again on the server. No undo. */
+  deleteMember: (userId: string, confirmEmail: string): Promise<{ data: { id: string; name: string; email: string } }> =>
+    api.post(`/users/society/${userId}/delete`, { confirmEmail }),
+
   // Edit a resident's profile info (admin only — PATCH /users/:id)
   /** Gives an admin, committee member or other flat-less member a flat. Updates their one membership. */
   assignFlat: (userId: string, flatId: string) => api.patch(`/users/society/${userId}/flat`, { flatId }),
@@ -633,6 +642,16 @@ export interface PlatformUser {
     society: { id: string; name: string; displayName: string | null };
     flat: { flatCode: string } | null;
   }[];
+}
+
+export interface RemovedMember {
+  userId: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  flatCode: string | null;
+  role: string;
+  removedAt: string | null;
 }
 
 export interface PlatformUserDeletionPreview {

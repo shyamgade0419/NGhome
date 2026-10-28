@@ -663,11 +663,18 @@ describe('what each person can see', () => {
   });
 
   it('expires stale requests whenever it lists', async () => {
-    const { service, db } = build();
-    await service.registerWalkIn(SOCIETY, guard, walkIn());
-    db.entries[0].requestedAt = new Date(Date.now() - 45 * 60_000);
-    const list: any[] = await service.gateList(SOCIETY);
-    expect(list[0].status).toBe('EXPIRED');
+    // Pinned to mid-day IST: the gate list shows "today" in IST, so a request
+    // made 45 minutes ago would fall on yesterday if this ran just after midnight.
+    jest.useFakeTimers({ now: new Date('2026-10-28T06:30:00Z') });
+    try {
+      const { service, db } = build();
+      await service.registerWalkIn(SOCIETY, guard, walkIn());
+      db.entries[0].requestedAt = new Date(Date.now() - 45 * 60_000);
+      const list: any[] = await service.gateList(SOCIETY);
+      expect(list[0].status).toBe('EXPIRED');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 

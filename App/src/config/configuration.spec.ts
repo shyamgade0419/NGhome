@@ -5,7 +5,7 @@
  * "/reset-password", which would produce a "//" in emailed links.
  */
 
-import configuration, { stripTrailingSlashes } from './configuration';
+import configuration, { addressOf, resolveMailFrom, stripTrailingSlashes } from './configuration';
 
 const KEYS = ['CORS_ORIGINS', 'APP_URL'] as const;
 const saved: Record<string, string | undefined> = {};
@@ -47,4 +47,49 @@ describe('configuration', () => {
     expect(configuration().cors.origins).toEqual(['http://localhost:3000']);
     expect(configuration().mail.appUrl).toBe('http://localhost:3001');
   });
+});
+
+describe('resolveMailFrom', () => {
+  const PLACEHOLDER = 'NG Home <no-reply@nghome.app>';
+
+  it.each([
+    ['unset', undefined, 'noreply@novagade.in', 'NG Home <noreply@novagade.in>'],
+    ['empty', '  ', 'noreply@novagade.in', 'NG Home <noreply@novagade.in>'],
+    ['the sample placeholder copied into the env', PLACEHOLDER, 'noreply@novagade.in', 'NG Home <noreply@novagade.in>'],
+    ['a bare placeholder address', 'no-reply@nghome.app', 'noreply@novagade.in', 'NG Home <noreply@novagade.in>'],
+  ])('falls back to the SMTP login when SMTP_FROM is %s', (_why, from, login, expected) => {
+    expect(resolveMailFrom(from, login)).toBe(expected);
+  });
+
+  it('leaves an address that was set on purpose exactly as written', () => {
+    expect(resolveMailFrom('Society Help <help@novagade.in>', 'noreply@novagade.in')).toBe('Society Help <help@novagade.in>');
+  });
+
+  it('keeps the placeholder when the login is not an email (an API key, say), so the console still warns', () => {
+    expect(resolveMailFrom(undefined, 'apikey')).toBe(PLACEHOLDER);
+    expect(resolveMailFrom(PLACEHOLDER, undefined)).toBe(PLACEHOLDER);
+  });
+
+  it('is what configuration() hands to the mailer', () => {
+    const saved = { f: process.env.SMTP_FROM, u: process.env.SMTP_USER };
+    try {
+      process.env.SMTP_USER = 'noreply@novagade.in';
+      delete process.env.SMTP_FROM;
+      expect(configuration().mail.from).toBe('NG Home <noreply@novagade.in>');
+    } finally {
+      if (saved.f === undefined) delete process.env.SMTP_FROM; else process.env.SMTP_FROM = saved.f;
+      if (saved.u === undefined) delete process.env.SMTP_USER; else process.env.SMTP_USER = saved.u;
+    }
+  });
+});
+
+describe('addressOf', () => {
+  it.each([
+    ['NG Home <a@b.com>', 'a@b.com'],
+    ['a@b.com', 'a@b.com'],
+    [' a@b.com ', 'a@b.com'],
+    ['apikey', null],
+    ['', null],
+    [undefined, null],
+  ])('%j -> %j', (input, out) => expect(addressOf(input as string | undefined)).toBe(out));
 });

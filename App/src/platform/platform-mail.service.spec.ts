@@ -111,3 +111,20 @@ describe('PlatformMailService.check', () => {
     await expect(new PlatformMailService(prismaWith(null), mailWith({ verify: { ok: true } })).check('nope')).rejects.toThrow(NotFoundException);
   });
 });
+
+describe('MailService.describe — sender domain', () => {
+  it('warns when the sender is on a different domain from the login', () => {
+    const setup = new MailService(mailConfig({ from: 'NG Home <help@other.com>' })).describe();
+    expect(setup.warnings.join(' ')).toMatch(/other\.com.*novagade\.in/);
+  });
+
+  it('is quiet when sender and login share a domain', () => {
+    const setup = new MailService(mailConfig({ from: 'NG Home <hello@novagade.in>' })).describe();
+    expect(setup.warnings).toEqual([]);
+  });
+
+  it('does not double-warn about the placeholder', () => {
+    const setup = new MailService(mailConfig({ from: 'NG Home <no-reply@nghome.app>' })).describe();
+    expect(setup.warnings.filter((w) => /SMTP_FROM|logs in as/.test(w))).toHaveLength(1);
+  });
+});

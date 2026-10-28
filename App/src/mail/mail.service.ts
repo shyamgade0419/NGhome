@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
+import { addressOf } from '../config/configuration';
 
 export interface MailSetup {
   configured: boolean;
@@ -187,6 +188,15 @@ export class MailService implements OnModuleInit {
     if (/@nghome.app/i.test(from)) {
       warnings.push(
         'SMTP_FROM is not set (or still the placeholder no-reply@nghome.app). Mail is sent as a domain you do not own, which many providers reject or put in spam. Set SMTP_FROM to an address on your own domain.',
+      );
+    }
+    // The login is a mailbox and the From is on a different domain: servers
+    // that only relay for their own domains refuse this (or spam-fold it).
+    const fromDomain = addressOf(from)?.split('@')[1]?.toLowerCase();
+    const loginDomain = addressOf(user)?.split('@')[1]?.toLowerCase();
+    if (fromDomain && loginDomain && fromDomain !== loginDomain && !/@nghome\.app/i.test(from)) {
+      warnings.push(
+        `Mail is sent from ${fromDomain} but the server logs in as ${loginDomain}. Many providers only allow their own domain as the sender; if reset emails do not arrive, set SMTP_FROM to an address on ${loginDomain} (or verify ${fromDomain} with your provider).`,
       );
     }
     if (production && /localhost|127.0.0.1/.test(appUrl)) {
