@@ -15,6 +15,9 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const UNIQUE = Date.now();
+// Phones are unique in the database, so they must differ on every run (emails already do);
+// otherwise the suite can only ever run once against a given database.
+const phone = (n: number) => '90' + String(UNIQUE).slice(-7) + String(n);
 
 describe('API Tenant Isolation (e2e)', () => {
   let app: INestApplication;
@@ -72,13 +75,13 @@ describe('API Tenant Isolation (e2e)', () => {
             pinCode: '600001',
             country: 'India',
             contactEmail: `soc-a-${UNIQUE}@test.example`,
-            contactPhone: '9000000001',
+            contactPhone: phone(1),
           },
           admin: {
             firstName: 'Admin',
             lastName: 'A',
             email: `admin-a-${UNIQUE}@test.example`,
-            phone: '9000000001',
+            phone: phone(1),
             password: 'TestPass123!',
           },
         })
@@ -103,13 +106,13 @@ describe('API Tenant Isolation (e2e)', () => {
             pinCode: '400001',
             country: 'India',
             contactEmail: `soc-b-${UNIQUE}@test.example`,
-            contactPhone: '9000000002',
+            contactPhone: phone(2),
           },
           admin: {
             firstName: 'Admin',
             lastName: 'B',
             email: `admin-b-${UNIQUE}@test.example`,
-            phone: '9000000002',
+            phone: phone(2),
             password: 'TestPass123!',
           },
         })

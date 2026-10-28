@@ -146,9 +146,10 @@ function build(opts: { policy?: Row; extraFlats?: Row[] } = {}) {
     // The scan statement. Applies the same rules the SQL states, using the values the service passes.
     $queryRaw: jest.fn(async (sql: Prisma.Sql) => {
       db.rawCalls.push(sql);
-      const [codeHash, societyId, now1, now2] = sql.values as [string, string, Date, Date];
+      const [codeHash, societyId] = sql.values as [string, string];
+      const now = new Date(); // the statement uses the database clock; the fake uses its own
       const inv = db.invitations.find(
-        (i) => i.codeHash === codeHash && i.societyId === societyId && i.status === 'ACTIVE' && i.validFrom <= now1 && i.validUntil >= now2 && i.usedCount < i.maxUses,
+        (i) => i.codeHash === codeHash && i.societyId === societyId && i.status === 'ACTIVE' && i.validFrom <= now && i.validUntil >= now && i.usedCount < i.maxUses,
       );
       if (!inv) return [];
       inv.usedCount += 1;
@@ -416,10 +417,12 @@ describe('scanCode — the gate', () => {
     const { service, db, made } = await withInvitation();
     await service.scanCode(SOCIETY, guard, { code: made.code, clientRequestId: 's1' });
     const text = db.rawCalls[0].strings.join('?');
-    for (const predicate of ['"codeHash" =', '"societyId" =', `"status" = 'ACTIVE'`, '"validFrom" <=', '"validUntil" >=', '"usedCount" < "maxUses"', '"usedCount" = "usedCount" + 1']) {
+    for (const predicate of ['"codeHash" =', '"societyId" =', `"status" = 'ACTIVE'`, `"validFrom" <= (NOW() AT TIME ZONE 'UTC')`, `"validUntil" >= (NOW() AT TIME ZONE 'UTC')`, '"usedCount" < "maxUses"', '"usedCount" = "usedCount" + 1']) {
       expect(text).toContain(predicate);
     }
-    expect(db.rawCalls[0].values).toEqual([hashCode(normalizeCode(made.code)!), SOCIETY, expect.any(Date), expect.any(Date)]);
+    // Only the code hash and the society are bound. A bound Date here is the time-zone bug.
+    expect(db.rawCalls[0].values).toEqual([hashCode(normalizeCode(made.code)!), SOCIETY]);
+    expect(db.rawCalls[0].values.some((v) => v instanceof Date)).toBe(false);
   });
 });
 

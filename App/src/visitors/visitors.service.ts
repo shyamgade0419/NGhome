@@ -341,6 +341,14 @@ export class VisitorsService {
    * and it counts the use in the same statement. Two guards scanning at once,
    * or a replay of a spent code, cannot both succeed. The use and the entry
    * are written in one transaction, so a failure leaves neither.
+   *
+   * The window is judged against the database's own clock in UTC, never a
+   * bound JavaScript Date. Prisma stores DateTime in naive "timestamp" columns
+   * as UTC; a bound Date reaches Postgres as "timestamptz", and comparing the two
+   * makes Postgres read the stored value in the SESSION's time zone. In any
+   * session not set to UTC that shifts every window (by 5½ hours in India;
+   * west of UTC it would accept a code that had already expired). Found by the
+   * e2e suite on a real database; a fake cannot show it.
    */
   async scanCode(societyId: string, guard: AuthenticatedUser, dto: ScanCodeDto) {
     const existing = await this.findByClientRequest(societyId, dto.clientRequestId);
@@ -356,12 +364,12 @@ export class VisitorsService {
         const rows = await tx.$queryRaw<{ id: string; flatId: string; visitorName: string; visitorPhone: string | null; visitorType: VisitorType; createdById: string }[]>(
           Prisma.sql`
             UPDATE "visitor_invitations"
-               SET "usedCount" = "usedCount" + 1, "updatedAt" = NOW()
+               SET "usedCount" = "usedCount" + 1, "updatedAt" = (NOW() AT TIME ZONE 'UTC')
              WHERE "codeHash" = ${codeHash}
                AND "societyId" = ${societyId}
                AND "status" = 'ACTIVE'
-               AND "validFrom" <= ${now}
-               AND "validUntil" >= ${now}
+               AND "validFrom" <= (NOW() AT TIME ZONE 'UTC')
+               AND "validUntil" >= (NOW() AT TIME ZONE 'UTC')
                AND "usedCount" < "maxUses"
             RETURNING "id", "flatId", "visitorName", "visitorPhone", "visitorType", "createdById"`,
         );
