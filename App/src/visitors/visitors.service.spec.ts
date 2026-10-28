@@ -183,6 +183,25 @@ const walkIn = (over: Row = {}) => ({ flatId: FLAT_A, visitorName: 'Cab Driver',
 
 // ═════════════════════════════════════════════════════════════════════════════
 
+describe('gate staff are not a household', () => {
+  const guardWithFlat = user({ id: 'guard-1', currentRole: SystemRole.SECURITY_GUARD, flatId: FLAT_A });
+
+  it('cannot invite, answer, list or cancel for a flat they happen to carry', async () => {
+    const { service } = build();
+    const reg: any = await service.registerWalkIn(SOCIETY, guard, walkIn());
+    await expect(service.createInvitation(SOCIETY, guardWithFlat, invite())).rejects.toThrow(/Gate staff/);
+    await expect(service.decide(SOCIETY, guardWithFlat, reg.entry.id, true)).rejects.toThrow(ForbiddenException);
+    await expect(service.myVisitors(SOCIETY, guardWithFlat)).rejects.toThrow(ForbiddenException);
+    await expect(service.myInvitations(SOCIETY, guardWithFlat)).rejects.toThrow(ForbiddenException);
+    await expect(service.revokeInvitation(SOCIETY, guardWithFlat, 'x')).rejects.toThrow(ForbiddenException);
+  });
+
+  it('still works the gate normally', async () => {
+    const { service } = build();
+    await expect(service.registerWalkIn(SOCIETY, guardWithFlat, walkIn())).resolves.toBeDefined();
+  });
+});
+
 describe('invitationState', () => {
   const base = { status: 'ACTIVE', validFrom: new Date('2026-10-28T10:00Z'), validUntil: new Date('2026-10-28T12:00Z'), usedCount: 0, maxUses: 1 } as any;
   const at = (s: string) => new Date(`2026-10-28T${s}Z`);

@@ -602,7 +602,15 @@ export class VisitorsService {
 
   // ── helpers ───────────────────────────────────────────────────────────────
 
+  /**
+   * The household actions — inviting, answering, seeing my flat's visitors — belong to the people who
+   * live there. Gate staff are refused even if their account happens to carry a flat (they usually
+   * joined through one): working the gate and acting as a household must stay separate.
+   */
   private requireFlat(user: AuthenticatedUser): string {
+    if (user.currentRole === SystemRole.SECURITY_GUARD) {
+      throw new ForbiddenException('Gate staff cannot use household visitor actions. Use the gate screen.');
+    }
     if (!user.flatId) throw new ForbiddenException('Only members who belong to a flat can use visitor invitations.');
     return user.flatId;
   }
