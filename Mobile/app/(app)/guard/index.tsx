@@ -18,6 +18,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { GateFlat, VisitorEntry, VisitorType, visitorsApi } from '@/api/endpoints/visitors.api';
 import { deliveriesApi } from '@/api/endpoints/deliveries.api';
 import { ParcelsPanel } from '@/components/gate/ParcelsPanel';
+import { HelpPanel } from '@/components/gate/HelpPanel';
 import { instructionsForFlat } from '@/utils/deliveries';
 import { apiErrorMessage } from '@/api/endpoints/amenities.api';
 import { useAuth } from '@/hooks/useAuth';
@@ -87,7 +88,7 @@ export default function GateScreen() {
   const [search, setSearch] = useState('');
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [codeOpen, setCodeOpen] = useState(false);
-  const [mode, setMode] = useState<'visitors' | 'parcels'>('visitors');
+  const [mode, setMode] = useState<'visitors' | 'parcels' | 'help'>('visitors');
 
   const list = useQuery({
     queryKey: ['gate-visitors', search.trim()],
@@ -220,14 +221,14 @@ export default function GateScreen() {
       </View>
 
       <View style={styles.modes}>
-        {([['visitors', 'Visitors'], ['parcels', 'Parcels']] as const).map(([key, label]) => (
+        {([['visitors', 'Visitors'], ['parcels', 'Parcels'], ['help', 'Help']] as const).map(([key, label]) => (
           <TouchableOpacity key={key} style={[styles.mode, mode === key && styles.modeActive]} onPress={() => setMode(key)} accessibilityRole="button" accessibilityState={{ selected: mode === key }}>
             <Text style={[styles.modeText, mode === key && styles.modeTextActive]}>{label}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {mode === 'parcels' ? <ParcelsPanel /> : (<>
+      {mode === 'parcels' ? <ParcelsPanel /> : mode === 'help' ? <HelpPanel /> : (<>
       <View style={styles.bigButtons}>
         <Button label="New visitor" icon={<Ionicons name="person-add-outline" size={18} color={colors.textInverse} />} onPress={() => setWalkInOpen(true)} style={{ flex: 1 }} />
         <Button label="Enter code" variant="outline" icon={<Ionicons name="keypad-outline" size={18} color={colors.primary} />} onPress={() => setCodeOpen(true)} style={{ flex: 1 }} />

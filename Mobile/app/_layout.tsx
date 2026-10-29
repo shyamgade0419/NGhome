@@ -66,6 +66,8 @@ export default function RootLayout() {
       // Anything else lands on the notification list, as before.
       if (type === 'VISITOR_REQUEST' || type === 'VISITOR_ARRIVED' || type === 'VISITOR_OVERRIDE') {
         router.push('/(app)/visitors' as any);
+      } else if (type === 'HELPER_ARRIVED' || type === 'HELPER_SUSPENDED') {
+        router.push('/(app)/household-help' as any);
       } else if (type === 'PARCEL_RECEIVED') {
         router.push('/(app)/deliveries' as any);
       } else if (type === 'VISITOR_DECISION') {
