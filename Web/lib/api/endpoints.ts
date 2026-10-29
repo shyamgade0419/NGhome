@@ -12,6 +12,7 @@ import type { Amenity, AmenityBooking, AmenityPayload } from '@/lib/amenities';
 import type { Branding } from '@/lib/branding';
 import type { VisitorEntryStatus, VisitorLogEntry, VisitorPolicy, VisitorType } from '@/lib/visitors';
 import type { ParcelLogEntry, ParcelStatus } from '@/lib/parcels';
+import type { HelperRow, HelperStatus, HelperVisitRow } from '@/lib/helpers';
 
 // Dashboard — composites several report endpoints
 export const dashboardApi = {
@@ -780,4 +781,16 @@ export const parcelsApi = {
     page?: number; limit?: number; from?: string; to?: string;
     status?: ParcelStatus; search?: string;
   }): Promise<{ data: PaginatedResponse<ParcelLogEntry> }> => api.get('/parcels', { params }),
+};
+
+// Household help — committee side. Residents add their own help and guards let them in, both in the mobile app.
+export const helpersApi = {
+  register: (params?: { page?: number; limit?: number; status?: HelperStatus; search?: string }): Promise<{ data: PaginatedResponse<HelperRow> }> =>
+    api.get('/domestic-helpers', { params }),
+  verify: (id: string) => api.post(`/domestic-helpers/${id}/verify`),
+  /** A reason is required; it is shown to the households that employ them and kept in the audit trail. */
+  suspend: (id: string, reason: string) => api.post(`/domestic-helpers/${id}/suspend`, { reason }),
+  reinstate: (id: string) => api.post(`/domestic-helpers/${id}/reinstate`),
+  visits: (params?: { page?: number; limit?: number; from?: string; to?: string; helperId?: string; search?: string }): Promise<{ data: PaginatedResponse<HelperVisitRow> }> =>
+    api.get('/domestic-helper-visits', { params }),
 };
