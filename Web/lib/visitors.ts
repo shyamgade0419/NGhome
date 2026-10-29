@@ -5,7 +5,7 @@
 
 export type VisitorType = 'GUEST' | 'CAB' | 'DELIVERY' | 'SERVICE' | 'OTHER';
 export type VisitorEntryStatus = 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'CHECKED_IN' | 'CHECKED_OUT' | 'EXPIRED';
-export type DecisionMethod = 'RESIDENT' | 'POLICY' | 'INVITATION' | 'ADMIN_OVERRIDE';
+export type DecisionMethod = 'RESIDENT' | 'POLICY' | 'INVITATION' | 'ADMIN_OVERRIDE' | 'EXPECTATION';
 
 export interface VisitorLogEntry {
   id: string;
@@ -77,4 +77,5 @@ export const METHOD_LABEL: Record<DecisionMethod, string> = {
   POLICY: 'Society rule (no approval needed)',
   INVITATION: 'Invitation code',
   ADMIN_OVERRIDE: 'Committee override',
+  EXPECTATION: 'Delivery the resident expected',
 };

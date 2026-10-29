@@ -29,6 +29,7 @@ import {
   PiggyBank,
   CalendarCheck,
   DoorOpen,
+  Package,
 } from 'lucide-react';
 import { cn, initials } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -54,6 +55,7 @@ const ADMIN_NAV = [
   { href: '/documents', icon: FolderOpen, label: 'Documents' },
   { href: '/amenities', icon: CalendarCheck, label: 'Amenities' },
   { href: '/visitors', icon: DoorOpen, label: 'Visitors' },
+  { href: '/parcels', icon: Package, label: 'Parcels' },
   { href: '/salaries', icon: UserCircle, label: 'Salaries' },
   { href: '/audit-logs', icon: ShieldCheck, label: 'Audit Logs' },
   { href: '/notifications', icon: Bell, label: 'Notifications' },

@@ -11,6 +11,7 @@ import type {
 import type { Amenity, AmenityBooking, AmenityPayload } from '@/lib/amenities';
 import type { Branding } from '@/lib/branding';
 import type { VisitorEntryStatus, VisitorLogEntry, VisitorPolicy, VisitorType } from '@/lib/visitors';
+import type { ParcelLogEntry, ParcelStatus } from '@/lib/parcels';
 
 // Dashboard — composites several report endpoints
 export const dashboardApi = {
@@ -771,4 +772,12 @@ export const visitorsApi = {
     api.post(`/visitors/${id}/override`, { action, reason }),
   policy: (): Promise<{ data: VisitorPolicy }> => api.get('/visitors/policy'),
   updatePolicy: (patch: Partial<VisitorPolicy>): Promise<{ data: VisitorPolicy }> => api.put('/visitors/policy', patch),
+};
+
+// Parcels at the gate — committee side. Guards record and hand over; residents see theirs, both in the mobile app.
+export const parcelsApi = {
+  log: (params?: {
+    page?: number; limit?: number; from?: string; to?: string;
+    status?: ParcelStatus; search?: string;
+  }): Promise<{ data: PaginatedResponse<ParcelLogEntry> }> => api.get('/parcels', { params }),
 };
