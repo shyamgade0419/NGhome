@@ -106,6 +106,10 @@ export function EmailCheckCard() {
           </ol>
 
           <dl className="space-y-1.5 rounded-lg bg-gray-950/60 p-3">
+            <Row
+              label="Settings from"
+              value={{ console: 'Saved in this console', environment: "The server's environment variables", none: 'Nowhere yet' }[result.setup.source]}
+            />
             <Row label="Server" value={result.setup.host ? `${result.setup.host}:${result.setup.port ?? ''}` : ''} />
             <Row label="Login" value={result.setup.user ?? ''} />
             <Row label="Sent as" value={result.setup.from} />

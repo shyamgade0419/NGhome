@@ -585,6 +585,12 @@ export const platformApi = {
     api.post('/platform/admins', body),
   /** Logs in to the mail server and sends a real test message to the admin asking. */
   checkMail: (): Promise<{ data: MailCheckResult }> => api.post('/platform/mail/check'),
+  /** The mail login saved in the console (never the password) and where mail is sent from now. */
+  mailSettings: (): Promise<{ data: MailSettingsView }> => api.get('/platform/mail/settings'),
+  /** A blank password keeps the saved one. */
+  saveMailSettings: (body: MailSettingsInput): Promise<{ data: MailSettingsView }> => api.put('/platform/mail/settings', body),
+  /** Forget the saved login and go back to the server's SMTP_* environment variables. */
+  clearMailSettings: (): Promise<{ data: MailSettingsView }> => api.delete('/platform/mail/settings'),
   /** For an admin who was invited but has not signed in yet. */
   resendInvite: (id: string): Promise<{ data: { id: string; email: string } & InviteMailResult }> =>
     api.post(`/platform/admins/${id}/resend-invite`),
@@ -609,9 +615,32 @@ export interface InviteMailResult {
   emailError?: string;
 }
 
+export interface MailSettingsInput {
+  host: string;
+  port: number;
+  username: string | null;
+  password: string | null;
+  fromAddress: string | null;
+  fromName: string | null;
+}
+
+export interface MailSettingsView {
+  /** Where mail is sent from right now. */
+  source: 'console' | 'environment' | 'none';
+  host: string | null;
+  port: number | null;
+  username: string | null;
+  fromAddress: string | null;
+  fromName: string | null;
+  hasPassword: boolean;
+  passwordUnreadable: boolean;
+  environment: { host: string | null; port: number | null; user: string | null };
+  updatedAt: string | null;
+}
+
 /** The outcome of the console's email check. The password is never part of it. */
 export interface MailCheckResult {
-  setup: { configured: boolean; host: string | null; port: number | null; user: string | null; from: string; appUrl: string; warnings: string[] };
+  setup: { source: 'console' | 'environment' | 'none'; configured: boolean; host: string | null; port: number | null; user: string | null; from: string; appUrl: string; warnings: string[] };
   connection: { ok: true } | { ok: false; reason: string };
   test: { to: string; ok: true } | { to: string; ok: false; reason: string } | null;
 }

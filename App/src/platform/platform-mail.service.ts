@@ -53,7 +53,7 @@ export class PlatformMailService {
     const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { email: true } });
     if (!actor) throw new NotFoundException('Admin not found');
 
-    const setup = this.mail.describe();
+    const setup = await this.mail.describe();
     const connection = await within(this.mail.verifyConnection(), 'Logging in');
     if (!connection.ok) return { setup, connection, test: null };
 

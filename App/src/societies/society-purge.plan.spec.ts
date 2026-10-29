@@ -49,7 +49,7 @@ describe('society purge plan (derived from the real Prisma schema)', () => {
   // The guard that makes a new table impossible to forget: anything without a
   // societyId has to be accounted for, either as a cascade child of a purged
   // table or as one of the few tables that are not society data at all.
-  const NOT_SOCIETY_DATA = ['User', 'Society', 'PlatformSettings', 'PushToken', 'PasswordResetToken'];
+  const NOT_SOCIETY_DATA = ['User', 'Society', 'PlatformSettings', 'PlatformMailSettings', 'PushToken', 'PasswordResetToken'];
 
   it('accounts for every table that has no societyId', () => {
     const unaccounted = models

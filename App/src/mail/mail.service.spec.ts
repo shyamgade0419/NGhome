@@ -23,8 +23,8 @@ describe('MailService boot check', () => {
   });
   afterEach(() => jest.restoreAllMocks());
 
-  it('says plainly when email is not configured', () => {
-    new MailService(configWith({})).onModuleInit();
+  it('says plainly when email is not configured', async () => {
+    await new MailService(configWith({})).reportStatus();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('NOT being sent'));
   });
 
@@ -32,8 +32,8 @@ describe('MailService boot check', () => {
     const svc = new MailService(configWith({ host: 'smtp.example.com', port: 465, user: 'a@b.c', pass: 'x' }));
     jest.spyOn(svc, 'verifyConnection').mockResolvedValue({ ok: true });
 
-    svc.onModuleInit();
-    await new Promise((r) => setImmediate(r));
+    await svc.reportStatus();
+
     expect(log).toHaveBeenCalledWith(expect.stringContaining('SMTP ready'));
   });
 
@@ -41,8 +41,8 @@ describe('MailService boot check', () => {
     const svc = new MailService(configWith({ host: 'smtp.example.com', port: 465, user: 'a@b.c', pass: 'x' }));
     jest.spyOn(svc, 'verifyConnection').mockResolvedValue({ ok: false, reason: 'Invalid login: 535' });
 
-    svc.onModuleInit();
-    await new Promise((r) => setImmediate(r));
+    await svc.reportStatus();
+
     expect(error).toHaveBeenCalledWith(expect.stringContaining('Invalid login: 535'));
   });
 

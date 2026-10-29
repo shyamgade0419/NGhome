@@ -28,44 +28,44 @@ describe('maskEmail', () => {
 });
 
 describe('MailService.describe', () => {
-  it('reports the setup without ever including the password', () => {
-    const setup = new MailService(mailConfig()).describe();
+  it('reports the setup without ever including the password', async () => {
+    const setup = await new MailService(mailConfig()).describe();
     expect(setup).toMatchObject({ configured: true, host: 'smtp.example.com', port: 587, user: 'no***@novagade.in' });
     expect(JSON.stringify(setup)).not.toContain('SUPER-SECRET-PASSWORD');
     expect(setup.warnings).toEqual([]);
   });
 
-  it('says so when no SMTP host is set at all', () => {
-    const setup = new MailService(mailConfig({ host: undefined })).describe();
+  it('says so when no SMTP host is set at all', async () => {
+    const setup = await new MailService(mailConfig({ host: undefined })).describe();
     expect(setup.configured).toBe(false);
-    expect(setup.warnings.join(' ')).toMatch(/SMTP_HOST is not set/);
+    expect(setup.warnings.join(' ')).toMatch(/No mail server is set/);
   });
 
-  it('warns about the placeholder sender domain that many providers reject', () => {
-    const setup = new MailService(mailConfig({ from: 'NG Home <no-reply@nghome.app>' })).describe();
+  it('warns about the placeholder sender domain that many providers reject', async () => {
+    const setup = await new MailService(mailConfig({ from: 'NG Home <no-reply@nghome.app>' })).describe();
     expect(setup.warnings.join(' ')).toMatch(/SMTP_FROM/);
   });
 
-  it('warns when production links would point at localhost', () => {
-    const setup = new MailService(mailConfig({ appUrl: 'http://localhost:3001' })).describe();
+  it('warns when production links would point at localhost', async () => {
+    const setup = await new MailService(mailConfig({ appUrl: 'http://localhost:3001' })).describe();
     expect(setup.warnings.join(' ')).toMatch(/APP_URL/);
   });
 
-  it('does not nag about localhost in development', () => {
-    const setup = new MailService(mailConfig({ appUrl: 'http://localhost:3001' }, 'development')).describe();
+  it('does not nag about localhost in development', async () => {
+    const setup = await new MailService(mailConfig({ appUrl: 'http://localhost:3001' }, 'development')).describe();
     expect(setup.warnings.join(' ')).not.toMatch(/APP_URL/);
   });
 
-  it('warns when there is a host but no login', () => {
-    const setup = new MailService(mailConfig({ user: undefined })).describe();
-    expect(setup.warnings.join(' ')).toMatch(/SMTP_USER/);
+  it('warns when there is a host but no login', async () => {
+    const setup = await new MailService(mailConfig({ user: undefined })).describe();
+    expect(setup.warnings.join(' ')).toMatch(/no mail login/);
   });
 });
 
 describe('MailService.sendTest', () => {
   it('reports that nothing was sent when SMTP is not configured', async () => {
     const svc = new MailService(mailConfig({ host: undefined }));
-    await expect(svc.sendTest('a@b.com')).resolves.toEqual({ ok: false, reason: 'SMTP_HOST is not set' });
+    await expect(svc.sendTest('a@b.com')).resolves.toEqual({ ok: false, reason: 'No mail server is set' });
   });
 });
 
@@ -132,18 +132,18 @@ describe('PlatformMailService.check', () => {
 });
 
 describe('MailService.describe — sender domain', () => {
-  it('warns when the sender is on a different domain from the login', () => {
-    const setup = new MailService(mailConfig({ from: 'NG Home <help@other.com>' })).describe();
+  it('warns when the sender is on a different domain from the login', async () => {
+    const setup = await new MailService(mailConfig({ from: 'NG Home <help@other.com>' })).describe();
     expect(setup.warnings.join(' ')).toMatch(/other\.com.*novagade\.in/);
   });
 
-  it('is quiet when sender and login share a domain', () => {
-    const setup = new MailService(mailConfig({ from: 'NG Home <hello@novagade.in>' })).describe();
+  it('is quiet when sender and login share a domain', async () => {
+    const setup = await new MailService(mailConfig({ from: 'NG Home <hello@novagade.in>' })).describe();
     expect(setup.warnings).toEqual([]);
   });
 
-  it('does not double-warn about the placeholder', () => {
-    const setup = new MailService(mailConfig({ from: 'NG Home <no-reply@nghome.app>' })).describe();
+  it('does not double-warn about the placeholder', async () => {
+    const setup = await new MailService(mailConfig({ from: 'NG Home <no-reply@nghome.app>' })).describe();
     expect(setup.warnings.filter((w) => /SMTP_FROM|logs in as/.test(w))).toHaveLength(1);
   });
 });

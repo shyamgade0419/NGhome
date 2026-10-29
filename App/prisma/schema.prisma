@@ -1363,6 +1363,24 @@ model PlatformSettings {
   @@map("platform_settings")
 }
 
+/// The outgoing-mail login, set from the platform console instead of the server's
+/// environment. One row (id "singleton"). When it has a host it wins over the
+/// SMTP_* environment variables; deleting the row falls back to them. The
+/// password is encrypted (AES-256-GCM) and never sent back to any client.
+model PlatformMailSettings {
+  id          String   @id @default("singleton")
+  host        String
+  port        Int
+  username    String?
+  passwordEnc String?
+  fromAddress String?
+  fromName    String?
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("platform_mail_settings")
+}
+
 // ─── AMENITY BOOKING ──────────────────────────────────────────────────────────
 
 enum AmenityBookingMode {

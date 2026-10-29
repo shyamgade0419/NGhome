@@ -16,6 +16,7 @@ import { PlatformShell } from '@/components/platform/PlatformShell';
 import { PricingSupportCard } from '@/components/platform/PricingSupportCard';
 import { Card, DButton, DModal, DTable, Empty, Loading, PageHeader, Pill, TableWrap, Td } from '@/components/platform/ui';
 import { EmailCheckCard } from '@/components/platform/EmailCheckCard';
+import { MailSettingsCard } from '@/components/platform/MailSettingsCard';
 import { formatDate, formatDateTime } from '@/lib/utils';
 
 const inputClass =
@@ -198,6 +199,8 @@ export default function PlatformSettingsPage() {
             </TableWrap>
           )}
         </section>
+
+        <MailSettingsCard />
 
         <EmailCheckCard />
 

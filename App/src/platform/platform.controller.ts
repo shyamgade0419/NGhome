@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -11,6 +11,8 @@ import { UserDeleteService } from '../users/user-delete.service';
 import { DeleteUserDto } from '../users/dto/delete-user.dto';
 import { SetAdminStatusDto } from './dto/set-admin-status.dto';
 import { UpdatePlatformSettingsDto } from './dto/update-platform-settings.dto';
+import { UpdateMailSettingsDto } from './dto/update-mail-settings.dto';
+import { MailSettingsStore } from '../mail/mail-settings.store';
 import { InvitePlatformAdminDto } from './dto/invite-platform-admin.dto';
 
 @ApiTags('Platform')
@@ -22,6 +24,7 @@ export class PlatformController {
     private readonly platform: PlatformService,
     private readonly platformMail: PlatformMailService,
     private readonly userDelete: UserDeleteService,
+    private readonly mailSettings: MailSettingsStore,
   ) {}
 
   @Get('storage')
@@ -37,6 +40,28 @@ export class PlatformController {
   @ApiOperation({ summary: '[Platform Admin] Test the SFTP connection (connect + write)' })
   checkStorage() {
     return this.platform.checkStorageConnection();
+  }
+
+  // The mail login managed from the console. It wins over the SMTP_* environment
+  // variables when saved; DELETE falls back to them. The password is never returned.
+  @Get('mail/settings')
+  @ApiOperation({ summary: '[Platform Admin] The saved mail login (never the password) and where mail is sent from now' })
+  getMailSettings() {
+    return this.mailSettings.view();
+  }
+
+  @Put('mail/settings')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: '[Platform Admin] Save the mail login. A blank password keeps the saved one.' })
+  saveMailSettings(@Body() dto: UpdateMailSettingsDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.mailSettings.save(dto, user.id);
+  }
+
+  @Delete('mail/settings')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: '[Platform Admin] Forget the saved mail login and go back to the SMTP_* environment variables' })
+  clearMailSettings(@CurrentUser() user: AuthenticatedUser) {
+    return this.mailSettings.clear(user.id);
   }
 
   // Logs in to the mail server and sends a real message to the admin asking, so

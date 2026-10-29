@@ -1,9 +1,12 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import { addressOf } from '../config/configuration';
+import { MailSettingsStore } from './mail-settings.store';
 
 export interface MailSetup {
+  /** Where these settings come from: the platform console, the server environment, or nowhere. */
+  source: 'console' | 'environment' | 'none';
   configured: boolean;
   host: string | null;
   port: number | null;
@@ -22,30 +25,89 @@ export function maskEmail(value: string | null): string | null {
   return value.slice(0, Math.min(2, at)) + '***' + value.slice(at);
 }
 
+interface ResolvedMail {
+  source: 'console' | 'environment' | 'none';
+  host: string | null;
+  port: number;
+  user: string | null;
+  pass: string | null;
+  from: string;
+  passwordUnreadable: boolean;
+}
+
 @Injectable()
 export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
-  private transporter: nodemailer.Transporter | null = null;
+  private cached: { key: string; transporter: nodemailer.Transporter } | null = null;
 
-  constructor(private readonly config: ConfigService) {
-    const host = this.config.get<string>('mail.host');
-    if (host) {
-      this.transporter = nodemailer.createTransport({
-        host,
-        port: this.config.get<number>('mail.port'),
-        secure: this.config.get<number>('mail.port') === 465,
-        auth: {
-          user: this.config.get<string>('mail.user'),
-          pass: this.config.get<string>('mail.pass'),
-        },
-        // nodemailer waits two minutes by default. A firewalled mail port
-        // drops packets rather than refusing them, so without these a broken
-        // setup looks like a hang rather than an error.
-        connectionTimeout: 15_000,
-        greetingTimeout: 15_000,
-        socketTimeout: 30_000,
-      });
+  constructor(
+    private readonly config: ConfigService,
+    // Optional so the mail service still works from the environment alone.
+    @Optional() private readonly settings?: MailSettingsStore,
+  ) {}
+
+  /**
+   * The login in force right now. Read on every send, so saving new settings in
+   * the console takes effect at once with no restart: the console's settings
+   * when saved, otherwise the SMTP_* environment variables.
+   */
+  private async resolve(): Promise<ResolvedMail> {
+    let stored: Awaited<ReturnType<MailSettingsStore['load']>> = null;
+    try {
+      stored = (await this.settings?.load()) ?? null;
+    } catch (err) {
+      // e.g. the table is not there yet. Mail must keep working from the environment.
+      this.logger.warn(
+        `Could not read the mail settings saved in the console, using the environment: ${err instanceof Error ? err.message : err}`,
+      );
     }
+    if (stored) {
+      const mailbox = stored.fromAddress ?? addressOf(stored.username);
+      const name = (stored.fromName ?? 'NG Home').replace(/[<>"\r\n]/g, '').trim() || 'NG Home';
+      return {
+        source: 'console',
+        host: stored.host,
+        port: stored.port,
+        user: stored.username,
+        pass: stored.password,
+        passwordUnreadable: stored.passwordUnreadable,
+        from: mailbox ? `"${name}" <${mailbox}>` : (this.config.get<string>('mail.from') ?? ''),
+      };
+    }
+    const host = this.config.get<string>('mail.host') || null;
+    return {
+      source: host ? 'environment' : 'none',
+      host,
+      port: this.config.get<number>('mail.port') ?? 587,
+      user: this.config.get<string>('mail.user') || null,
+      pass: this.config.get<string>('mail.pass') ?? null,
+      passwordUnreadable: false,
+      from: this.config.get<string>('mail.from') ?? '',
+    };
+  }
+
+  /** A transporter for the login in force, reused until the login changes. */
+  private transportFor(r: ResolvedMail): nodemailer.Transporter | null {
+    if (!r.host) return null;
+    const key = [r.host, r.port, r.user, r.pass].join('\u0000');
+    if (this.cached?.key !== key) {
+      this.cached = {
+        key,
+        transporter: nodemailer.createTransport({
+          host: r.host,
+          port: r.port,
+          secure: r.port === 465,
+          auth: r.user ? { user: r.user, pass: r.pass ?? undefined } : undefined,
+          // nodemailer waits two minutes by default. A firewalled mail port
+          // drops packets rather than refusing them, so without these a broken
+          // setup looks like a hang rather than an error.
+          connectionTimeout: 15_000,
+          greetingTimeout: 15_000,
+          socketTimeout: 30_000,
+        }),
+      };
+    }
+    return this.cached.transporter;
   }
 
   /**
@@ -62,32 +124,31 @@ export class MailService implements OnModuleInit {
    * over a problem that only affects email.
    */
   onModuleInit() {
-    if (!this.transporter) {
+    // Unawaited, and Node 22 kills the process on an unhandled rejection —
+    // so the catch stays, in case anything in the check ever does throw.
+    void this.reportStatus().catch((err) =>
+      this.logger.error(`SMTP check could not run: ${err instanceof Error ? err.message : err}`),
+    );
+  }
+
+  /** The boot-time log line: whether email works, and which settings it is using. */
+  async reportStatus(): Promise<void> {
+    const r = await this.resolve();
+    if (!r.host) {
       this.logger.warn(
         'SMTP_HOST is not set — password reset emails are NOT being sent. ' +
           'The reset link is written to this log instead.',
       );
       return;
     }
-    // verifyConnection already turns errors into a result, but this chain is
-    // deliberately unawaited and Node 22 kills the process on an unhandled
-    // rejection — so the catch stays, in case anything here ever does throw.
-    void this.verifyConnection()
-      .then((result) => {
-        if (result.ok) {
-          this.logger.log(
-            `SMTP ready — ${this.config.get('mail.user')} via ` +
-              `${this.config.get('mail.host')}:${this.config.get('mail.port')}`,
-          );
-        } else {
-          this.logger.error(
-            `SMTP check failed — password reset emails will not arrive: ${result.reason}`,
-          );
-        }
-      })
-      .catch((err) =>
-        this.logger.error(`SMTP check could not run: ${err instanceof Error ? err.message : err}`),
-      );
+    // verifyConnection already turns errors into a result.
+    const result = await this.verifyConnection();
+    const origin = r.source === 'console' ? 'settings saved in the console' : 'server environment';
+    if (result.ok) {
+      this.logger.log(`SMTP ready — ${r.user} via ${r.host}:${r.port} (${origin})`);
+    } else {
+      this.logger.error(`SMTP check failed (${origin}) — password reset emails will not arrive: ${result.reason}`);
+    }
   }
 
   /**
@@ -142,7 +203,9 @@ export class MailService implements OnModuleInit {
       'NG Home by NovaGade',
     ].join('\n');
 
-    if (!this.transporter) {
+    const resolved = await this.resolve();
+    const transporter = this.transportFor(resolved);
+    if (!transporter) {
       // Only in development: this branch runs whenever SMTP happens to be
       // unconfigured, which is not the same thing as being in development —
       // a production deployment that hasn't set SMTP_HOST yet (or lost its
@@ -160,13 +223,7 @@ export class MailService implements OnModuleInit {
       return false;
     }
 
-    await this.transporter.sendMail({
-      from: this.config.get<string>('mail.from'),
-      to,
-      subject,
-      html,
-      text,
-    });
+    await transporter.sendMail({ from: resolved.from, to, subject, html, text });
     return true;
   }
 
@@ -175,19 +232,25 @@ export class MailService implements OnModuleInit {
    * that is likely to stop mail arriving. For the platform console's email
    * check, so a misconfiguration can be seen without reading container logs.
    */
-  describe(): MailSetup {
-    const host = this.config.get<string>('mail.host') || null;
-    const user = this.config.get<string>('mail.user') || null;
-    const from = this.config.get<string>('mail.from') || '';
+  async describe(): Promise<MailSetup> {
+    const r = await this.resolve();
+    const host = r.host;
+    const user = r.user;
+    const from = r.from;
     const appUrl = this.config.get<string>('mail.appUrl') || '';
     const production = this.config.get<string>('nodeEnv') === 'production';
+    // Which knob to turn depends on where the settings came from.
+    const fromKnob = r.source === 'console' ? 'the From address' : 'SMTP_FROM';
 
     const warnings: string[] = [];
-    if (!host) warnings.push('SMTP_HOST is not set, so no email can be sent at all.');
-    if (host && !user) warnings.push('SMTP_USER is not set. Most mail servers refuse to send without logging in.');
-    if (/@nghome.app/i.test(from)) {
+    if (!host) warnings.push('No mail server is set, so no email can be sent at all. Add one under Settings → Email, or set SMTP_HOST.');
+    if (host && !user) warnings.push('There is no mail login set. Most mail servers refuse to send without logging in.');
+    if (r.passwordUnreadable) {
+      warnings.push("The saved mail password can no longer be read (the server's secret key changed). Type the password in again and save.");
+    }
+    if (/@nghome\.app/i.test(from)) {
       warnings.push(
-        'SMTP_FROM is not set (or still the placeholder no-reply@nghome.app). Mail is sent as a domain you do not own, which many providers reject or put in spam. Set SMTP_FROM to an address on your own domain.',
+        `The sender is the placeholder no-reply@nghome.app. Mail is sent as a domain you do not own, which many providers reject or put in spam. Set ${fromKnob} to an address on your own domain.`,
       );
     }
     // The login is a mailbox and the From is on a different domain: servers
@@ -196,7 +259,7 @@ export class MailService implements OnModuleInit {
     const loginDomain = addressOf(user)?.split('@')[1]?.toLowerCase();
     if (fromDomain && loginDomain && fromDomain !== loginDomain && !/@nghome\.app/i.test(from)) {
       warnings.push(
-        `Mail is sent from ${fromDomain} but the server logs in as ${loginDomain}. Many providers only allow their own domain as the sender; if reset emails do not arrive, set SMTP_FROM to an address on ${loginDomain} (or verify ${fromDomain} with your provider).`,
+        `Mail is sent from ${fromDomain} but the server logs in as ${loginDomain}. Many providers only allow their own domain as the sender; if reset emails do not arrive, set ${fromKnob} to an address on ${loginDomain} (or verify ${fromDomain} with your provider).`,
       );
     }
     if (production && /localhost|127.0.0.1/.test(appUrl)) {
@@ -204,9 +267,10 @@ export class MailService implements OnModuleInit {
     }
 
     return {
+      source: r.source,
       configured: !!host,
       host,
-      port: this.config.get<number>('mail.port') ?? null,
+      port: host ? r.port : null,
       user: maskEmail(user),
       from,
       appUrl,
@@ -216,10 +280,12 @@ export class MailService implements OnModuleInit {
 
   /** Sends a short plain message to one address and reports what the mail server said. */
   async sendTest(to: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-    if (!this.transporter) return { ok: false, reason: 'SMTP_HOST is not set' };
+    const resolved = await this.resolve();
+    const transporter = this.transportFor(resolved);
+    if (!transporter) return { ok: false, reason: 'No mail server is set' };
     try {
-      await this.transporter.sendMail({
-        from: this.config.get<string>('mail.from'),
+      await transporter.sendMail({
+        from: resolved.from,
         to,
         subject: 'NG Home email test',
         text: 'This is a test message from NG Home. If you can read it, the server can send email.',
@@ -237,9 +303,10 @@ export class MailService implements OnModuleInit {
    * caller can report it plainly.
    */
   async verifyConnection(): Promise<{ ok: true } | { ok: false; reason: string }> {
-    if (!this.transporter) return { ok: false, reason: 'SMTP_HOST is not set' };
+    const transporter = this.transportFor(await this.resolve());
+    if (!transporter) return { ok: false, reason: 'No mail server is set' };
     try {
-      await this.transporter.verify();
+      await transporter.verify();
       return { ok: true };
     } catch (err) {
       return { ok: false, reason: err instanceof Error ? err.message : String(err) };

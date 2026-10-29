@@ -79,6 +79,9 @@ export default () => ({
       basePath: process.env.SFTP_BASE_PATH ?? '/ng-home-documents',
     },
   },
+  // Locks secrets saved from the platform console (the mail password). Falls back
+  // to JWT_ACCESS_SECRET when unset; once set, it must not change.
+  settingsEncryptionKey: process.env.SETTINGS_ENCRYPTION_KEY,
   mail: {
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT ?? '587', 10),
