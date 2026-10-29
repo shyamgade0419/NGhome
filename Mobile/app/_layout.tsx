@@ -68,6 +68,8 @@ export default function RootLayout() {
         router.push('/(app)/visitors' as any);
       } else if (type === 'HELPER_ARRIVED' || type === 'HELPER_SUSPENDED') {
         router.push('/(app)/household-help' as any);
+      } else if (type === 'PARKING_ALLOCATED' || type === 'PARKING_RELEASED' || type === 'VEHICLE_REMOVED') {
+        router.push('/(app)/vehicles' as any);
       } else if (type === 'PARCEL_RECEIVED') {
         router.push('/(app)/deliveries' as any);
       } else if (type === 'VISITOR_DECISION') {

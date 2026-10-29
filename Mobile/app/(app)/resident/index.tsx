@@ -314,7 +314,12 @@ export default function ResidentDashboard() {
             </View>
             <Text style={styles.quickLinkText} numberOfLines={2}>Household{'\n'}Help</Text>
           </TouchableOpacity>
-          <View style={[styles.quickLink, { opacity: 0 }]} pointerEvents="none" />
+          <TouchableOpacity style={styles.quickLink} activeOpacity={0.8} onPress={() => router.push('/(app)/vehicles' as any)}>
+            <View style={[styles.quickLinkIcon, { backgroundColor: colors.infoLight }]}>
+              <Ionicons name="car-outline" size={20} color={colors.info} />
+            </View>
+            <Text style={styles.quickLinkText} numberOfLines={2}>Vehicles{'\n'}& Parking</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Announcements preview */}
