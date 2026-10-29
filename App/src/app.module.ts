@@ -36,6 +36,7 @@ import { PlatformModule } from './platform/platform.module';
 import { AmenitiesModule } from './amenities/amenities.module';
 import { VisitorsModule } from './visitors/visitors.module';
 import { DeliveriesModule } from './deliveries/deliveries.module';
+import { HelpersModule } from './helpers/helpers.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { EventsModule } from './events/events.module';
@@ -88,6 +89,7 @@ import { ChatModule } from './chat/chat.module';
     AmenitiesModule,
     VisitorsModule,
     DeliveriesModule,
+    HelpersModule,
   ],
   providers: [
     // Global guards

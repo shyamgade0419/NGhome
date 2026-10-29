@@ -385,6 +385,8 @@ model Society {
   visitorEntries       VisitorEntry[]
   deliveryExpectations DeliveryExpectation[]
   parcels              Parcel[]
+  domesticHelpers      DomesticHelper[]
+  domesticHelperVisits DomesticHelperVisit[]
 
   @@map("societies")
 }
@@ -492,6 +494,7 @@ model Flat {
   visitorEntries       VisitorEntry[]
   deliveryExpectations DeliveryExpectation[]
   parcels              Parcel[]
+  domesticHelperFlats  DomesticHelperFlat[]
 
   @@unique([societyId, flatCode])
   @@index([societyId])
@@ -1644,4 +1647,98 @@ model Parcel {
   @@index([flatId, receivedAt])
   @@index([societyId, receivedAt])
   @@map("parcels")
+}
+
+// ─── Domestic help ───────────────────────────────────────────────────────────
+
+enum HelperRole {
+  MAID
+  COOK
+  DRIVER
+  NANNY
+  CLEANER
+  GARDENER
+  OTHER
+}
+
+enum HelperStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+/// Someone who works in the society's homes (a maid, cook, driver…). One record
+/// per person per society: the same person working for several flats is linked
+/// to each flat, found by phone number. The pass code the guard can check is
+/// shown once and only its hash is stored.
+model DomesticHelper {
+  id              String       @id @default(uuid())
+  societyId       String
+  name            String
+  /// Digits only, India country code removed. Unique per society when present.
+  phone           String?
+  role            HelperRole   @default(MAID)
+  status          HelperStatus @default(ACTIVE)
+  codeHash        String       @unique
+  createdById     String
+  /// A committee member confirmed who this person is.
+  verifiedAt      DateTime?
+  verifiedById    String?
+  suspendedAt     DateTime?
+  suspendedById   String?
+  suspendedReason String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  society Society               @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  flats   DomesticHelperFlat[]
+  visits  DomesticHelperVisit[]
+
+  @@unique([societyId, phone])
+  @@index([societyId, status])
+  @@map("domestic_helpers")
+}
+
+/// A flat the helper works for. Removing a flat ends the link without erasing the history.
+model DomesticHelperFlat {
+  id        String   @id @default(uuid())
+  societyId String
+  helperId  String
+  flatId    String
+  addedById String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  helper DomesticHelper @relation(fields: [helperId], references: [id], onDelete: Cascade)
+  flat   Flat           @relation(fields: [flatId], references: [id], onDelete: Cascade)
+
+  @@unique([helperId, flatId])
+  @@index([societyId, flatId, active])
+  @@map("domestic_helper_flats")
+}
+
+/// One stay inside the society: in at the gate, out at the gate. At most one is
+/// open per helper (a partial unique index in the migration enforces it).
+/// autoClosed marks a stay whose exit was never recorded.
+model DomesticHelperVisit {
+  id              String    @id @default(uuid())
+  societyId       String
+  helperId        String
+  checkedInAt     DateTime  @default(now())
+  checkedInById   String?
+  /// CODE | GUARD
+  method          String
+  checkedOutAt    DateTime?
+  checkedOutById  String?
+  autoClosed      Boolean   @default(false)
+  clientRequestId String?
+  createdAt       DateTime  @default(now())
+
+  society Society        @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  helper  DomesticHelper @relation(fields: [helperId], references: [id], onDelete: Cascade)
+
+  @@unique([societyId, clientRequestId])
+  @@index([societyId, checkedInAt])
+  @@index([helperId, checkedInAt])
+  @@map("domestic_helper_visits")
 }
