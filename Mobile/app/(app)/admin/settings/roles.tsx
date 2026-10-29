@@ -13,6 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { societiesApi } from '@/api/endpoints/societies.api';
+import { membersApi, type RemovedMember } from '@/api/endpoints/members.api';
+import { DeleteMemberSheet, type MemberToDelete } from '@/components/members/DeleteMemberSheet';
 import apiClient from '@/api/client';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -51,6 +53,8 @@ export default function RolesScreen() {
   // Role picker as a modal — Alert.alert only renders 3 buttons on Android,
   // which silently dropped two of the five role options.
   const [roleTarget, setRoleTarget] = useState<Member | null>(null);
+  const [tab, setTab] = useState<'members' | 'removed'>('members');
+  const [deleteTarget, setDeleteTarget] = useState<MemberToDelete | null>(null);
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['society-members-mobile'],
@@ -67,10 +71,20 @@ export default function RolesScreen() {
     onError: (e: any) => Alert.alert('Error', e?.response?.data?.message ?? 'Failed to update role.'),
   });
 
+  // People whose membership ended but whose account still exists — their email and
+  // phone stay taken until the account is deleted.
+  const removedQ = useQuery({
+    queryKey: ['removed-members-mobile'],
+    queryFn: () => membersApi.removedMembers(),
+  });
+
   const removeMutation = useMutation({
     mutationFn: (userId: string) =>
       apiClient.delete(`/users/society/${userId}/remove`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['society-members-mobile'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['society-members-mobile'] });
+      qc.invalidateQueries({ queryKey: ['removed-members-mobile'] });
+    },
     onError: (e: any) => Alert.alert('Error', e?.response?.data?.message ?? 'Failed to remove member.'),
   });
 
@@ -87,19 +101,19 @@ export default function RolesScreen() {
     setRoleTarget(null);
   };
 
+  // Remove ends access but keeps the account (and its email/phone) on file; Delete erases
+  // the account. Three buttons is the most Android's Alert shows.
   const handleRemove = (member: Member) => {
-    Alert.alert(
-      'Remove Member',
-      `Remove ${member.firstName} ${member.lastName} from the society?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => removeMutation.mutate(member.id),
-        },
-      ],
-    );
+    const name = `${member.firstName} ${member.lastName}`;
+    Alert.alert(name, 'Remove ends their access but keeps the account. Delete erases the account for good, so the email and phone can be used again.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove from society', onPress: () => removeMutation.mutate(member.id) },
+      {
+        text: 'Delete account…',
+        style: 'destructive',
+        onPress: () => setDeleteTarget({ userId: member.id, name, email: member.email }),
+      },
+    ]);
   };
 
   const renderItem = ({ item }: { item: Member }) => {
@@ -134,10 +148,67 @@ export default function RolesScreen() {
     );
   };
 
+  const removed: RemovedMember[] = removedQ.data ?? [];
+
+  const renderRemoved = ({ item }: { item: RemovedMember }) => (
+    <View style={styles.row}>
+      <View style={[styles.avatar, { backgroundColor: colors.surfaceSecondary }]}>
+        <Text style={[styles.avatarText, { color: colors.textSecondary }]}>{initials(item.name)}</Text>
+      </View>
+      <View style={styles.info}>
+        <Text style={styles.name}>{item.name}</Text>
+        <Text style={styles.email} numberOfLines={1}>{item.email}</Text>
+      </View>
+      <TouchableOpacity
+        style={styles.deleteChip}
+        onPress={() => setDeleteTarget({ userId: item.userId, name: item.name, email: item.email })}
+        accessibilityLabel={`Delete account of ${item.name}`}
+      >
+        <Ionicons name="trash-outline" size={14} color={colors.error} />
+        <Text style={styles.deleteChipText}>Delete</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScreenHeader title="Roles & Permissions" showBack />
-      {isLoading ? (
+      <View style={styles.tabs}>
+        {([['members', 'Members'], ['removed', `Removed (${removed.length})`]] as const).map(([key, label]) => (
+          <TouchableOpacity
+            key={key}
+            onPress={() => setTab(key)}
+            style={[styles.tab, tab === key && styles.tabActive]}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: tab === key }}
+          >
+            <Text style={[styles.tabText, tab === key && styles.tabTextActive]}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {tab === 'removed' ? (
+        <FlatList
+          data={removed}
+          keyExtractor={(m) => m.userId}
+          renderItem={renderRemoved}
+          refreshControl={
+            <RefreshControl refreshing={removedQ.isRefetching} onRefresh={removedQ.refetch} tintColor={colors.primary} />
+          }
+          ItemSeparatorComponent={() => <View style={styles.divider} />}
+          ListHeaderComponent={
+            <View style={styles.listHeader}>
+              <Text style={styles.listHint}>
+                These people were removed, but their account still exists, so their email and phone can&apos;t be used
+                to sign up again. Delete the account to free them.
+              </Text>
+            </View>
+          }
+          ListEmptyComponent={
+            <EmptyState icon="person-remove-outline" title="No removed members" description="Anyone you remove from the society appears here until their account is deleted." />
+          }
+          contentContainerStyle={styles.list}
+        />
+      ) : isLoading ? (
         <LoadingState message="Loading members…" />
       ) : (
         <FlatList
@@ -208,6 +279,9 @@ export default function RolesScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Last child so the in-tree sheet sits above everything. */}
+      <DeleteMemberSheet member={deleteTarget} onClose={() => setDeleteTarget(null)} />
     </SafeAreaView>
   );
 }
@@ -290,6 +364,28 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   roleText: { ...typography.labelSmall, fontWeight: '600' },
+
+  tabs: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  tab: { flex: 1, alignItems: 'center', paddingVertical: spacing.md, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabActive: { borderBottomColor: colors.primary },
+  tabText: { ...typography.labelMedium, color: colors.textSecondary },
+  tabTextActive: { color: colors.primary, fontWeight: '700' },
+  deleteChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.error,
+  },
+  deleteChipText: { ...typography.labelSmall, color: colors.error, fontWeight: '600' },
 
   removeBtn: {
     width: 32,
