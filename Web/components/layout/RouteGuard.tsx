@@ -26,12 +26,13 @@ const ADMIN_ONLY_PREFIXES = [
   '/visitors',
   '/parcels',
   '/household-help',
+  '/vehicles',
 ];
 
 const ADMIN_ROLES = ['SOCIETY_ADMIN', 'SOCIETY_ACCOUNTANT', 'SOCIETY_STAFF', 'PLATFORM_ADMIN'];
 
 /** The committee is not in the general admin list, but may open these pages — the API allows it. */
-const COMMITTEE_PATHS = ['/visitors', '/parcels', '/household-help'];
+const COMMITTEE_PATHS = ['/visitors', '/parcels', '/household-help', '/vehicles'];
 const isCommitteePath = (pathname: string) => COMMITTEE_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
 
 function isAdminOnlyPath(pathname: string): boolean {

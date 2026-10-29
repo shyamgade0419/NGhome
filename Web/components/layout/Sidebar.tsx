@@ -31,6 +31,7 @@ import {
   DoorOpen,
   Package,
   UserCheck,
+  Car,
 } from 'lucide-react';
 import { cn, initials } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -58,6 +59,7 @@ const ADMIN_NAV = [
   { href: '/visitors', icon: DoorOpen, label: 'Visitors' },
   { href: '/parcels', icon: Package, label: 'Parcels' },
   { href: '/household-help', icon: UserCheck, label: 'Household Help' },
+  { href: '/vehicles', icon: Car, label: 'Vehicles & Parking' },
   { href: '/salaries', icon: UserCircle, label: 'Salaries' },
   { href: '/audit-logs', icon: ShieldCheck, label: 'Audit Logs' },
   { href: '/notifications', icon: Bell, label: 'Notifications' },

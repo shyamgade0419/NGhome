@@ -13,6 +13,7 @@ import type { Branding } from '@/lib/branding';
 import type { VisitorEntryStatus, VisitorLogEntry, VisitorPolicy, VisitorType } from '@/lib/visitors';
 import type { ParcelLogEntry, ParcelStatus } from '@/lib/parcels';
 import type { HelperRow, HelperStatus, HelperVisitRow } from '@/lib/helpers';
+import type { SlotFor, SlotRow, SlotStatus, VehicleRow } from '@/lib/vehicles';
 
 // Dashboard — composites several report endpoints
 export const dashboardApi = {
@@ -793,4 +794,19 @@ export const helpersApi = {
   reinstate: (id: string) => api.post(`/domestic-helpers/${id}/reinstate`),
   visits: (params?: { page?: number; limit?: number; from?: string; to?: string; helperId?: string; search?: string }): Promise<{ data: PaginatedResponse<HelperVisitRow> }> =>
     api.get('/domestic-helper-visits', { params }),
+};
+
+// Vehicles and parking — committee side. Residents register their vehicles and guards look them up, both in the mobile app.
+export const vehiclesApi = {
+  register: (params?: { page?: number; limit?: number; search?: string; flatId?: string; removed?: boolean }): Promise<{ data: PaginatedResponse<VehicleRow> }> =>
+    api.get('/vehicles', { params }),
+  /** A reason is required; it is shown to the household and kept in the audit trail. */
+  deactivate: (id: string, reason: string) => api.post(`/vehicles/${id}/deactivate`, { reason }),
+  slots: (params?: { page?: number; limit?: number; search?: string; status?: SlotStatus }): Promise<{ data: PaginatedResponse<SlotRow> & { meta: { free: number; allocated: number } } }> =>
+    api.get('/parking-slots', { params }),
+  createSlot: (body: { code: string; area?: string; slotFor?: SlotFor; visitor?: boolean }) => api.post('/parking-slots', body),
+  bulkSlots: (body: { prefix?: string; from: number; to: number; pad?: number; area?: string; slotFor?: SlotFor; visitor?: boolean }) => api.post('/parking-slots/bulk', body),
+  deleteSlot: (id: string) => api.delete(`/parking-slots/${id}`),
+  allocate: (id: string, flatId: string) => api.post(`/parking-slots/${id}/allocate`, { flatId }),
+  release: (id: string) => api.post(`/parking-slots/${id}/release`),
 };
