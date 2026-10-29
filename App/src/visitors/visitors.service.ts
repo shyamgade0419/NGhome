@@ -29,6 +29,7 @@ import {
 } from './dto/visitor.dto';
 import { formatCode, generateCode, hashCode, normalizeCode } from './visitor-code';
 import { VisitorPolicy, readPolicy } from './visitor-policy';
+import { consumeAllowEntry } from '../deliveries/delivery-expectation';
 
 const MINUTE = 60_000;
 /** A start time a little in the past is tolerated (clock skew, a form left open); further back is clamped to now. */
@@ -285,25 +286,43 @@ export class VisitorsService {
     const needsApproval = policy.walkInApproval === 'REQUIRED';
     const now = new Date();
 
+    const baseData = {
+      societyId,
+      flatId: flat.id,
+      visitorName: dto.visitorName,
+      visitorPhone: dto.visitorPhone ?? null,
+      visitorType: dto.visitorType ?? VisitorType.GUEST,
+      vehicleNumber: dto.vehicleNumber ? dto.vehicleNumber.toUpperCase() : null,
+      purpose: dto.purpose || null,
+      registeredById: guard.id,
+      clientRequestId: dto.clientRequestId,
+      requestedAt: now,
+    };
+
     let entry: VisitorEntry;
+    let expected: { id: string; company: string } | null = null;
     try {
-      entry = await this.prisma.visitorEntry.create({
-        data: {
-          societyId,
-          flatId: flat.id,
-          visitorName: dto.visitorName,
-          visitorPhone: dto.visitorPhone ?? null,
-          visitorType: dto.visitorType ?? VisitorType.GUEST,
-          vehicleNumber: dto.vehicleNumber ? dto.vehicleNumber.toUpperCase() : null,
-          purpose: dto.purpose || null,
-          registeredById: guard.id,
-          clientRequestId: dto.clientRequestId,
-          requestedAt: now,
-          ...(needsApproval
-            ? { status: VisitorEntryStatus.PENDING_APPROVAL }
-            : { status: VisitorEntryStatus.APPROVED, decidedAt: now, decisionMethod: 'POLICY' }),
-        },
-      });
+      if (needsApproval && baseData.visitorType === VisitorType.DELIVERY) {
+        // A resident may have said "let the delivery up". Spending that instruction and recording
+        // the entry are one unit: if the entry cannot be written, the instruction is not used up.
+        const result = await this.prisma.$transaction(async (tx) => {
+          const used = await consumeAllowEntry(tx, societyId, flat.id);
+          const created = await tx.visitorEntry.create({
+            data: used
+              ? { ...baseData, status: VisitorEntryStatus.APPROVED, decidedAt: now, decisionMethod: 'EXPECTATION', decisionNote: `Expected: ${used.company}` }
+              : { ...baseData, status: VisitorEntryStatus.PENDING_APPROVAL },
+          });
+          return { created, used };
+        });
+        entry = result.created;
+        expected = result.used;
+      } else {
+        entry = await this.prisma.visitorEntry.create({
+          data: needsApproval
+            ? { ...baseData, status: VisitorEntryStatus.PENDING_APPROVAL }
+            : { ...baseData, status: VisitorEntryStatus.APPROVED, decidedAt: now, decisionMethod: 'POLICY' },
+        });
+      }
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         const raced = await this.findByClientRequest(societyId, dto.clientRequestId);
@@ -316,22 +335,31 @@ export class VisitorsService {
       action: 'VISITOR_REGISTERED',
       flatCode: flat.flatCode,
       visitorType: entry.visitorType,
-      approval: needsApproval ? 'REQUIRED' : 'NOT_REQUIRED',
+      approval: expected ? 'EXPECTATION' : needsApproval ? 'REQUIRED' : 'NOT_REQUIRED',
+      ...(expected ? { expectationId: expected.id } : {}),
     });
 
+    const asksResident = needsApproval && !expected;
     const residents = await this.residentIdsOfFlat(societyId, flat.id);
     await this.notifications.notifyQuietly(async () => {
       await this.notifications.sendToUsers(societyId, residents, {
-        title: needsApproval ? 'Visitor at the gate' : 'Visitor arrived',
-        body: needsApproval
+        title: asksResident ? 'Visitor at the gate' : expected ? 'Your delivery is here' : 'Visitor arrived',
+        body: asksResident
           ? `${entry.visitorName} (${entry.visitorType.toLowerCase()}) wants to visit ${flat.flatCode}. Approve or decline.`
-          : `${entry.visitorName} (${entry.visitorType.toLowerCase()}) is coming to ${flat.flatCode}.`,
-        type: needsApproval ? 'VISITOR_REQUEST' : 'VISITOR_ARRIVED',
+          : expected
+            ? `${entry.visitorName} (${expected.company}) is coming up to ${flat.flatCode}, as you asked.`
+            : `${entry.visitorName} (${entry.visitorType.toLowerCase()}) is coming to ${flat.flatCode}.`,
+        type: asksResident ? 'VISITOR_REQUEST' : 'VISITOR_ARRIVED',
         data: { entryId: entry.id },
       });
     }, `visitor ${entry.id} registered`);
 
-    return { entry: this.publicEntry(entry), duplicate: false, notifiedResidents: residents.length };
+    return {
+      entry: this.publicEntry(entry),
+      duplicate: false,
+      notifiedResidents: residents.length,
+      ...(expected ? { expectedDelivery: expected.company } : {}),
+    };
   }
 
   /**

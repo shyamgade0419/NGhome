@@ -245,22 +245,22 @@ model User {
   refreshTokens        RefreshToken[]
   passwordResetTokens  PasswordResetToken[]
   memberships          SocietyMembership[]
-  auditLogs            AuditLog[]           @relation("AuditActor")
+  auditLogs            AuditLog[]                  @relation("AuditActor")
   notificationRecords  NotificationRecord[]
   paymentSubmissions   PaymentSubmission[]
-  createdExpenses      Expense[]            @relation("ExpenseCreator")
-  approvedExpenses     Expense[]            @relation("ExpenseApprover")
+  createdExpenses      Expense[]                   @relation("ExpenseCreator")
+  approvedExpenses     Expense[]                   @relation("ExpenseApprover")
   createdAnnouncements Announcement[]
   createdMeetings      Meeting[]
   uploadedDocuments    Document[]
-  submittedRequests    MaintenanceRequest[] @relation("RequestSubmitter")
-  assignedRequests     MaintenanceRequest[] @relation("RequestAssignee")
+  submittedRequests    MaintenanceRequest[]        @relation("RequestSubmitter")
+  assignedRequests     MaintenanceRequest[]        @relation("RequestAssignee")
   requestComments      MaintenanceRequestComment[] @relation("RequestCommentAuthor")
   createdEvents        Event[]
   pushTokens           PushToken[]
-  createdForumTopics   ForumTopic[]                 @relation("ForumTopicCreator")
-  forumReplies         ForumReply[]                 @relation("ForumReplyAuthor")
-  sentMessages         DirectMessage[]               @relation("MessageSender")
+  createdForumTopics   ForumTopic[]                @relation("ForumTopicCreator")
+  forumReplies         ForumReply[]                @relation("ForumReplyAuthor")
+  sentMessages         DirectMessage[]             @relation("MessageSender")
   conversations        ConversationParticipant[]
   amenityBookings      AmenityBooking[]
 
@@ -357,63 +357,65 @@ model Society {
   updatedAt           DateTime  @updatedAt
   deletedAt           DateTime?
 
-  configuration       SocietyConfiguration?
-  buildings           Building[]
-  memberships         SocietyMembership[]
-  billingRules        BillingRule[]
-  billingPeriods      BillingPeriod[]
-  accounts            Account[]
-  funds               Fund[]
-  expenses            Expense[]
-  expenseCategories   ExpenseCategory[]
-  employees           SocietyEmployee[]
-  announcements       Announcement[]
-  meetings            Meeting[]
-  documents           Document[]
-  auditLogs           AuditLog[]
-  notifications       Notification[]
-  statements          MonthlyStatement[]
-  waterConfigs        WaterBillingConfig[]
-  transactions        Transaction[]
-  maintenanceRequests MaintenanceRequest[]
-  events              Event[]
-  forumTopics         ForumTopic[]
-  conversations       Conversation[]
-  amenities           Amenity[]
-  amenityBookings     AmenityBooking[]
-  visitorInvitations  VisitorInvitation[]
-  visitorEntries      VisitorEntry[]
+  configuration        SocietyConfiguration?
+  buildings            Building[]
+  memberships          SocietyMembership[]
+  billingRules         BillingRule[]
+  billingPeriods       BillingPeriod[]
+  accounts             Account[]
+  funds                Fund[]
+  expenses             Expense[]
+  expenseCategories    ExpenseCategory[]
+  employees            SocietyEmployee[]
+  announcements        Announcement[]
+  meetings             Meeting[]
+  documents            Document[]
+  auditLogs            AuditLog[]
+  notifications        Notification[]
+  statements           MonthlyStatement[]
+  waterConfigs         WaterBillingConfig[]
+  transactions         Transaction[]
+  maintenanceRequests  MaintenanceRequest[]
+  events               Event[]
+  forumTopics          ForumTopic[]
+  conversations        Conversation[]
+  amenities            Amenity[]
+  amenityBookings      AmenityBooking[]
+  visitorInvitations   VisitorInvitation[]
+  visitorEntries       VisitorEntry[]
+  deliveryExpectations DeliveryExpectation[]
+  parcels              Parcel[]
 
   @@map("societies")
 }
 
 model SocietyConfiguration {
-  id                          String           @id @default(uuid())
-  societyId                   String           @unique
-  currency                    String           @default("INR")
-  financialYearStartMonth     Int              @default(4)
-  billingCycle                BillingCycleType @default(MONTHLY)
-  billingDueDay               Int              @default(10)
-  gracePeriodDays             Int              @default(5)
-  lateFeeType                 String?
-  lateFeeValue                Decimal?         @db.Decimal(10, 2)
-  lateFeeMaxAmount            Decimal?         @db.Decimal(10, 2)
-  roundingRule                String           @default("NEAREST")
-  invoicePrefix               String           @default("INV")
-  invoiceStartNumber          Int              @default(1)
-  invoiceCurrentNumber        Int              @default(1)
-  paymentVerificationRequired Boolean          @default(true)
-  allowPaymentProofUpload     Boolean          @default(true)
+  id                             String           @id @default(uuid())
+  societyId                      String           @unique
+  currency                       String           @default("INR")
+  financialYearStartMonth        Int              @default(4)
+  billingCycle                   BillingCycleType @default(MONTHLY)
+  billingDueDay                  Int              @default(10)
+  gracePeriodDays                Int              @default(5)
+  lateFeeType                    String?
+  lateFeeValue                   Decimal?         @db.Decimal(10, 2)
+  lateFeeMaxAmount               Decimal?         @db.Decimal(10, 2)
+  roundingRule                   String           @default("NEAREST")
+  invoicePrefix                  String           @default("INV")
+  invoiceStartNumber             Int              @default(1)
+  invoiceCurrentNumber           Int              @default(1)
+  paymentVerificationRequired    Boolean          @default(true)
+  allowPaymentProofUpload        Boolean          @default(true)
   // Gates the total bank-account balance on the resident finances screen. Fund
   // visibility is per-fund (Fund.isVisibleToResidents), deliberately not this.
-  showAccountBalancesToResidents Boolean       @default(false)
-  showExpensesToResidents     Boolean          @default(false)
-  publishStatementToResidents Boolean          @default(true)
-  publishMeetingMinutes       Boolean          @default(true)
-  notificationChannels        Json             @default("[]")
-  additionalConfig            Json             @default("{}")
-  createdAt                   DateTime         @default(now())
-  updatedAt                   DateTime         @updatedAt
+  showAccountBalancesToResidents Boolean          @default(false)
+  showExpensesToResidents        Boolean          @default(false)
+  publishStatementToResidents    Boolean          @default(true)
+  publishMeetingMinutes          Boolean          @default(true)
+  notificationChannels           Json             @default("[]")
+  additionalConfig               Json             @default("{}")
+  createdAt                      DateTime         @default(now())
+  updatedAt                      DateTime         @updatedAt
 
   society Society @relation(fields: [societyId], references: [id], onDelete: Cascade)
 
@@ -477,17 +479,19 @@ model Flat {
   updatedAt      DateTime   @updatedAt
   deletedAt      DateTime?
 
-  building            Building             @relation(fields: [buildingId], references: [id])
-  floor               Floor?               @relation(fields: [floorId], references: [id])
-  memberships         SocietyMembership[]
-  maintenanceBills    MaintenanceBill[]
-  waterReadings       WaterMeterReading[]
-  paymentSubmissions  PaymentSubmission[]
-  maintenanceRequests MaintenanceRequest[]
-  documents           Document[]
-  amenityBookings     AmenityBooking[]
-  visitorInvitations  VisitorInvitation[]
-  visitorEntries      VisitorEntry[]
+  building             Building              @relation(fields: [buildingId], references: [id])
+  floor                Floor?                @relation(fields: [floorId], references: [id])
+  memberships          SocietyMembership[]
+  maintenanceBills     MaintenanceBill[]
+  waterReadings        WaterMeterReading[]
+  paymentSubmissions   PaymentSubmission[]
+  maintenanceRequests  MaintenanceRequest[]
+  documents            Document[]
+  amenityBookings      AmenityBooking[]
+  visitorInvitations   VisitorInvitation[]
+  visitorEntries       VisitorEntry[]
+  deliveryExpectations DeliveryExpectation[]
+  parcels              Parcel[]
 
   @@unique([societyId, flatCode])
   @@index([societyId])
@@ -796,26 +800,26 @@ model ExpenseCategory {
 }
 
 model Expense {
-  id              String        @id @default(uuid())
-  societyId       String
-  categoryId      String?
-  accountId       String?
-  vendorPayee     String?
-  description     String
-  amount          Decimal       @db.Decimal(12, 2)
-  expenseDate     DateTime
-  invoiceNumber   String?
-  referenceNumber String?
-  status          ExpenseStatus @default(PENDING)
-  isRecurring     Boolean       @default(false)
-  recurringConfig Json?
-  notes           String?
-  approvedAt      DateTime?
-  paidAt          DateTime?
-  createdById     String
-  approvedById    String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id               String        @id @default(uuid())
+  societyId        String
+  categoryId       String?
+  accountId        String?
+  vendorPayee      String?
+  description      String
+  amount           Decimal       @db.Decimal(12, 2)
+  expenseDate      DateTime
+  invoiceNumber    String?
+  referenceNumber  String?
+  status           ExpenseStatus @default(PENDING)
+  isRecurring      Boolean       @default(false)
+  recurringConfig  Json?
+  notes            String?
+  approvedAt       DateTime?
+  paidAt           DateTime?
+  createdById      String
+  approvedById     String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
   // Same generic pattern Document/Transaction already use — set for an
   // Expense generated from Event.recordExpense() ("EVENT" / event.id), so
   // that action is idempotent (one Expense per event, not one per click)
@@ -922,9 +926,6 @@ model PaymentSubmission {
   maintenanceBill MaintenanceBill? @relation(fields: [maintenanceBillId], references: [id])
   documents       Document[]       @relation("PaymentDocuments")
 
-  @@index([societyId])
-  @@index([flatId])
-  @@index([userId])
   // A UTR is a real bank-assigned reference for one specific transaction —
   // the same (flat, UTR) pair can only ever mean the same payment
   // resubmitted (a network retry after tapping Submit twice), never two
@@ -941,6 +942,9 @@ model PaymentSubmission {
   // correct. NULL (every non-approved payment) is never considered equal to
   // another NULL by Postgres, so this never blocks PENDING/REJECTED rows.
   @@unique([transactionId])
+  @@index([societyId])
+  @@index([flatId])
+  @@index([userId])
   @@map("payment_submissions")
 }
 
@@ -1215,10 +1219,10 @@ model MaintenanceRequest {
   createdAt    DateTime                 @default(now())
   updatedAt    DateTime                 @updatedAt
 
-  society    Society @relation(fields: [societyId], references: [id])
-  flat       Flat?   @relation(fields: [flatId], references: [id])
-  resident   User    @relation("RequestSubmitter", fields: [residentId], references: [id])
-  assignedTo User?   @relation("RequestAssignee", fields: [assignedToId], references: [id])
+  society    Society                     @relation(fields: [societyId], references: [id])
+  flat       Flat?                       @relation(fields: [flatId], references: [id])
+  resident   User                        @relation("RequestSubmitter", fields: [residentId], references: [id])
+  assignedTo User?                       @relation("RequestAssignee", fields: [assignedToId], references: [id])
   comments   MaintenanceRequestComment[]
 
   @@index([societyId])
@@ -1406,25 +1410,25 @@ enum AmenityFeeStatus {
 /// hours are minutes since midnight in India Standard Time (the product is
 /// India-only and IST has no daylight saving), so a slot is never ambiguous.
 model Amenity {
-  id                        String             @id @default(uuid())
-  societyId                 String
-  name                      String
-  description               String?
-  rules                     String?
-  bookingMode               AmenityBookingMode @default(INSTANT)
-  slotMinutes               Int                @default(60)
-  opensAtMin                Int                @default(360)
-  closesAtMin               Int                @default(1320)
-  maxAdvanceDays            Int                @default(30)
-  monthlyCapPerFlat         Int?
-  cancelBeforeHours         Int                @default(24)
+  id                 String             @id @default(uuid())
+  societyId          String
+  name               String
+  description        String?
+  rules              String?
+  bookingMode        AmenityBookingMode @default(INSTANT)
+  slotMinutes        Int                @default(60)
+  opensAtMin         Int                @default(360)
+  closesAtMin        Int                @default(1320)
+  maxAdvanceDays     Int                @default(30)
+  monthlyCapPerFlat  Int?
+  cancelBeforeHours  Int                @default(24)
   /// How many bookings may overlap one slot (1 = exclusive use).
-  capacity                  Int                @default(1)
-  maxSlotsPerBooking        Int                @default(1)
-  fee                       Decimal?           @db.Decimal(12, 2)
-  isActive                  Boolean            @default(true)
-  createdAt                 DateTime           @default(now())
-  updatedAt                 DateTime           @updatedAt
+  capacity           Int                @default(1)
+  maxSlotsPerBooking Int                @default(1)
+  fee                Decimal?           @db.Decimal(12, 2)
+  isActive           Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   society  Society          @relation(fields: [societyId], references: [id], onDelete: Cascade)
   bookings AmenityBooking[]
@@ -1543,7 +1547,7 @@ model VisitorEntry {
   decidedAt       DateTime?
   decidedById     String?
   decisionNote    String?
-  /// RESIDENT | POLICY | INVITATION | ADMIN_OVERRIDE
+  /// RESIDENT | POLICY | INVITATION | ADMIN_OVERRIDE | EXPECTATION
   decisionMethod  String?
   checkedInAt     DateTime?
   checkedInById   String?
@@ -1562,4 +1566,82 @@ model VisitorEntry {
   @@index([flatId, requestedAt])
   @@index([societyId, status])
   @@map("visitor_entries")
+}
+
+// ─── Deliveries ──────────────────────────────────────────────────────────────
+
+enum DeliveryInstruction {
+  /// The delivery person may come up: the gate lets the next delivery for this flat in without asking.
+  ALLOW_ENTRY
+  /// Do not send them up: the guard receives the parcel and keeps it at the gate.
+  LEAVE_AT_GATE
+}
+
+enum DeliveryExpectationStatus {
+  ACTIVE
+  CANCELLED
+}
+
+enum ParcelStatus {
+  RECEIVED
+  COLLECTED
+  RETURNED
+}
+
+/// A resident's standing answer to "a delivery is coming": let them up, or leave
+/// it at the gate. Time-limited and use-limited; ALLOW_ENTRY is spent by one
+/// atomic update when the gate registers a delivery for the flat.
+model DeliveryExpectation {
+  id          String                    @id @default(uuid())
+  societyId   String
+  flatId      String
+  createdById String
+  company     String
+  instruction DeliveryInstruction
+  note        String?
+  validFrom   DateTime
+  validUntil  DateTime
+  maxUses     Int                       @default(1)
+  usedCount   Int                       @default(0)
+  status      DeliveryExpectationStatus @default(ACTIVE)
+  cancelledAt DateTime?
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+
+  society Society @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  flat    Flat    @relation(fields: [flatId], references: [id], onDelete: Cascade)
+
+  @@index([societyId, flatId, status])
+  @@index([societyId, validUntil])
+  @@map("delivery_expectations")
+}
+
+/// A parcel the gate is holding for a flat, from receipt to hand-over or return.
+/// clientRequestId makes a guard's retried submission safe.
+model Parcel {
+  id              String       @id @default(uuid())
+  societyId       String
+  flatId          String
+  courier         String
+  recipientName   String?
+  note            String?
+  status          ParcelStatus @default(RECEIVED)
+  receivedAt      DateTime     @default(now())
+  receivedById    String?
+  closedAt        DateTime?
+  closedById      String?
+  /// Who physically took it (typed by the guard), when handed over.
+  collectedByName String?
+  clientRequestId String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  society Society @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  flat    Flat    @relation(fields: [flatId], references: [id], onDelete: Cascade)
+
+  @@unique([societyId, clientRequestId])
+  @@index([societyId, status])
+  @@index([flatId, receivedAt])
+  @@index([societyId, receivedAt])
+  @@map("parcels")
 }
