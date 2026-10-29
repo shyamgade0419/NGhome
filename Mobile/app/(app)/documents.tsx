@@ -2,8 +2,9 @@
  * Documents — shared by admins and residents, now with two scopes.
  *
  * "Society" is the original list: the API scopes rows by accessLevel for
- * the calling role, admin/staff post official documents by pasting a link
- * (there's still no upload path for that flow — matches web exactly).
+ * the calling role. Admin, staff and the committee upload a real file and choose who can
+ * see it (the same SFTP-backed upload residents use); admin and staff can also still
+ * paste a link to something hosted elsewhere.
  *
  * "My Flat" is new: FLAT_PRIVATE documents, a real file upload backed by
  * the society's SFTP server. Visible to any active resident of that exact
@@ -41,6 +42,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
+import { DEFAULT_OFFICIAL_ACCESS, OFFICIAL_ACCESS_LEVELS, canAddLink, canUploadOfficial, tooLarge, visibilityFor } from '@/utils/documents';
 import { colors, spacing, typography, radius } from '@/theme';
 
 const ACCESS_LEVELS: Array<{ value: DocumentAccessLevel; label: string }> = [
@@ -95,7 +97,7 @@ function AddDocumentModal({ onClose }: { onClose: () => void }) {
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={modal.safe} edges={['top', 'bottom']}>
         <View style={modal.header}>
-          <Text style={modal.title}>Add Document</Text>
+          <Text style={modal.title}>Add a Link</Text>
           <TouchableOpacity onPress={onClose} hitSlop={12}>
             <Ionicons name="close" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
@@ -183,22 +185,30 @@ function AddDocumentModal({ onClose }: { onClose: () => void }) {
 }
 
 /**
- * Resident's real file upload — private to their own flat. accessLevel and
- * flatId are deliberately not offered here: the backend forces FLAT_PRIVATE
- * on the caller's own flatId server-side regardless of what's sent, so
- * there is nothing for this form to get wrong.
+ * A real file upload, backed by the society's SFTP server.
+ *
+ * mode "flat" (My Flat tab): private to the uploader's own flat. A resident gets that forced
+ * server-side whatever is sent; an admin who also lives in a flat names it explicitly.
+ * mode "society" (Society tab; admin, staff, committee): an official document, visible to
+ * whoever is chosen under "Visible To".
  */
-function UploadFlatDocumentModal({ onClose }: { onClose: () => void }) {
+function UploadDocumentModal({ onClose, mode }: { onClose: () => void; mode: 'flat' | 'society' }) {
   const qc = useQueryClient();
+  const { user } = useAuth();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
+  const [accessLevel, setAccessLevel] = useState<DocumentAccessLevel>(DEFAULT_OFFICIAL_ACCESS);
   const [file, setFile] = useState<{ uri: string; name: string; mimeType?: string | null; size?: number } | null>(null);
 
   const pickFile = async () => {
     const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
+    if (tooLarge(asset.size)) {
+      Alert.alert('File too large', 'Files can be up to 10 MB. Choose a smaller file, or compress it first.');
+      return;
+    }
     setFile({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType, size: asset.size ?? undefined });
     if (!title.trim()) {
       // Pre-fill a sensible title from the filename, still fully editable.
@@ -213,11 +223,13 @@ function UploadFlatDocumentModal({ onClose }: { onClose: () => void }) {
         title: title.trim(),
         description: description.trim() || undefined,
         category: category.trim() || undefined,
+        ...visibilityFor({ role: user?.currentRole, scope: mode, flatId: user?.flatId, accessLevel }),
       });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['documents'] });
-      Alert.alert('Uploaded', 'Only you and others on your flat can see this.');
+      const who = OFFICIAL_ACCESS_LEVELS.find((a) => a.value === accessLevel)?.label.toLowerCase();
+      Alert.alert('Uploaded', mode === 'flat' ? 'Only you and others on your flat can see this.' : `Visible to: ${who}.`);
       onClose();
     },
     onError: (e: any) =>
@@ -225,30 +237,33 @@ function UploadFlatDocumentModal({ onClose }: { onClose: () => void }) {
   });
 
   const canSubmit = !!file && title.trim().length > 0;
+  const chosen = OFFICIAL_ACCESS_LEVELS.find((a) => a.value === accessLevel);
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={modal.safe} edges={['top', 'bottom']}>
         <View style={modal.header}>
-          <Text style={modal.title}>Upload Flat Document</Text>
+          <Text style={modal.title}>{mode === 'flat' ? 'Upload Flat Document' : 'Upload Document'}</Text>
           <TouchableOpacity onPress={onClose} hitSlop={12}>
             <Ionicons name="close" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={modal.content} keyboardShouldPersistTaps="handled">
-            <View style={modal.privacyNote}>
-              <Ionicons name="lock-closed" size={13} color={colors.primary} />
-              <Text style={modal.privacyNoteText}>
-                Private to your flat — visible to residents there, not to admin or any other flat.
-              </Text>
-            </View>
+            {mode === 'flat' && (
+              <View style={modal.privacyNote}>
+                <Ionicons name="lock-closed" size={13} color={colors.primary} />
+                <Text style={modal.privacyNoteText}>
+                  Private to your flat — visible to residents there, not to admin or any other flat.
+                </Text>
+              </View>
+            )}
 
             <Text style={modal.label}>File *</Text>
             <TouchableOpacity style={modal.filePicker} onPress={pickFile} activeOpacity={0.7}>
               <Ionicons name="cloud-upload-outline" size={18} color={colors.primary} />
               <Text style={modal.filePickerText} numberOfLines={1}>
-                {file ? file.name : 'Choose a file — PDF, image, or document'}
+                {file ? file.name : 'Choose a file — PDF, image, or document (up to 10 MB)'}
               </Text>
             </TouchableOpacity>
 
@@ -257,7 +272,7 @@ function UploadFlatDocumentModal({ onClose }: { onClose: () => void }) {
               style={modal.input}
               value={title}
               onChangeText={setTitle}
-              placeholder="e.g. Property Tax Receipt 2026"
+              placeholder={mode === 'flat' ? 'e.g. Property Tax Receipt 2026' : 'e.g. Society Bye-Laws 2026'}
               placeholderTextColor={colors.textTertiary}
             />
 
@@ -276,9 +291,29 @@ function UploadFlatDocumentModal({ onClose }: { onClose: () => void }) {
               style={modal.input}
               value={category}
               onChangeText={setCategory}
-              placeholder="e.g. Tax, Insurance, Agreement"
+              placeholder={mode === 'flat' ? 'e.g. Tax, Insurance, Agreement' : 'e.g. Bye-Laws, Circular, Minutes'}
               placeholderTextColor={colors.textTertiary}
             />
+
+            {mode === 'society' && (
+              <>
+                <Text style={modal.label}>Visible To</Text>
+                <View style={modal.chipRow}>
+                  {OFFICIAL_ACCESS_LEVELS.map((a) => (
+                    <TouchableOpacity
+                      key={a.value}
+                      style={[modal.chip, accessLevel === a.value && modal.chipActive]}
+                      onPress={() => setAccessLevel(a.value)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: accessLevel === a.value }}
+                    >
+                      <Text style={[modal.chipText, accessLevel === a.value && modal.chipTextActive]}>{a.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {chosen ? <Text style={modal.privacyNoteText}>{chosen.hint}</Text> : null}
+              </>
+            )}
 
             <Button
               label={mutation.isPending ? 'Uploading…' : 'Upload'}
@@ -418,10 +453,11 @@ type Tab = 'society' | 'flat';
 export default function DocumentsScreen() {
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
-  const [showUpload, setShowUpload] = useState(false);
+  const [uploadMode, setUploadMode] = useState<null | 'flat' | 'society'>(null);
   const [tab, setTab] = useState<Tab>('society');
   const { user } = useAuth();
-  const isAdmin = user?.currentRole === 'SOCIETY_ADMIN' || user?.currentRole === 'SOCIETY_STAFF';
+  const canUploadSociety = canUploadOfficial(user?.currentRole);
+  const canLink = canAddLink(user?.currentRole);
   const hasFlat = !!user?.flatId;
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
@@ -457,14 +493,23 @@ export default function DocumentsScreen() {
         rightAction={
           tab === 'flat' ? (
             hasFlat ? (
-              <TouchableOpacity onPress={() => setShowUpload(true)} hitSlop={8}>
+              <TouchableOpacity onPress={() => setUploadMode('flat')} hitSlop={8} accessibilityLabel="Upload a flat document">
                 <Ionicons name="cloud-upload-outline" size={22} color={colors.primary} />
               </TouchableOpacity>
             ) : undefined
-          ) : isAdmin ? (
-            <TouchableOpacity onPress={() => setShowAdd(true)} hitSlop={8}>
-              <Ionicons name="add-circle-outline" size={24} color={colors.primary} />
-            </TouchableOpacity>
+          ) : canUploadSociety || canLink ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.lg }}>
+              {canLink && (
+                <TouchableOpacity onPress={() => setShowAdd(true)} hitSlop={8} accessibilityLabel="Add a link to a document">
+                  <Ionicons name="link-outline" size={22} color={colors.primary} />
+                </TouchableOpacity>
+              )}
+              {canUploadSociety && (
+                <TouchableOpacity onPress={() => setUploadMode('society')} hitSlop={8} accessibilityLabel="Upload a document">
+                  <Ionicons name="cloud-upload-outline" size={24} color={colors.primary} />
+                </TouchableOpacity>
+              )}
+            </View>
           ) : undefined
         }
       />
@@ -578,7 +623,7 @@ export default function DocumentsScreen() {
       )}
 
       {showAdd && <AddDocumentModal onClose={() => setShowAdd(false)} />}
-      {showUpload && <UploadFlatDocumentModal onClose={() => setShowUpload(false)} />}
+      {uploadMode && <UploadDocumentModal mode={uploadMode} onClose={() => setUploadMode(null)} />}
     </SafeAreaView>
   );
 }
