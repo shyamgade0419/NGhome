@@ -18,10 +18,10 @@ const client = {
   delete: jest.fn(),
   end: jest.fn(),
 };
-// ES-module shape: the service does `import SftpClient from 'ssh2-sftp-client'`,
-// which compiles to a read of .default.
+// The real package is `module.exports = Client`: a bare constructor with no `.default`. Mocking
+// any other shape hides import mistakes (the first production use failed with "not a constructor").
 const SftpCtor = jest.fn().mockImplementation(() => client);
-jest.mock('ssh2-sftp-client', () => ({ __esModule: true, default: SftpCtor }));
+jest.mock('ssh2-sftp-client', () => SftpCtor);
 
 // Imported after the mock so the service picks up the fake client.
 import { SftpStorageService } from './sftp-storage.service';

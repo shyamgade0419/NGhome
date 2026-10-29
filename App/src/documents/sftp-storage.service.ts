@@ -1,6 +1,8 @@
 import { Injectable, InternalServerErrorException, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import SftpClient from 'ssh2-sftp-client';
+// The package is CommonJS (`module.exports = Client`) and this project has no esModuleInterop, so a
+// default import would read `.default`, which does not exist: "SftpClient is not a constructor".
+import SftpClient = require('ssh2-sftp-client');
 
 /**
  * A multi-line private key pasted into an environment variable often arrives
