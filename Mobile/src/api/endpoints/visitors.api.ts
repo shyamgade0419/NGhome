@@ -4,7 +4,7 @@ import { ApiResponse, PaginatedResponse } from '@/api/types';
 export type VisitorType = 'GUEST' | 'CAB' | 'DELIVERY' | 'SERVICE' | 'OTHER';
 export type VisitorEntryStatus = 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'CHECKED_IN' | 'CHECKED_OUT' | 'EXPIRED';
 export type InvitationState = 'ACTIVE' | 'NOT_YET' | 'USED' | 'EXPIRED' | 'REVOKED';
-export type DecisionMethod = 'RESIDENT' | 'POLICY' | 'INVITATION' | 'ADMIN_OVERRIDE';
+export type DecisionMethod = 'RESIDENT' | 'POLICY' | 'INVITATION' | 'ADMIN_OVERRIDE' | 'EXPECTATION';
 
 export interface VisitorEntry {
   id: string;
@@ -116,7 +116,7 @@ export const visitorsApi = {
     return data.data;
   },
   walkIn: async (payload: WalkInPayload) => {
-    const { data } = await apiClient.post<ApiResponse<{ entry: VisitorEntry; duplicate: boolean; notifiedResidents: number }>>('/gate/walk-ins', payload);
+    const { data } = await apiClient.post<ApiResponse<{ entry: VisitorEntry; duplicate: boolean; notifiedResidents: number; expectedDelivery?: string }>>('/gate/walk-ins', payload);
     return data.data;
   },
   scan: async (code: string, clientRequestId: string) => {

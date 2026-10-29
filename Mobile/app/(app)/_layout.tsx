@@ -28,6 +28,7 @@ export default function AppLayout() {
       <Stack.Screen name="chat" />
       <Stack.Screen name="amenities" />
       <Stack.Screen name="visitors" />
+      <Stack.Screen name="deliveries" />
       <Stack.Screen name="guard" />
     </Stack>
   );

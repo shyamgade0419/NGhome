@@ -41,6 +41,7 @@ function VisitorCard({ entry, onApprove, onDecline, busy }: { entry: VisitorEntr
       <Text style={styles.time}>{timeline(entry)}</Text>
       {entry.decisionMethod === 'ADMIN_OVERRIDE' && <Text style={styles.time}>Decided by the committee{entry.decisionNote ? `: ${entry.decisionNote}` : ''}</Text>}
       {entry.decisionMethod === 'INVITATION' && <Text style={styles.time}>Arrived with your invitation</Text>}
+      {entry.decisionMethod === 'EXPECTATION' && <Text style={styles.time}>A delivery you asked the gate to send up</Text>}
 
       {waiting && (
         <View style={styles.answerRow}>

@@ -302,7 +302,12 @@ export default function ResidentDashboard() {
             </View>
             <Text style={styles.quickLinkText} numberOfLines={2}>Visitors</Text>
           </TouchableOpacity>
-          <View style={[styles.quickLink, { opacity: 0 }]} pointerEvents="none" />
+          <TouchableOpacity style={styles.quickLink} activeOpacity={0.8} onPress={() => router.push('/(app)/deliveries' as any)}>
+            <View style={[styles.quickLinkIcon, { backgroundColor: colors.warningLight }]}>
+              <Ionicons name="cube-outline" size={20} color={colors.warning} />
+            </View>
+            <Text style={styles.quickLinkText} numberOfLines={2}>Deliveries</Text>
+          </TouchableOpacity>
           <View style={[styles.quickLink, { opacity: 0 }]} pointerEvents="none" />
           <View style={[styles.quickLink, { opacity: 0 }]} pointerEvents="none" />
         </View>

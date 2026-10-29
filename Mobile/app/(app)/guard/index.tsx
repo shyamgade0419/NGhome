@@ -16,6 +16,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { GateFlat, VisitorEntry, VisitorType, visitorsApi } from '@/api/endpoints/visitors.api';
+import { deliveriesApi } from '@/api/endpoints/deliveries.api';
+import { ParcelsPanel } from '@/components/gate/ParcelsPanel';
+import { instructionsForFlat } from '@/utils/deliveries';
 import { apiErrorMessage } from '@/api/endpoints/amenities.api';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/Button';
@@ -84,6 +87,7 @@ export default function GateScreen() {
   const [search, setSearch] = useState('');
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [codeOpen, setCodeOpen] = useState(false);
+  const [mode, setMode] = useState<'visitors' | 'parcels'>('visitors');
 
   const list = useQuery({
     queryKey: ['gate-visitors', search.trim()],
@@ -121,6 +125,10 @@ export default function GateScreen() {
     staleTime: 60_000,
   });
 
+  // What the picked flat has said about deliveries, so a "leave it at the gate" is seen before the visitor is sent up.
+  const expected = useQuery({ queryKey: ['gate-expected'], queryFn: deliveriesApi.expected, enabled: walkInOpen && type === 'DELIVERY' && !!flat, staleTime: 30_000 });
+  const flatNotes = type === 'DELIVERY' ? instructionsForFlat(expected.data ?? [], flat?.id) : [];
+
   const resetWalkIn = () => {
     setFlatSearch(''); setFlat(null); setName(''); setPhone(''); setType('GUEST'); setVehicle(''); setPurpose('');
     walkInRequestId.current = newRequestId();
@@ -142,7 +150,9 @@ export default function GateScreen() {
       setWalkInOpen(false);
       resetWalkIn();
       refresh();
-      if (res.entry.status === 'PENDING_APPROVAL') {
+      if (res.expectedDelivery) {
+        Alert.alert('Expected delivery', `${flatCode} said to send ${res.expectedDelivery} up. Press "Let in" on the visitor.`);
+      } else if (res.entry.status === 'PENDING_APPROVAL') {
         Alert.alert(
           res.notifiedResidents > 0 ? 'Resident asked' : 'No one could be asked',
           res.notifiedResidents > 0
@@ -209,6 +219,15 @@ export default function GateScreen() {
         </TouchableOpacity>
       </View>
 
+      <View style={styles.modes}>
+        {([['visitors', 'Visitors'], ['parcels', 'Parcels']] as const).map(([key, label]) => (
+          <TouchableOpacity key={key} style={[styles.mode, mode === key && styles.modeActive]} onPress={() => setMode(key)} accessibilityRole="button" accessibilityState={{ selected: mode === key }}>
+            <Text style={[styles.modeText, mode === key && styles.modeTextActive]}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {mode === 'parcels' ? <ParcelsPanel /> : (<>
       <View style={styles.bigButtons}>
         <Button label="New visitor" icon={<Ionicons name="person-add-outline" size={18} color={colors.textInverse} />} onPress={() => setWalkInOpen(true)} style={{ flex: 1 }} />
         <Button label="Enter code" variant="outline" icon={<Ionicons name="keypad-outline" size={18} color={colors.primary} />} onPress={() => setCodeOpen(true)} style={{ flex: 1 }} />
@@ -250,6 +269,7 @@ export default function GateScreen() {
           }
         />
       )}
+      </>)}
 
       {/* New visitor */}
       <InlineSheet visible={walkInOpen} onRequestClose={() => !walkIn.isPending && setWalkInOpen(false)}>
@@ -286,6 +306,16 @@ export default function GateScreen() {
             <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Name" placeholderTextColor={colors.textTertiary} maxLength={100} />
             <TextInput style={styles.input} value={phone} onChangeText={setPhone} placeholder="Phone (optional)" placeholderTextColor={colors.textTertiary} keyboardType="phone-pad" maxLength={20} />
             <Chips options={VISITOR_TYPES} value={type} onChange={setType} />
+            {flatNotes.map((n) => (
+              <View key={n.id} style={styles.deliveryNote}>
+                <Ionicons name={n.instruction === 'LEAVE_AT_GATE' ? 'hand-left-outline' : 'checkmark-circle-outline'} size={18} color={colors.warning} />
+                <Text style={styles.deliveryNoteText}>
+                  {n.instruction === 'LEAVE_AT_GATE'
+                    ? `${flat?.flatCode} asked for ${n.company} deliveries to be left at the gate. Record a parcel instead.`
+                    : `${flat?.flatCode} said to send ${n.company} up. They will be approved without asking.`}
+                </Text>
+              </View>
+            ))}
             <TextInput style={styles.input} value={vehicle} onChangeText={(v) => setVehicle(tidyVehicle(v))} placeholder="Vehicle number (optional)" placeholderTextColor={colors.textTertiary} autoCapitalize="characters" />
             <TextInput style={styles.input} value={purpose} onChangeText={setPurpose} placeholder="Purpose (optional)" placeholderTextColor={colors.textTertiary} maxLength={200} />
           </ScrollView>
@@ -346,6 +376,13 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.base, paddingVertical: spacing.md, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
   title: { ...typography.headingMedium, color: colors.text },
   subtitle: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },
+  modes: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.base, paddingTop: spacing.md },
+  mode: { flex: 1, alignItems: 'center', paddingVertical: spacing.sm, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  modeActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  modeText: { ...typography.labelLarge, color: colors.textSecondary },
+  modeTextActive: { color: colors.textInverse },
+  deliveryNote: { flexDirection: 'row', gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.warningLight },
+  deliveryNoteText: { ...typography.bodySmall, color: colors.text, flex: 1 },
   bigButtons: { flexDirection: 'row', gap: spacing.md, padding: spacing.base },
   searchBox: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginHorizontal: spacing.base, paddingHorizontal: spacing.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md },
   searchInput: { flex: 1, ...typography.bodyMedium, color: colors.text, paddingVertical: spacing.md },
