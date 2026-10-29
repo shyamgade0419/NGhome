@@ -37,6 +37,7 @@ import { AmenitiesModule } from './amenities/amenities.module';
 import { VisitorsModule } from './visitors/visitors.module';
 import { DeliveriesModule } from './deliveries/deliveries.module';
 import { HelpersModule } from './helpers/helpers.module';
+import { VehiclesModule } from './vehicles/vehicles.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { EventsModule } from './events/events.module';
@@ -90,6 +91,7 @@ import { ChatModule } from './chat/chat.module';
     VisitorsModule,
     DeliveriesModule,
     HelpersModule,
+    VehiclesModule,
   ],
   providers: [
     // Global guards

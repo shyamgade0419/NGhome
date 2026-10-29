@@ -387,6 +387,8 @@ model Society {
   parcels              Parcel[]
   domesticHelpers      DomesticHelper[]
   domesticHelperVisits DomesticHelperVisit[]
+  vehicles             Vehicle[]
+  parkingSlots         ParkingSlot[]
 
   @@map("societies")
 }
@@ -495,6 +497,8 @@ model Flat {
   deliveryExpectations DeliveryExpectation[]
   parcels              Parcel[]
   domesticHelperFlats  DomesticHelperFlat[]
+  vehicles             Vehicle[]
+  parkingSlotsHeld     ParkingSlot[]
 
   @@unique([societyId, flatCode])
   @@index([societyId])
@@ -1741,4 +1745,74 @@ model DomesticHelperVisit {
   @@index([societyId, checkedInAt])
   @@index([helperId, checkedInAt])
   @@map("domestic_helper_visits")
+}
+
+// ─── Vehicles and parking ────────────────────────────────────────────────────
+
+enum VehicleKind {
+  CAR
+  TWO_WHEELER
+  CYCLE
+  OTHER
+}
+
+/// What a parking slot is meant for.
+enum SlotFor {
+  CAR
+  TWO_WHEELER
+  ANY
+}
+
+/// A vehicle a household has registered. plate is the number reduced to upper-case letters and
+/// digits, so "ts 09 ab-1234" and "TS09AB1234" are the same vehicle. A plate may be live on one
+/// flat only (a partial unique index in the migration); a removed vehicle keeps its history and
+/// frees the plate.
+model Vehicle {
+  id            String      @id @default(uuid())
+  societyId     String
+  flatId        String
+  plate         String
+  kind          VehicleKind
+  make          String?
+  colour        String?
+  active        Boolean     @default(true)
+  createdById   String
+  removedAt     DateTime?
+  removedById   String?
+  removedReason String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  society Society       @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  flat    Flat          @relation(fields: [flatId], references: [id], onDelete: Cascade)
+  slots   ParkingSlot[]
+
+  @@index([societyId, flatId, active])
+  @@index([societyId, plate])
+  @@map("vehicles")
+}
+
+/// A parking space. Allocated to at most one flat; the flat may say which of its vehicles
+/// uses it. A visitor slot is never allocated to a flat.
+model ParkingSlot {
+  id            String    @id @default(uuid())
+  societyId     String
+  code          String
+  area          String?
+  slotFor       SlotFor   @default(ANY)
+  visitor       Boolean   @default(false)
+  flatId        String?
+  vehicleId     String?
+  allocatedAt   DateTime?
+  allocatedById String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  society Society  @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  flat    Flat?    @relation(fields: [flatId], references: [id], onDelete: SetNull)
+  vehicle Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  @@unique([societyId, code])
+  @@index([societyId, flatId])
+  @@map("parking_slots")
 }

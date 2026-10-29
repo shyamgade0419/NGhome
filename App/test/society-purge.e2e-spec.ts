@@ -93,9 +93,12 @@ describe('Permanent society delete (e2e, real Postgres)', () => {
     const helper = await prisma.domesticHelper.create({ data: { societyId, name: 'Helper', role: 'MAID', codeHash: `purge-helper-${societyId}`, createdById: authorId } });
     await prisma.domesticHelperFlat.create({ data: { societyId, helperId: helper.id, flatId, addedById: authorId } });
     await prisma.domesticHelperVisit.create({ data: { societyId, helperId: helper.id, method: 'GUARD' } });
+
+    const vehicle = await prisma.vehicle.create({ data: { societyId, flatId, plate: `PG${societyId.slice(0, 6).toUpperCase().replace(/[^A-Z0-9]/g, '0')}01`, kind: 'CAR', createdById: authorId } });
+    await prisma.parkingSlot.create({ data: { societyId, code: 'P-1', flatId, vehicleId: vehicle.id, allocatedAt: now } });
   }
 
-  const TABLES_WITH_SOCIETY = ['account', 'fund', 'transaction', 'expenseCategory', 'expense', 'billingRule', 'billingPeriod', 'maintenanceBill', 'waterBillingConfig', 'waterMeterReading', 'visitorEntry', 'visitorInvitation', 'amenity', 'deliveryExpectation', 'parcel', 'domesticHelper', 'domesticHelperFlat', 'domesticHelperVisit', 'flat', 'building', 'announcement'] as const;
+  const TABLES_WITH_SOCIETY = ['account', 'fund', 'transaction', 'expenseCategory', 'expense', 'billingRule', 'billingPeriod', 'maintenanceBill', 'waterBillingConfig', 'waterMeterReading', 'visitorEntry', 'visitorInvitation', 'amenity', 'deliveryExpectation', 'parcel', 'domesticHelper', 'domesticHelperFlat', 'domesticHelperVisit', 'vehicle', 'parkingSlot', 'flat', 'building', 'announcement'] as const;
   const countFor = async (societyId: string) => {
     const out: Record<string, number> = {};
     for (const t of TABLES_WITH_SOCIETY) out[t] = await (prisma as any)[t].count({ where: { societyId } });
@@ -220,7 +223,7 @@ describe('Permanent society delete (e2e, real Postgres)', () => {
 
     it('leaves the other society exactly as it was', async () => {
       const counts = await countFor(bystanderId);
-      expect(counts).toMatchObject({ account: 1, fund: 1, transaction: 1, expense: 1, billingRule: 1, maintenanceBill: 1, visitorEntry: 1, visitorInvitation: 1, amenity: 1, deliveryExpectation: 1, parcel: 1, domesticHelper: 1, domesticHelperFlat: 1, domesticHelperVisit: 1, flat: 1, building: 1, announcement: 1 });
+      expect(counts).toMatchObject({ account: 1, fund: 1, transaction: 1, expense: 1, billingRule: 1, maintenanceBill: 1, visitorEntry: 1, visitorInvitation: 1, amenity: 1, deliveryExpectation: 1, parcel: 1, domesticHelper: 1, domesticHelperFlat: 1, domesticHelperVisit: 1, vehicle: 1, parkingSlot: 1, flat: 1, building: 1, announcement: 1 });
       expect(await prisma.billLineItem.count({ where: { maintenanceBill: { societyId: bystanderId } } })).toBe(1);
     });
 
