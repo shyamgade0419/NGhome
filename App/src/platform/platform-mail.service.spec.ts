@@ -2,7 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MailService, maskEmail } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { PlatformMailService } from './platform-mail.service';
+import { MAIL_STEP_DEADLINE_MS, PlatformMailService } from './platform-mail.service';
 
 const mailConfig = (over: Record<string, unknown> = {}, nodeEnv = 'production') =>
   new ConfigService({
@@ -105,6 +105,25 @@ describe('PlatformMailService.check', () => {
     const mail = mailWith({ verify: { ok: true } });
     await new PlatformMailService(prismaWith({ email: 'me@novagade.in' }), mail).check(ACTOR);
     expect((mail.sendTest as jest.Mock).mock.calls).toEqual([['me@novagade.in']]);
+  });
+
+  it('reports a mail server that never answers, instead of hanging past the browser timeout', async () => {
+    jest.useFakeTimers();
+    try {
+      const mail = {
+        describe: jest.fn().mockReturnValue({ configured: true, warnings: [] }),
+        verifyConnection: jest.fn().mockReturnValue(new Promise(() => undefined)),
+        sendTest: jest.fn(),
+      } as unknown as MailService;
+      const pending = new PlatformMailService(prismaWith({ email: 'me@novagade.in' }), mail).check(ACTOR);
+      await jest.advanceTimersByTimeAsync(MAIL_STEP_DEADLINE_MS + 1);
+      const out = await pending;
+      expect(out.connection).toEqual({ ok: false, reason: expect.stringMatching(/no answer.*587/s) });
+      expect(out.test).toBeNull();
+      expect(mail.sendTest).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('is not found for an unknown admin', async () => {

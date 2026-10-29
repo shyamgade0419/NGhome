@@ -42,7 +42,10 @@ export function EmailCheckCard() {
 
       {check.isError && (
         <p className="mt-4 text-sm text-red-300">
-          {(check.error as any)?.response?.data?.message ?? 'The check could not run. Try again in a minute.'}
+          {(check.error as any)?.response?.data?.message ??
+            ((check.error as any)?.response
+              ? `The server answered with an error (${(check.error as any).response.status}) and no details. Check the API log in Coolify.`
+              : 'No answer from the server. If you just redeployed, wait a minute and try again; otherwise check that the API is running in Coolify.')}
         </p>
       )}
 
