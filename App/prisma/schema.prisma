@@ -389,6 +389,9 @@ model Society {
   domesticHelperVisits DomesticHelperVisit[]
   vehicles             Vehicle[]
   parkingSlots         ParkingSlot[]
+  staffShifts          StaffShift[]
+  staffRoster          StaffRoster[]
+  staffAttendance      StaffAttendance[]
 
   @@map("societies")
 }
@@ -865,8 +868,10 @@ model SocietyEmployee {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  society       Society        @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  society       Society           @relation(fields: [societyId], references: [id], onDelete: Cascade)
   salaryRecords SalaryRecord[]
+  roster        StaffRoster[]
+  attendance    StaffAttendance[]
 
   @@index([societyId])
   @@map("society_employees")
@@ -1815,4 +1820,80 @@ model ParkingSlot {
   @@unique([societyId, code])
   @@index([societyId, flatId])
   @@map("parking_slots")
+}
+
+// ─── Staff attendance, shifts and duty roster ────────────────────────────────
+
+enum AttendanceStatus {
+  PRESENT
+  HALF_DAY
+  ABSENT
+  LEAVE
+}
+
+/// A named working period the society uses, e.g. Morning 06:00-14:00. Minutes since midnight,
+/// India time. end before start means the shift runs past midnight. Shifts are deactivated, never
+/// deleted, so history keeps its meaning.
+model StaffShift {
+  id          String   @id @default(uuid())
+  societyId   String
+  name        String
+  startMinute Int
+  endMinute   Int
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  society Society       @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  roster  StaffRoster[]
+
+  @@unique([societyId, name])
+  @@map("staff_shifts")
+}
+
+/// The duty roster: who works which shift on which date, and where. A row with no shift is a
+/// scheduled day off.
+model StaffRoster {
+  id           String   @id @default(uuid())
+  societyId    String
+  employeeId   String
+  date         DateTime @db.Date
+  shiftId      String?
+  post         String?
+  assignedById String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  society  Society         @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  employee SocietyEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift    StaffShift?     @relation(fields: [shiftId], references: [id], onDelete: NoAction)
+
+  @@unique([employeeId, date])
+  @@index([societyId, date])
+  @@map("staff_roster")
+}
+
+/// What actually happened on a date. At most one row per employee per day. The guard's check-in
+/// and check-out fill the times; the committee can mark any status and correct a day.
+model StaffAttendance {
+  id             String           @id @default(uuid())
+  societyId      String
+  employeeId     String
+  date           DateTime         @db.Date
+  status         AttendanceStatus @default(PRESENT)
+  checkInAt      DateTime?
+  checkOutAt     DateTime?
+  checkedInById  String?
+  checkedOutById String?
+  markedById     String?
+  note           String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  society  Society         @relation(fields: [societyId], references: [id], onDelete: Cascade)
+  employee SocietyEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([societyId, date])
+  @@map("staff_attendance")
 }
