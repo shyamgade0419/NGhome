@@ -46,6 +46,8 @@ export interface Flat {
   status: FlatStatus;
   ownershipType: string | null;
   parkingSlots: number;
+  /** The flat's water meter counts down: water use is earlier reading minus later. */
+  waterMeterReversed?: boolean;
   isActive: boolean;
   building?: { id: string; name: string; code: string | null };
 }

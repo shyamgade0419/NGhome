@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius } from '@/theme';
 import { BillingPeriod, billingPeriodName } from '@/types/billing.types';
 import { Flat } from '@/types/society.types';
+import { waterUnits, readingProblem, wrongWayLabel } from '@/utils/water';
 
 /* ── Cost input row ──────────────────────────────────────────────── */
 function CostRow({
@@ -109,6 +110,8 @@ interface FlatEntry {
   closing: string;
   /** True when opening was carried forward from a previous month's closing. */
   carriedForward: boolean;
+  /** This flat's meter counts down — use is opening minus closing. */
+  reversed: boolean;
 }
 
 /**
@@ -127,17 +130,19 @@ function FlatReadingRow({
   entry: FlatEntry;
   onChange: (field: 'opening' | 'closing', val: string) => void;
 }) {
-  const units = parseFloat(entry.closing || '0') - parseFloat(entry.opening || '0');
+  const used = waterUnits(parseFloat(entry.opening || '0'), parseFloat(entry.closing || '0'), entry.reversed);
+  const units = used ?? 0;
   const hasClosing = entry.closing !== '';
-  const invalid = hasClosing && units < 0;
+  const invalid = hasClosing && used === null;
 
   return (
     <View style={flatStyles.row}>
       <View style={flatStyles.flatInfo}>
         <Text style={flatStyles.flatCode}>{entry.flatCode}</Text>
+        {entry.reversed && <Text style={flatStyles.units}>Meter counts down</Text>}
         {hasClosing && !invalid && <Text style={flatStyles.units}>{units} KL</Text>}
         {invalid && (
-          <Text style={[flatStyles.units, { color: colors.error }]}>Below previous</Text>
+          <Text style={[flatStyles.units, { color: colors.error }]}>{wrongWayLabel(entry.reversed)}</Text>
         )}
       </View>
 
@@ -295,6 +300,7 @@ export default function WaterReadingsScreen() {
           opening: carried ?? '',
           closing: '',
           carriedForward: carried !== undefined,
+          reversed: !!f.waterMeterReversed,
         };
       }),
     );
@@ -345,13 +351,10 @@ export default function WaterReadingsScreen() {
       (e) =>
         isNaN(parseFloat(e.opening)) ||
         isNaN(parseFloat(e.closing)) ||
-        parseFloat(e.closing) < parseFloat(e.opening),
+        waterUnits(parseFloat(e.opening), parseFloat(e.closing), e.reversed) === null,
     );
     if (invalid) {
-      Alert.alert(
-        'Invalid Reading',
-        `Flat ${invalid.flatCode}: the current reading cannot be lower than the previous one (${invalid.opening}).`,
-      );
+      Alert.alert('Invalid Reading', readingProblem(invalid.flatCode, invalid.opening, invalid.reversed));
       return;
     }
 

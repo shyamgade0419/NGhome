@@ -26,6 +26,15 @@ interface FlatReading {
   openingReading: string;
   closingReading: string;
   notes: string;
+  /** This flat's meter counts down: use is earlier minus later (set on the flat). */
+  reversed: boolean;
+}
+
+/** Units used between the readings the way this flat's meter counts; negative means the numbers are the wrong way round. */
+function unitsBetween(r: Pick<FlatReading, 'openingReading' | 'closingReading' | 'reversed'>): number {
+  const o = parseFloat(r.openingReading) || 0;
+  const c = parseFloat(r.closingReading) || 0;
+  return r.reversed ? o - c : c - o;
 }
 
 interface AllocationResult {
@@ -153,6 +162,7 @@ export default function WaterBillingPage() {
           openingReading: ex ? String(ex.openingReading) : '',
           closingReading: ex ? String(ex.closingReading) : '',
           notes: ex?.notes ?? '',
+          reversed: !!f.waterMeterReversed,
         };
       }),
     );
@@ -213,11 +223,7 @@ export default function WaterBillingPage() {
     ((parseFloat(costs.electricityWaterPercent) || 0) / 100) *
       (parseFloat(costs.commonElectricityBill) || 0);
 
-  const totalUnitsEntered = readings.reduce((s, r) => {
-    const o = parseFloat(r.openingReading) || 0;
-    const c = parseFloat(r.closingReading) || 0;
-    return s + Math.max(0, c - o);
-  }, 0);
+  const totalUnitsEntered = readings.reduce((s, r) => s + Math.max(0, unitsBetween(r)), 0);
 
   const previewRate = totalUnitsEntered > 0 ? totalWaterCost / totalUnitsEntered : 0;
 
@@ -388,14 +394,23 @@ export default function WaterBillingPage() {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {readings.map((r) => {
-                        const o = parseFloat(r.openingReading) || 0;
-                        const c = parseFloat(r.closingReading) || 0;
-                        const consumed = Math.max(0, c - o);
+                        const used = unitsBetween(r);
+                        const consumed = Math.max(0, used);
                         const estCharge = consumed * previewRate;
-                        const hasError = c < o && r.closingReading !== '';
+                        const hasError = used < 0 && r.closingReading !== '';
                         return (
                           <tr key={r.flatId} className={cn('hover:bg-slate-50', hasError && 'bg-red-50')}>
-                            <td className="px-4 py-2.5 font-semibold text-slate-900">{r.flatCode}</td>
+                            <td className="px-4 py-2.5 font-semibold text-slate-900">
+                              {r.flatCode}
+                              {r.reversed && (
+                                <span
+                                  className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+                                  title="This meter counts down: the closing reading is lower than the opening"
+                                >
+                                  counts down
+                                </span>
+                              )}
+                            </td>
                             <td className="px-4 py-2.5">
                               <input
                                 type="number"

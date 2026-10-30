@@ -329,6 +329,7 @@ function EditFlatModal({ flat, buildings, onClose }: { flat: any; buildings: any
     status: flat.status ?? 'VACANT',
     ownershipType: flat.ownershipType ?? '',
     parkingSlots: flat.parkingSlots?.toString() ?? '',
+    waterMeterReversed: !!flat.waterMeterReversed,
   });
 
   const mutation = useMutation({
@@ -344,6 +345,7 @@ function EditFlatModal({ flat, buildings, onClose }: { flat: any; buildings: any
         status: form.status || undefined,
         ownershipType: form.ownershipType.trim() || undefined,
         parkingSlots: form.parkingSlots ? parseInt(form.parkingSlots) : undefined,
+        waterMeterReversed: form.waterMeterReversed,
       }),
     onSuccess: () => {
       toast.success('Flat updated');
@@ -427,6 +429,23 @@ function EditFlatModal({ flat, buildings, onClose }: { flat: any; buildings: any
             <Input label="Ownership Type" placeholder="OWNED / RENTED" value={form.ownershipType} onChange={f('ownershipType')} />
             <Input label="Parking Slots" type="number" placeholder="1" value={form.parkingSlots} onChange={f('parkingSlots')} />
           </div>
+
+          {/* A faulty meter whose numbers fall month to month. Readings are still typed as the dial shows. */}
+          <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+            <input
+              type="checkbox"
+              checked={form.waterMeterReversed}
+              onChange={(e) => setForm((prev) => ({ ...prev, waterMeterReversed: e.target.checked }))}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300"
+            />
+            <span>
+              <span className="block font-medium text-slate-800">Water meter counts down</span>
+              <span className="block text-xs text-slate-500">
+                Tick this if this flat&apos;s meter runs backwards (e.g. 98362 last month, 98336 now = 26 used). Enter
+                readings exactly as the meter shows; water use is worked out as earlier minus later.
+              </span>
+            </span>
+          </label>
         </div>
 
         <div className="mt-6 flex items-center justify-between gap-3">
