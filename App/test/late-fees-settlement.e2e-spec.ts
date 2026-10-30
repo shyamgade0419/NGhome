@@ -378,13 +378,6 @@ describe('Late fines and oldest-first settlement (e2e, real Postgres)', () => {
       expect((await bill(t.aug.id)).isPaid).toBe(true); // 1000 + its 100 fine
     });
 
-    it('refuses a payment bigger than the flat owes, saying how much it owes', async () => {
-      const t = await threeMonths();
-      const res = await submitPayment(t.token, t.oct.id, 3000.5).expect(400);
-      expect(messageOf(res.body)).toMatch(/owes \(₹3000\)/);
-      expect(await prisma.paymentSubmission.count({ where: { flatId: t.flatId } })).toBe(0);
-    });
-
     it('does not touch another flat\'s bills, or bills not published yet', async () => {
       const t = await threeMonths();
       const other = await newFlat();
@@ -396,23 +389,38 @@ describe('Late fines and oldest-first settlement (e2e, real Postgres)', () => {
       expect((await bill(draft.id)).pendingAmount.toString()).toBe('1000');
     });
 
-    it('two payments approved at the same moment are settled one after the other — together never more than owed', async () => {
-      const t = await threeMonths();
+    it('two payments approved at the same moment are settled one after the other — the dues are cleared once and the rest is advance', async () => {
+      const t = await threeMonths(); // owes 3000
       const a = await submitPayment(t.token, t.oct.id, 2000).expect(201);
       const b = await submitPayment(t.token, t.oct.id, 2000).expect(201);
       const results = await Promise.all([approve(a.body.data.id), approve(b.body.data.id)]);
-      const won = results.filter((r) => r.status === 201);
-      const lost = results.filter((r) => r.status !== 201);
-      expect(won).toHaveLength(1);
-      expect(lost).toHaveLength(1);
-      expect(messageOf(lost[0].body)).toMatch(/exceeds what this flat owes/);
+      expect(results.map((r) => r.status)).toEqual([201, 201]);
 
-      const paid = (await prisma.maintenanceBill.findMany({ where: { flatId: t.flatId } })).reduce((s, x) => s.plus(x.paidAmount), D(0));
-      expect(paid.toString()).toBe('2000');
-      // The loser changed nothing: still PENDING, and the account was credited once.
-      const statuses = await prisma.paymentSubmission.findMany({ where: { flatId: t.flatId }, select: { status: true } });
-      expect(statuses.map((s) => s.status).sort()).toEqual(['APPROVED', 'PENDING']);
-      expect(await prisma.transaction.count({ where: { societyId, linkedEntityType: 'PAYMENT', linkedEntityId: { in: [a.body.data.id, b.body.data.id] } } })).toBe(1);
+      const bills = await prisma.maintenanceBill.findMany({ where: { flatId: t.flatId } });
+      expect(bills.reduce((s, x) => s.plus(x.paidAmount), D(0)).toString()).toBe('3000'); // never more than the bills
+      for (const x of bills) expect(x.isPaid).toBe(true);
+      // 4000 came in, 3000 settled the bills, so 1000 is kept ahead — exactly once, however the two interleaved.
+      const flat = await prisma.flat.findUniqueOrThrow({ where: { id: t.flatId } });
+      expect(flat.creditBalance.toString()).toBe('1000');
+      const entries = await prisma.flatCreditEntry.findMany({ where: { flatId: t.flatId } });
+      expect(entries.reduce((s, e) => s.plus(e.amount), D(0)).toString()).toBe('1000');
+      expect(await prisma.transaction.count({ where: { societyId, linkedEntityType: 'PAYMENT', linkedEntityId: { in: [a.body.data.id, b.body.data.id] } } })).toBe(2);
+    });
+
+    it('a payment racing the late-fine pass never deadlocks — the same race, many times over', async () => {
+      // Postgres takes a share lock on the flat whenever ANY of its bills is updated; a full lock on the flat in
+      // settlement once deadlocked against the fine pass about one run in three. This repeats the race so it
+      // cannot come back unnoticed.
+      await setFine({ lateFeeType: 'FIXED', lateFeeValue: 100 });
+      for (let i = 0; i < 15; i++) {
+        const t = await threeMonths();
+        const sub = await submitPayment(t.token, t.oct.id, 1000).expect(201);
+        const [approved] = await Promise.all([approve(sub.body.data.id), lateFees.applyForSociety(societyId, LATER)]);
+        expect(approved.status).toBe(201);
+        for (const x of await prisma.maintenanceBill.findMany({ where: { flatId: t.flatId } })) {
+          expect(x.totalAmount.minus(x.paidAmount).toString()).toBe(x.pendingAmount.toString());
+        }
+      }
     });
 
     it('two payments that together fit are both settled when approved together', async () => {
@@ -455,6 +463,177 @@ describe('Late fines and oldest-first settlement (e2e, real Postgres)', () => {
       expect(await arrearsIn(earlier.id)).toBe(0); // nothing came before it
       expect(await arrearsIn(middle.id)).toBe(700); // only the earlier month
       expect(await arrearsIn(later.id)).toBe(1700); // both earlier months
+    });
+  });
+
+/* ───────────────────────────── advance credit ───────────────────────────── */
+
+  describe('paying ahead — advance credit', () => {
+    async function threeMonths() {
+      const flat = await newFlat();
+      const aug = await newBill((await newPeriod()).id, flat.flatId, 1000);
+      const sep = await newBill((await newPeriod()).id, flat.flatId, 1000);
+      const oct = await newBill((await newPeriod()).id, flat.flatId, 1000);
+      return { ...flat, aug, sep, oct };
+    }
+    const creditOf = async (flatId: string) => (await prisma.flat.findUniqueOrThrow({ where: { id: flatId } })).creditBalance;
+    const ledgerSum = async (flatId: string) =>
+      (await prisma.flatCreditEntry.aggregate({ where: { flatId }, _sum: { amount: true } }))._sum.amount ?? D(0);
+    /** A draft period with one unpublished bill, ready to publish. */
+    async function draftBill(flatId: string, amount: number) {
+      const period = await newPeriod('DRAFT');
+      const bill = await newBill(period.id, flatId, amount, { isPublished: false });
+      await prisma.billingPeriod.update({ where: { id: period.id }, data: { status: 'CALCULATED' } });
+      return { period, bill };
+    }
+    const publish = (periodId: string) => http().post(`/api/v1/billing/periods/${periodId}/publish`).set(auth(admin));
+
+    it('clears every due, and keeps the rest of the payment as the flat\'s advance', async () => {
+      const t = await threeMonths();
+      const sub = await submitPayment(t.token, t.oct.id, 3500).expect(201);
+      await approve(sub.body.data.id).expect(201);
+      for (const b of [t.aug, t.sep, t.oct]) expect((await bill(b.id)).isPaid).toBe(true);
+      expect((await creditOf(t.flatId)).toString()).toBe('500');
+      const entries = await prisma.flatCreditEntry.findMany({ where: { flatId: t.flatId } });
+      expect(entries.map((e) => [e.kind, e.amount.toString(), e.paymentId])).toEqual([['ADVANCE_PAYMENT', '500', sub.body.data.id]]);
+    });
+
+    it('accepts a payment when nothing is owed — all of it is advance', async () => {
+      const flat = await newFlat();
+      const paid = await newBill((await newPeriod()).id, flat.flatId, 1000, { isPaid: true, paidAmount: D(1000), pendingAmount: D(0) });
+      const sub = await submitPayment(flat.token, paid.id, 2500).expect(201);
+      await approve(sub.body.data.id).expect(201);
+      expect((await creditOf(flat.flatId)).toString()).toBe('2500');
+    });
+
+    it('is applied to the flat\'s next bill when it is published — part covers it', async () => {
+      const t = await threeMonths();
+      const sub = await submitPayment(t.token, t.oct.id, 4000).expect(201);
+      await approve(sub.body.data.id).expect(201); // 1000 advance
+      const { bill: next } = await draftBill(t.flatId, 2500);
+      expect((await bill(next.id)).paidAmount.toString()).toBe('0'); // nothing yet: it is only a draft
+
+      await publish(next.billingPeriodId).expect(201);
+      const after = await bill(next.id);
+      expect(after.isPublished).toBe(true);
+      expect(after.paidAmount.toString()).toBe('1000');
+      expect(after.pendingAmount.toString()).toBe('1500');
+      expect(after.isPaid).toBe(false);
+      expect((await creditOf(t.flatId)).toString()).toBe('0');
+      const used = await prisma.flatCreditEntry.findMany({ where: { flatId: t.flatId, kind: 'APPLIED_TO_BILL' } });
+      expect(used.map((e) => [e.billId, e.amount.toString()])).toEqual([[next.id, '-1000']]);
+    });
+
+    it('pays the whole bill when the credit is enough, and keeps the remainder', async () => {
+      const flat = await newFlat();
+      await prisma.flat.update({ where: { id: flat.flatId }, data: { creditBalance: D(3000) } });
+      await prisma.flatCreditEntry.create({ data: { societyId, flatId: flat.flatId, amount: D(3000), kind: 'ADVANCE_PAYMENT' } });
+      const { bill: next } = await draftBill(flat.flatId, 2500);
+      await publish(next.billingPeriodId).expect(201);
+      const after = await bill(next.id);
+      expect(after.isPaid).toBe(true);
+      expect(after.pendingAmount.toString()).toBe('0');
+      expect((await creditOf(flat.flatId)).toString()).toBe('500');
+    });
+
+    it('keeps the period\'s collected and pending totals right after applying it', async () => {
+      const flat = await newFlat();
+      await prisma.flat.update({ where: { id: flat.flatId }, data: { creditBalance: D(1000) } });
+      const { period } = await draftBill(flat.flatId, 2500);
+      await publish(period.id).expect(201);
+      const p = await prisma.billingPeriod.findUniqueOrThrow({ where: { id: period.id } });
+      expect(p.totalCollected.toString()).toBe('1000');
+      expect(p.totalPending.toString()).toBe('1500');
+    });
+
+    it('leaves another flat\'s bill alone', async () => {
+      const rich = await newFlat();
+      const other = await newFlat();
+      await prisma.flat.update({ where: { id: rich.flatId }, data: { creditBalance: D(5000) } });
+      const mine = await draftBill(rich.flatId, 2500);
+      const theirs = await newBill(mine.period.id, other.flatId, 2500, { isPublished: false });
+      await publish(mine.period.id).expect(201);
+      expect((await bill(theirs.id)).paidAmount.toString()).toBe('0');
+      expect((await bill(mine.bill.id)).isPaid).toBe(true);
+    });
+
+    it('spends a credit only once when two periods are published at the same moment', async () => {
+      const flat = await newFlat();
+      await prisma.flat.update({ where: { id: flat.flatId }, data: { creditBalance: D(1000) } });
+      await prisma.flatCreditEntry.create({ data: { societyId, flatId: flat.flatId, amount: D(1000), kind: 'ADVANCE_PAYMENT' } });
+      const one = await draftBill(flat.flatId, 800);
+      const two = await draftBill(flat.flatId, 800);
+      const results = await Promise.all([publish(one.period.id), publish(two.period.id)]);
+      expect(results.map((r) => r.status)).toEqual([201, 201]);
+      const applied = (await bill(one.bill.id)).paidAmount.plus((await bill(two.bill.id)).paidAmount);
+      expect(applied.toString()).toBe('1000'); // never 1600: the credit was 1000
+      expect((await creditOf(flat.flatId)).toString()).toBe('0');
+      expect((await ledgerSum(flat.flatId)).toString()).toBe('0'); // +1000 in, -1000 out
+    });
+
+    it('survives a payment and a publish for the same flat at the same moment — no deadlock, books agree', async () => {
+      const t = await threeMonths();
+      const first = await submitPayment(t.token, t.oct.id, 3300).expect(201);
+      const { bill: next, period } = await draftBill(t.flatId, 2000);
+      const [a, b] = await Promise.all([approve(first.body.data.id), publish(period.id)]);
+      expect([a.status, b.status]).toEqual([201, 201]);
+      const credit = await creditOf(t.flatId);
+      expect(credit.greaterThanOrEqualTo(0)).toBe(true);
+      expect((await ledgerSum(t.flatId)).toString()).toBe(credit.toString());
+      for (const x of await prisma.maintenanceBill.findMany({ where: { flatId: t.flatId } })) {
+        expect(x.totalAmount.minus(x.paidAmount).toString()).toBe(x.pendingAmount.toString());
+      }
+      void next;
+    });
+
+    it('lets a resident see their own flat\'s advance, and only their own', async () => {
+      const mine = await newFlat();
+      const theirs = await newFlat();
+      const paid = await newBill((await newPeriod()).id, mine.flatId, 1000, { isPaid: true, paidAmount: D(1000), pendingAmount: D(0) });
+      const sub = await submitPayment(mine.token, paid.id, 1800).expect(201);
+      await approve(sub.body.data.id).expect(201);
+
+      const seen = (await http().get('/api/v1/billing/my-credit').set(auth(mine.token)).expect(200)).body.data;
+      expect(seen.balance).toBe('1800');
+      expect(seen.entries.map((e: { kind: string; amount: string }) => [e.kind, e.amount])).toEqual([['ADVANCE_PAYMENT', '1800']]);
+
+      const other = (await http().get('/api/v1/billing/my-credit').set(auth(theirs.token)).expect(200)).body.data;
+      expect(other.balance).toBe('0');
+      expect(other.entries).toEqual([]);
+    });
+
+    it('never lets the credit go below zero, whatever the order of things', async () => {
+      const flat = await newFlat();
+      await prisma.flat.update({ where: { id: flat.flatId }, data: { creditBalance: D(100) } });
+      await expect(prisma.flat.update({ where: { id: flat.flatId }, data: { creditBalance: { decrement: 200 } } })).rejects.toThrow();
+    });
+
+    it('refuses an amount that is clearly a typo — more than a year ahead', async () => {
+      const t = await threeMonths(); // owes 3000; each bill is 1000, so the ceiling is 3000 + 12000
+      await submitPayment(t.token, t.oct.id, 15000).expect(201);
+      const res = await submitPayment(t.token, t.oct.id, 15000.01).expect(400);
+      expect(messageOf(res.body)).toMatch(/more than this flat can pay at once/);
+    });
+
+    it('shows on the statement: what was paid ahead and used on each bill, and what the flat still holds', async () => {
+      const flat = await newFlat();
+      await prisma.flat.update({ where: { id: flat.flatId }, data: { creditBalance: D(4000) } });
+      const { period, bill: next } = await draftBill(flat.flatId, 2500);
+      await publish(period.id).expect(201);
+      const rows = (await http().get(`/api/v1/billing/periods/${period.id}/statement`).set(auth(admin)).expect(200)).body.data.statements as { billId: string; advanceApplied: number; advanceBalance: number }[];
+      const row = rows.find((r) => r.billId === next.id)!;
+      expect(row.advanceApplied).toBe(2500);
+      expect(row.advanceBalance).toBe(1500);
+    });
+
+    it('does not fine a bill the credit has already paid', async () => {
+      await setFine({ lateFeeType: 'FIXED', lateFeeValue: 100 });
+      const flat = await newFlat();
+      await prisma.flat.update({ where: { id: flat.flatId }, data: { creditBalance: D(5000) } });
+      const { period, bill: next } = await draftBill(flat.flatId, 2500);
+      await publish(period.id).expect(201);
+      await lateFees.applyForSociety(societyId, LATER);
+      expect((await bill(next.id)).lateFee.toString()).toBe('0');
     });
   });
 });

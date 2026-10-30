@@ -204,6 +204,14 @@ export class BillingController {
 
   // ── Resident: View own bills ──────────────────────────────────────────────
 
+  /** What the resident's flat has paid ahead, and how it has been used. */
+  @Get('my-credit')
+  @ApiOperation({ summary: 'Resident: advance credit paid ahead by the flat, and its recent movements' })
+  getMyCredit(@SocietyId() societyId: string, @CurrentUser() user: AuthenticatedUser) {
+    if (!user.flatId) return { balance: '0', entries: [] };
+    return this.billingService.getFlatCredit(societyId, user.flatId);
+  }
+
   @Get('my-bills')
   @ApiOperation({ summary: 'Resident: Get own bills' })
   @ApiQuery({ name: 'page', required: false })

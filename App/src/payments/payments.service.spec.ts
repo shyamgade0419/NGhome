@@ -11,8 +11,9 @@ import { PaymentsService } from './payments.service';
 // real Postgres in test/payments-settlement.e2e-spec.ts. These cases are about everything around it —
 // idempotency, the atomic status claim, the ledger — so the settlement is stood in for.
 jest.mock('./settlement', () => ({
+  ...jest.requireActual('./settlement'),
   outstandingForFlat: jest.fn().mockResolvedValue(new (jest.requireActual('@prisma/client').Prisma.Decimal)('1000000000')),
-  settleOldestFirst: jest.fn().mockResolvedValue([]),
+  settleOldestFirst: jest.fn().mockResolvedValue({ allocations: [], credited: new (jest.requireActual('@prisma/client').Prisma.Decimal)(0) }),
 }));
 
 import { SubmitPaymentDto } from './dto/submit-payment.dto';

@@ -4,7 +4,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from '../documents/sftp-storage.service';
 import { assertAllowedUpload } from '../documents/file-safety';
-import { outstandingForFlat, settleOldestFirst } from './settlement';
+import { maxPayment, outstandingForFlat, settleOldestFirst } from './settlement';
 import { StoragePathService } from '../documents/storage-path.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SubmitPaymentDto } from './dto/submit-payment.dto';
@@ -72,14 +72,16 @@ export class PaymentsService {
         where: { id: dto.maintenanceBillId, societyId, flatId },
       });
       if (!bill) throw new NotFoundException('Bill not found');
-      if (bill.isPaid) throw new BadRequestException('Bill is already fully paid');
-      // There is no advance-credit model yet, so a payment cannot be more than the flat owes. What
-      // it may be is everything the flat owes on published bills — this month's and any earlier
-      // months' arrears — because the payment is settled oldest month first (see settleOldestFirst),
-      // not against this one bill only. Without the cap, money would be recorded that no bill takes.
+      // A payment may be up to everything the flat owes — this month's bill and any earlier months'
+      // arrears, settled oldest first (see settleOldestFirst) — plus a year of this flat's bill paid
+      // ahead, which becomes advance credit against its next bills. Above that it is almost certainly an
+      // extra zero, so it is refused here, before anything is stored.
       const owed = await outstandingForFlat(this.prisma, societyId, flatId);
-      if (new Prisma.Decimal(dto.amount).greaterThan(owed)) {
-        throw new BadRequestException(`Payment amount exceeds what this flat owes (₹${owed.toString()}).`);
+      const ceiling = maxPayment(owed, bill.totalAmount);
+      if (new Prisma.Decimal(dto.amount).greaterThan(ceiling)) {
+        throw new BadRequestException(
+          `That is more than this flat can pay at once (₹${ceiling.toString()}: what it owes plus a year ahead). Check the amount.`,
+        );
       }
     }
 
@@ -543,6 +545,7 @@ export class PaymentsService {
     // Fetch payment data outside the transaction (for amount, flatId, etc.)
     const payment = await this.findOne(societyId, paymentId);
 
+    let credited = new Prisma.Decimal(0);
     const approved = await this.prisma.$transaction(async (tx) => {
       const now = new Date();
 
@@ -596,7 +599,7 @@ export class PaymentsService {
       //    carries forward and clears before a newer one. The flat's open bills are locked while it is
       //    done, which is what keeps two payments approved at the same moment from jointly overpaying.
       if (payment.maintenanceBillId) {
-        await settleOldestFirst(tx, societyId, payment.flatId, paymentId, payment.amount);
+        credited = (await settleOldestFirst(tx, societyId, payment.flatId, paymentId, payment.amount)).credited;
       }
 
       // 6. Link transaction to payment
@@ -627,7 +630,9 @@ export class PaymentsService {
       () =>
         this.notifications.sendToUsers(societyId, [payment.userId], {
           title: 'Payment approved',
-          body: `Your payment of ₹${payment.amount.toString()} has been received and recorded.`,
+          body:
+            `Your payment of ₹${payment.amount.toString()} has been received and recorded.` +
+            (credited.greaterThan(0) ? ` ₹${credited.toString()} of it is kept as an advance and will be adjusted against your next bill.` : ''),
           type: 'PAYMENT_APPROVED',
           data: { paymentId },
         }),

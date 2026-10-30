@@ -6,6 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { NO_USAGE, PeriodUsage, deleteBlocker } from './billing-period-delete';
+import { applyCreditToPeriod } from './advance-credit';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { BillingCalculatorService } from './billing-calculator.service';
@@ -217,10 +218,20 @@ export class BillingService {
     }
 
     const published = await this.prisma.$transaction(async (tx) => {
+      // Lock the flats that hold advance credit before touching any bill — the order a payment's
+      // settlement uses too (flat, then its bills) — so the two cannot deadlock or spend a credit twice.
+      await tx.$queryRaw`
+        SELECT id FROM flats
+        WHERE "societyId" = ${societyId} AND "creditBalance" > 0
+        ORDER BY id FOR NO KEY UPDATE`; // not FOR UPDATE: see settleOldestFirst
+
       await tx.maintenanceBill.updateMany({
         where: { billingPeriodId: periodId, societyId },
         data: { isPublished: true },
       });
+
+      // A flat that has paid ahead has its next bill paid from that credit as it is published.
+      await applyCreditToPeriod(tx, societyId, periodId);
 
       return tx.billingPeriod.update({
         where: { id: periodId },
@@ -374,6 +385,20 @@ export class BillingService {
       throw err;
     }
     return { success: true };
+  }
+
+  /** A flat's advance credit: the balance, and the latest times it was added to or used. */
+  async getFlatCredit(societyId: string, flatId: string) {
+    const [flat, entries] = await Promise.all([
+      this.prisma.flat.findFirst({ where: { id: flatId, societyId }, select: { creditBalance: true } }),
+      this.prisma.flatCreditEntry.findMany({
+        where: { societyId, flatId },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: { id: true, amount: true, kind: true, createdAt: true },
+      }),
+    ]);
+    return { balance: (flat?.creditBalance ?? new Prisma.Decimal(0)).toString(), entries };
   }
 
   async findPeriod(societyId: string, periodId: string) {
@@ -534,6 +559,14 @@ export class BillingService {
       waterByFlat.set(r.flatId, r);
     }
 
+    // Advance credit: what was paid ahead and used against each bill, and what each flat still holds.
+    const advanceRows = await this.prisma.flatCreditEntry.groupBy({
+      by: ['billId'],
+      where: { societyId, kind: 'APPLIED_TO_BILL', billId: { in: bills.map((b) => b.id) } },
+      _sum: { amount: true },
+    });
+    const advanceByBill = new Map(advanceRows.map((r) => [r.billId as string, (r._sum.amount?.toNumber() ?? 0) * -1]));
+
     // Arrears: sum of pendingAmount from other published-but-unpaid bills per flat
     const flatIds = bills.map((b) => b.flatId);
     const arrearsRows = await this.prisma.maintenanceBill.groupBy({
@@ -598,6 +631,8 @@ export class BillingService {
         otherCharges,
         arrears,
         totalPayable,
+        advanceApplied: advanceByBill.get(bill.id) ?? 0,
+        advanceBalance: bill.flat.creditBalance.toNumber(),
       };
     });
 
