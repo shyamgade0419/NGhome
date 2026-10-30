@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { ruleConfigProblem } from './rule-config';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBillingRuleDto } from './dto/create-billing-rule.dto';
 import { Prisma } from '@prisma/client';
@@ -9,6 +10,13 @@ export class BillingRulesService {
 
   async create(societyId: string, dto: CreateBillingRuleDto) {
     const { components, ...ruleData } = dto;
+
+    // A rule with components takes its amounts from them; one without must carry its own amount, or it
+    // would bill nothing, for every flat, every month.
+    if (!components || components.length === 0) {
+      const problem = ruleConfigProblem(ruleData.calculationType, ruleData.config);
+      if (problem) throw new BadRequestException(problem);
+    }
 
     return this.prisma.billingRule.create({
       data: {
