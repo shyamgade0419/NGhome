@@ -20,6 +20,7 @@ import { deliveriesApi } from '@/api/endpoints/deliveries.api';
 import { ParcelsPanel } from '@/components/gate/ParcelsPanel';
 import { HelpPanel } from '@/components/gate/HelpPanel';
 import { VehiclePanel } from '@/components/gate/VehiclePanel';
+import { StaffPanel } from '@/components/gate/StaffPanel';
 import { instructionsForFlat } from '@/utils/deliveries';
 import { apiErrorMessage } from '@/api/endpoints/amenities.api';
 import { useAuth } from '@/hooks/useAuth';
@@ -89,7 +90,7 @@ export default function GateScreen() {
   const [search, setSearch] = useState('');
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [codeOpen, setCodeOpen] = useState(false);
-  const [mode, setMode] = useState<'visitors' | 'parcels' | 'help' | 'vehicles'>('visitors');
+  const [mode, setMode] = useState<'visitors' | 'parcels' | 'help' | 'vehicles' | 'staff'>('visitors');
 
   const list = useQuery({
     queryKey: ['gate-visitors', search.trim()],
@@ -221,15 +222,15 @@ export default function GateScreen() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.modes}>
-        {([['visitors', 'Visitors'], ['parcels', 'Parcels'], ['help', 'Help'], ['vehicles', 'Vehicles']] as const).map(([key, label]) => (
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={styles.modes}>
+        {([['visitors', 'Visitors'], ['parcels', 'Parcels'], ['help', 'Help'], ['vehicles', 'Vehicles'], ['staff', 'Staff']] as const).map(([key, label]) => (
           <TouchableOpacity key={key} style={[styles.mode, mode === key && styles.modeActive]} onPress={() => setMode(key)} accessibilityRole="button" accessibilityState={{ selected: mode === key }}>
             <Text style={[styles.modeText, mode === key && styles.modeTextActive]}>{label}</Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
-      {mode === 'parcels' ? <ParcelsPanel /> : mode === 'help' ? <HelpPanel /> : mode === 'vehicles' ? <VehiclePanel /> : (<>
+      {mode === 'parcels' ? <ParcelsPanel /> : mode === 'help' ? <HelpPanel /> : mode === 'vehicles' ? <VehiclePanel /> : mode === 'staff' ? <StaffPanel /> : (<>
       <View style={styles.bigButtons}>
         <Button label="New visitor" icon={<Ionicons name="person-add-outline" size={18} color={colors.textInverse} />} onPress={() => setWalkInOpen(true)} style={{ flex: 1 }} />
         <Button label="Enter code" variant="outline" icon={<Ionicons name="keypad-outline" size={18} color={colors.primary} />} onPress={() => setCodeOpen(true)} style={{ flex: 1 }} />
@@ -379,7 +380,7 @@ const styles = StyleSheet.create({
   title: { ...typography.headingMedium, color: colors.text },
   subtitle: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },
   modes: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.base, paddingTop: spacing.md },
-  mode: { flex: 1, alignItems: 'center', paddingVertical: spacing.sm, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  mode: { alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   modeActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   modeText: { ...typography.labelLarge, color: colors.textSecondary },
   modeTextActive: { color: colors.textInverse },
