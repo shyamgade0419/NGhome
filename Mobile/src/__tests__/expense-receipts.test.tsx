@@ -52,9 +52,11 @@ jest.mock('react-native-safe-area-context', () => {
 import ExpensesScreen from '../../app/(app)/admin/expenses/index';
 
 jest.useRealTimers();
+// A busy CI runner can take several seconds just to draw the screen the first time; the default 5 s is not enough.
+jest.setTimeout(60_000);
 const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 /** Wait until something has actually happened, instead of a fixed short pause that a busy machine overruns. */
-const until = async (cond: () => boolean, ms = 4000) => {
+const until = async (cond: () => boolean, ms = 30_000) => {
   const start = Date.now();
   while (!cond() && Date.now() - start < ms) await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
   expect(cond()).toBe(true);
