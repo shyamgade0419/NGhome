@@ -21,6 +21,16 @@ const ADMIN_SELECTABLE_LEVELS: string[] = [
   DocumentAccessLevel.FLAT_PRIVATE,
 ];
 
+/**
+ * An expense's receipts are stored as documents but belong to that expense: they are listed and read
+ * back through it (accountant and admin only), never through the general documents routes, where an
+ * ADMIN_ONLY level would also show them to the committee.
+ */
+const OWN_ROUTE_ONLY: Prisma.DocumentWhereInput = {
+  // Spelled out because `not: 'EXPENSE'` would also drop every document with no link at all (SQL NULL).
+  AND: [{ OR: [{ linkedEntityType: null }, { linkedEntityType: { not: 'EXPENSE' } }] }],
+};
+
 @Injectable()
 export class DocumentsService {
   constructor(
@@ -176,6 +186,7 @@ export class DocumentsService {
       where: {
         societyId,
         isActive: true,
+        ...OWN_ROUTE_ONLY,
         ...(category ? { category } : {}),
         OR: [
           {
@@ -215,6 +226,7 @@ export class DocumentsService {
         id,
         societyId,
         isActive: true,
+        ...OWN_ROUTE_ONLY,
         // DEFECT-7: Residents cannot access ADMIN_ONLY documents by direct ID
         OR: [
           {

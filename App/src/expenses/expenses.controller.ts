@@ -1,7 +1,11 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards,
+  BadRequestException, Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, UseInterceptors,
+  UploadedFile, Res, StreamableFile, HttpCode, HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
+import type { Response } from 'express';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes } from '@nestjs/swagger';
 import { SystemRole, ExpenseStatus } from '@prisma/client';
 import { ExpensesService, CreateExpenseDto } from './expenses.service';
 import { UpdateExpenseDto } from './dto/create-expense.dto';
@@ -82,8 +86,55 @@ export class ExpensesController {
   @Delete(':id')
   @Roles(SystemRole.SOCIETY_ADMIN)
   @ApiOperation({ summary: 'Delete a pending expense' })
-  remove(@SocietyId() societyId: string, @Param('id') id: string) {
-    return this.expensesService.remove(societyId, id);
+  remove(@SocietyId() societyId: string, @Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.expensesService.remove(societyId, id, user.id);
+  }
+
+  /**
+   * A photo or PDF of the bill. 10MB, the same cap as every other upload; the camera's JPEG is
+   * far under it. Field name "file", like documents.
+   */
+  @Post(':id/receipts')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Attach a receipt photo or PDF to an expense' })
+  async addReceipt(
+    @SocietyId() societyId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('No file was uploaded — attach it under the "file" field.');
+    return this.expensesService.addReceipt(societyId, id, user.id, file);
+  }
+
+  @Get(':id/receipts/:documentId/file')
+  @ApiOperation({ summary: 'Download a receipt' })
+  async receiptFile(
+    @SocietyId() societyId: string,
+    @Param('id') id: string,
+    @Param('documentId') documentId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, fileName, mimeType } = await this.expensesService.getReceiptFile(societyId, id, documentId);
+    res.set({
+      'Content-Type': mimeType,
+      'Content-Disposition': `inline; filename="${encodeURIComponent(fileName)}"`,
+    });
+    return new StreamableFile(buffer);
+  }
+
+  @Delete(':id/receipts/:documentId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Remove a receipt (not once the expense is paid)' })
+  async removeReceipt(
+    @SocietyId() societyId: string,
+    @Param('id') id: string,
+    @Param('documentId') documentId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.expensesService.removeReceipt(societyId, id, documentId, user.id);
   }
 
   @Post(':id/approve')

@@ -1,14 +1,29 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma, ExpenseStatus } from '@prisma/client';
+import { DocumentAccessLevel, Prisma, ExpenseStatus } from '@prisma/client';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
+import { SftpStorageService } from '../documents/sftp-storage.service';
+import { StoragePathService } from '../documents/storage-path.service';
+import { DocumentsService } from '../documents/documents.service';
+import { assertAllowedUpload } from '../documents/file-safety';
+import {
+  MAX_RECEIPTS_PER_EXPENSE, RECEIPT_SELECT, canAddReceipt, canRemoveReceipt, isReceiptType,
+} from './expense-receipts';
 
 import { CreateExpenseDto } from './dto/create-expense.dto';
 export { CreateExpenseDto } from './dto/create-expense.dto';
 
+/** Only receipts that are still there — a removed one is kept as a row, hidden. */
+const LIVE_RECEIPTS = { where: { isActive: true }, select: RECEIPT_SELECT, orderBy: { createdAt: 'asc' } } as const;
+
 @Injectable()
 export class ExpensesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: SftpStorageService,
+    private readonly paths: StoragePathService,
+    private readonly documents: DocumentsService,
+  ) {}
 
   /**
    * Find-or-create a category by name, scoped to the society. Same pattern as
@@ -88,6 +103,7 @@ export class ExpensesService {
           category: { select: { id: true, name: true } },
           account: { select: { id: true, name: true } },
           createdBy: { select: { id: true, firstName: true, lastName: true } },
+          documents: LIVE_RECEIPTS,
         },
         orderBy: { expenseDate: 'desc' },
       }),
@@ -105,10 +121,122 @@ export class ExpensesService {
         account: { select: { id: true, name: true } },
         createdBy: { select: { id: true, firstName: true, lastName: true } },
         approvedBy: { select: { id: true, firstName: true, lastName: true } },
+        documents: LIVE_RECEIPTS,
       },
     });
     if (!expense) throw new NotFoundException('Expense not found');
     return expense;
+  }
+
+  /**
+   * Attach a receipt (a photo from the camera, or a PDF) to an expense. The file goes to storage
+   * first — network I/O cannot sit inside a transaction — and is taken back out if anything after
+   * it fails, so a refused upload never leaves a file nothing points at.
+   *
+   * The expense row is touched at the start of the transaction, which holds its lock until commit:
+   * two phones adding receipts to the same expense are counted one after the other, so the cap
+   * cannot be passed by a race.
+   */
+  async addReceipt(
+    societyId: string,
+    expenseId: string,
+    actorId: string,
+    file: { originalname: string; size: number; mimetype: string; buffer: Buffer },
+  ) {
+    assertAllowedUpload(file);
+    if (!isReceiptType(file.mimetype)) {
+      throw new BadRequestException('A receipt must be a photo (JPG, PNG, WebP, HEIC) or a PDF.');
+    }
+
+    const expense = await this.findOne(societyId, expenseId);
+    if (!canAddReceipt(expense.status)) {
+      throw new ForbiddenException('A rejected expense cannot take new receipts.');
+    }
+
+    const remotePath = await this.paths.societyFile(societyId, 'expenses', this.paths.storedFileName(file.originalname));
+    await this.storage.upload(file.buffer, remotePath);
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const touched = await tx.expense.updateMany({
+          where: { id: expenseId, societyId, status: { not: ExpenseStatus.REJECTED } },
+          data: { updatedAt: new Date() },
+        });
+        if (touched.count === 0) throw new ForbiddenException('A rejected expense cannot take new receipts.');
+
+        const have = await tx.document.count({ where: { isActive: true, expenses: { some: { id: expenseId } } } });
+        if (have >= MAX_RECEIPTS_PER_EXPENSE) {
+          throw new BadRequestException(`An expense can have at most ${MAX_RECEIPTS_PER_EXPENSE} receipts.`);
+        }
+
+        const doc = await tx.document.create({
+          data: {
+            societyId,
+            uploadedById: actorId,
+            title: `Expense receipt — ${expense.description}`.slice(0, 200),
+            fileName: file.originalname,
+            fileKey: remotePath,
+            fileSize: file.size,
+            mimeType: file.mimetype,
+            storageProvider: 'sftp',
+            // Evidence for one expense, not a society document: kept out of the Documents list, and
+            // read back only through the expense (getReceiptFile), which checks the link.
+            accessLevel: DocumentAccessLevel.ADMIN_ONLY,
+            category: 'expenses',
+            linkedEntityType: 'EXPENSE',
+            linkedEntityId: expenseId,
+            expenses: { connect: { id: expenseId } },
+          },
+          select: RECEIPT_SELECT,
+        });
+
+        await tx.auditLog.create({
+          data: {
+            societyId,
+            actorId,
+            // A receipt is a change to the expense, so it reads as one in the trail; the detail says which.
+            action: 'EXPENSE_MODIFIED',
+            entityType: 'Expense',
+            entityId: expenseId,
+            newValues: { receiptAdded: { documentId: doc.id, fileName: file.originalname } } as Prisma.InputJsonValue,
+          },
+        });
+        return doc;
+      });
+    } catch (err) {
+      // Nothing committed, so no row will ever point at the file. remove() never throws.
+      await this.storage.remove(remotePath);
+      throw err;
+    }
+  }
+
+  /** The stored receipt, if it belongs to this expense in this society and has not been removed. */
+  private async findReceipt(societyId: string, expenseId: string, documentId: string) {
+    const doc = await this.prisma.document.findFirst({
+      where: { id: documentId, societyId, isActive: true, expenses: { some: { id: expenseId, societyId } } },
+    });
+    if (!doc) throw new NotFoundException('Receipt not found');
+    return doc;
+  }
+
+  async getReceiptFile(societyId: string, expenseId: string, documentId: string) {
+    const doc = await this.findReceipt(societyId, expenseId, documentId);
+    if (doc.storageProvider !== 'sftp' || !(await this.paths.isSocietyKey(societyId, doc.fileKey))) {
+      throw new NotFoundException('Receipt not found');
+    }
+    const buffer = await this.storage.download(doc.fileKey);
+    return { buffer, fileName: doc.fileName, mimeType: doc.mimeType };
+  }
+
+  async removeReceipt(societyId: string, expenseId: string, documentId: string, actorId: string) {
+    const expense = await this.findOne(societyId, expenseId);
+    if (!canRemoveReceipt(expense.status)) {
+      throw new ForbiddenException('A paid expense keeps its receipts — they are part of the record.');
+    }
+    await this.findReceipt(societyId, expenseId, documentId);
+    // The same soft-delete every document gets: file taken off storage, row hidden, audit written.
+    await this.documents.softDelete(societyId, documentId, actorId, true);
+    return { success: true };
   }
 
   async approve(societyId: string, expenseId: string, approvedById: string) {
@@ -241,12 +369,20 @@ export class ExpensesService {
     });
   }
 
-  async remove(societyId: string, expenseId: string) {
+  async remove(societyId: string, expenseId: string, actorId: string) {
     const expense = await this.findOne(societyId, expenseId);
     if (expense.status !== ExpenseStatus.PENDING) {
       throw new ForbiddenException('Only pending expenses can be deleted');
     }
+    // Deleting the expense drops the link, not the files — take those off storage too.
+    const receipts = await this.prisma.document.findMany({
+      where: { isActive: true, expenses: { some: { id: expenseId } } },
+      select: { id: true },
+    });
     await this.prisma.expense.delete({ where: { id: expenseId } });
+    for (const r of receipts) {
+      await this.documents.softDelete(societyId, r.id, actorId, true).catch(() => undefined);
+    }
     return { success: true };
   }
 

@@ -39,7 +39,7 @@ import { slugify } from '../common/utils/slugify';
  * database.
  */
 
-export const SOCIETY_FOLDERS = ['documents', 'notices', 'circulars', 'announcements', 'images'] as const;
+export const SOCIETY_FOLDERS = ['documents', 'notices', 'circulars', 'announcements', 'images', 'expenses'] as const;
 export const RESIDENT_FOLDERS = ['profile', 'documents', 'complaints', 'payments', 'screenshots'] as const;
 
 export type SocietyFolder = (typeof SOCIETY_FOLDERS)[number];

@@ -12,7 +12,12 @@
 import { NotFoundException } from '@nestjs/common';
 import { ExpensesService } from './expenses.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SftpStorageService } from '../documents/sftp-storage.service';
+import { StoragePathService } from '../documents/storage-path.service';
+import { DocumentsService } from '../documents/documents.service';
 
+/** These cases never touch storage; the receipt paths are covered by the e2e suite and the rules spec. */
+const NO_FILES = [{}, {}, {}] as unknown as [SftpStorageService, StoragePathService, DocumentsService];
 const SOCIETY_ID = 'society-x';
 const ACTOR_ID = 'user-1';
 const CATEGORY_ID = 'category-1';
@@ -44,7 +49,7 @@ function makePrisma() {
 describe('ExpensesService — create category resolution', () => {
   it('resolves a category name to a real category and stores it', async () => {
     const prisma = makePrisma();
-    await new ExpensesService(prisma).create(SOCIETY_ID, ACTOR_ID, {
+    await new ExpensesService(prisma, ...NO_FILES).create(SOCIETY_ID, ACTOR_ID, {
       ...baseDto,
       category: 'MAINTENANCE',
     });
@@ -60,7 +65,7 @@ describe('ExpensesService — create category resolution', () => {
 
   it('scopes the category to the society, so two societies never share a row', async () => {
     const prisma = makePrisma();
-    await new ExpensesService(prisma).create('other-society', ACTOR_ID, {
+    await new ExpensesService(prisma, ...NO_FILES).create('other-society', ACTOR_ID, {
       ...baseDto,
       category: 'MAINTENANCE',
     });
@@ -71,7 +76,7 @@ describe('ExpensesService — create category resolution', () => {
 
   it('prefers an explicit categoryId and does not touch the lookup table', async () => {
     const prisma = makePrisma();
-    await new ExpensesService(prisma).create(SOCIETY_ID, ACTOR_ID, {
+    await new ExpensesService(prisma, ...NO_FILES).create(SOCIETY_ID, ACTOR_ID, {
       ...baseDto,
       categoryId: 'explicit-id',
       category: 'MAINTENANCE',
@@ -84,7 +89,7 @@ describe('ExpensesService — create category resolution', () => {
 
   it('leaves the expense uncategorised when neither is given', async () => {
     const prisma = makePrisma();
-    await new ExpensesService(prisma).create(SOCIETY_ID, ACTOR_ID, baseDto);
+    await new ExpensesService(prisma, ...NO_FILES).create(SOCIETY_ID, ACTOR_ID, baseDto);
 
     expect(prisma.expenseCategory.upsert).not.toHaveBeenCalled();
     const [createArg] = (prisma.expense.create as jest.Mock).mock.calls[0];
@@ -93,7 +98,7 @@ describe('ExpensesService — create category resolution', () => {
 
   it('treats a blank or whitespace category as not given', async () => {
     const prisma = makePrisma();
-    await new ExpensesService(prisma).create(SOCIETY_ID, ACTOR_ID, { ...baseDto, category: '   ' });
+    await new ExpensesService(prisma, ...NO_FILES).create(SOCIETY_ID, ACTOR_ID, { ...baseDto, category: '   ' });
 
     expect(prisma.expenseCategory.upsert).not.toHaveBeenCalled();
     const [createArg] = (prisma.expense.create as jest.Mock).mock.calls[0];
@@ -102,7 +107,7 @@ describe('ExpensesService — create category resolution', () => {
 
   it('trims the name, so " MAINTENANCE" and "MAINTENANCE" are one category', async () => {
     const prisma = makePrisma();
-    await new ExpensesService(prisma).create(SOCIETY_ID, ACTOR_ID, {
+    await new ExpensesService(prisma, ...NO_FILES).create(SOCIETY_ID, ACTOR_ID, {
       ...baseDto,
       category: '  MAINTENANCE  ',
     });
@@ -117,7 +122,7 @@ describe('ExpensesService.create — cross-society foreign keys are rejected', (
     const prisma = makePrisma();
     (prisma.expenseCategory.findFirst as jest.Mock).mockResolvedValue(null); // not found in THIS society
     await expect(
-      new ExpensesService(prisma).create(SOCIETY_ID, ACTOR_ID, { ...baseDto, categoryId: 'category-from-society-b' }),
+      new ExpensesService(prisma, ...NO_FILES).create(SOCIETY_ID, ACTOR_ID, { ...baseDto, categoryId: 'category-from-society-b' }),
     ).rejects.toThrow(NotFoundException);
     expect(prisma.expense.create).not.toHaveBeenCalled();
   });
@@ -126,7 +131,7 @@ describe('ExpensesService.create — cross-society foreign keys are rejected', (
     const prisma = makePrisma();
     (prisma.account.findFirst as jest.Mock).mockResolvedValue(null);
     await expect(
-      new ExpensesService(prisma).create(SOCIETY_ID, ACTOR_ID, { ...baseDto, accountId: 'account-from-society-b' }),
+      new ExpensesService(prisma, ...NO_FILES).create(SOCIETY_ID, ACTOR_ID, { ...baseDto, accountId: 'account-from-society-b' }),
     ).rejects.toThrow(NotFoundException);
     expect(prisma.expense.create).not.toHaveBeenCalled();
   });
