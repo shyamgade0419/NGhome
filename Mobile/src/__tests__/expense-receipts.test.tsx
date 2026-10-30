@@ -53,6 +53,12 @@ import ExpensesScreen from '../../app/(app)/admin/expenses/index';
 
 jest.useRealTimers();
 const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+/** Wait until something has actually happened, instead of a fixed short pause that a busy machine overruns. */
+const until = async (cond: () => boolean, ms = 4000) => {
+  const start = Date.now();
+  while (!cond() && Date.now() - start < ms) await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+  expect(cond()).toBe(true);
+};
 const textOf = (node: any): string =>
   node.findAll((n: any) => typeof n.type === 'string' && n.type === 'Text').map((n: any) => n.children.join('')).join(' | ');
 const pressables = (tree: any) => tree.root.findAllByType(TouchableOpacity);
@@ -116,8 +122,7 @@ describe('Add Expense — the camera', () => {
     expect(mockUpload).not.toHaveBeenCalled(); // nothing is sent until the expense exists
 
     await act(async () => { byText(tree, 'Save Expense')[0].props.onPress(); });
-    await flush();
-    await flush();
+    await until(() => mockUpload.mock.calls.length === 1);
     expect(mockPost).toHaveBeenCalledWith('/expenses', expect.objectContaining({ description: 'Tap washers', amount: 350 }));
     expect(mockUpload).toHaveBeenCalledTimes(1);
     expect(mockUpload).toHaveBeenCalledWith('new-exp', expect.objectContaining({ uri: 'file:///cache/p.jpg', mimeType: 'image/jpeg' }));
@@ -127,8 +132,7 @@ describe('Add Expense — the camera', () => {
     const tree = await mount();
     await openForm(tree);
     await act(async () => { byText(tree, 'Save Expense')[0].props.onPress(); });
-    await flush();
-    await flush();
+    await until(() => (Alert.alert as jest.Mock).mock.calls.some((c) => c[0] === 'Added'));
     expect(mockPost).toHaveBeenCalledTimes(1);
     expect(mockUpload).not.toHaveBeenCalled();
   });
@@ -140,7 +144,10 @@ describe('Add Expense — the camera', () => {
     await act(async () => { await byLabel(tree, 'Take a photo of the bill')[0].props.onPress(); });
     await flush();
     expect(textOf(tree.root)).not.toMatch(/expense-receipt-/);
-    expect(Alert.alert).not.toHaveBeenCalled();
+    // No complaint about the camera or the file. (Not "no alert at all": an earlier test's save raises
+    // its own "Added" message a moment after that test has ended.)
+    const complaints = (Alert.alert as jest.Mock).mock.calls.filter((c) => ['Camera is off', 'Cannot add this', 'Could not add it'].includes(c[0]));
+    expect(complaints).toEqual([]);
   });
 
   it('says why when the camera is off and cannot be asked again, and offers the phone\'s settings', async () => {
@@ -163,9 +170,8 @@ describe('Add Expense — the camera', () => {
     await act(async () => { await byLabel(tree, 'Take a photo of the bill')[0].props.onPress(); });
     await flush();
     await act(async () => { byText(tree, 'Save Expense')[0].props.onPress(); });
-    await flush();
-    await flush();
-    await act(async () => { await new Promise((r) => setTimeout(r, 450)); }); // the confirmation waits for the sheet to close
+    // the confirmation waits for the sheet to close
+    await until(() => (Alert.alert as jest.Mock).mock.calls.some((c) => c[0] === 'Expense saved'));
     expect(mockPost).toHaveBeenCalledTimes(1);
     expect(Alert.alert).toHaveBeenCalledWith('Expense saved', expect.stringContaining('Add receipt'));
   });
@@ -179,8 +185,7 @@ describe('Add Expense — the camera', () => {
     await act(async () => { remove.props.onPress(); });
     expect(textOf(tree.root)).not.toMatch(/expense-receipt-\d/);
     await act(async () => { byText(tree, 'Save Expense')[0].props.onPress(); });
-    await flush();
-    await flush();
+    await until(() => (Alert.alert as jest.Mock).mock.calls.some((c) => c[0] === 'Added'));
     expect(mockUpload).not.toHaveBeenCalled();
   });
 
@@ -217,8 +222,7 @@ describe('Expense card — receipts', () => {
     await act(async () => { byLabel(tree, 'Add a receipt')[0].props.onPress(); });
     expect(Alert.alert).toHaveBeenCalledWith('Add a receipt', undefined, expect.any(Array));
     await act(async () => { await alertButtons('Add a receipt').find((b) => b.text === 'Take photo')!.onPress!(); });
-    await flush();
-    await flush();
+    await until(() => mockUpload.mock.calls.length === 1);
     expect(mockUpload).toHaveBeenCalledWith('exp-1', expect.objectContaining({ mimeType: 'image/jpeg' }));
   });
 
@@ -228,8 +232,7 @@ describe('Expense card — receipts', () => {
     const tree = await mount();
     await act(async () => { byLabel(tree, 'Add a receipt')[0].props.onPress(); });
     await act(async () => { await alertButtons('Add a receipt').find((b) => b.text === 'Take photo')!.onPress!(); });
-    await flush();
-    await flush();
+    await until(() => (Alert.alert as jest.Mock).mock.calls.some((c) => c[0] === 'Receipt not added'));
     expect(Alert.alert).toHaveBeenCalledWith('Receipt not added', 'An expense can have at most 6 receipts.');
   });
 
@@ -247,7 +250,7 @@ describe('Expense card — receipts', () => {
     await act(async () => { byLabel(tree, 'Remove bill-1.jpg')[0].props.onPress(); });
     expect(mockRemove).not.toHaveBeenCalled();
     await act(async () => { alertButtons('Remove this receipt?').find((b) => b.text === 'Remove')!.onPress!(); });
-    await flush();
+    await until(() => mockRemove.mock.calls.length === 1);
     expect(mockRemove).toHaveBeenCalledWith('exp-1', 'a');
   });
 

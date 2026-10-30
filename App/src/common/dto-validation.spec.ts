@@ -30,7 +30,7 @@ import { AddAttendeesDto } from '../meetings/dto/add-attendees.dto';
 import { CreateDocumentDto } from '../documents/dto/create-document.dto';
 import { CreateWaterConfigDto } from '../water/dto/create-water-config.dto';
 import { RecordReadingDto } from '../water/dto/record-reading.dto';
-import { AllocateWaterCostsDto } from '../water/dto/allocate-water-costs.dto';
+import { AllocateWaterCostsBodyDto } from '../water/dto/allocate-water-costs.dto';
 import { SendNotificationDto } from '../notifications/dto/send-notification.dto';
 import { CreateForumTopicDto } from '../forum/dto/create-forum-topic.dto';
 import { CreateForumReplyDto } from '../forum/dto/create-forum-reply.dto';
@@ -372,7 +372,7 @@ describe('Admin action DTO validation', () => {
  * the repo for the same shape, not just the financial/security-sensitive
  * ones fixed above. None carry money or a privilege assignment, but an
  * invalid enum/date still reached the database as an opaque error instead
- * of a clean 400, and AllocateWaterCostsDto's cost fields (municipal bill,
+ * of a clean 400, and AllocateWaterCostsBodyDto's cost fields (municipal bill,
  * tanker cost, electricity %) had no numeric validation at all despite
  * feeding directly into a per-flat billing calculation.
  */
@@ -474,32 +474,36 @@ describe('Non-financial DTO validation (found via the full @Body() sweep)', () =
     });
   });
 
-  describe('AllocateWaterCostsDto', () => {
+  describe('AllocateWaterCostsBodyDto', () => {
     const valid = {
-      billingPeriodId: 'period-1', readingDate: '2026-09-01',
+      readingDate: '2026-09-01',
       municipalWaterBill: 5000, tankerCost: 1000, commonElectricityBill: 3000, electricityWaterPercent: 20,
       readings: [{ flatId: 'flat-1', openingReading: 100, closingReading: 150 }],
     };
 
+    it('does not need billingPeriodId in the body — the period is in the URL, and neither app sends it', async () => {
+      await expect(run(valid, AllocateWaterCostsBodyDto)).resolves.not.toHaveProperty('billingPeriodId');
+    });
+
     it('accepts a genuine allocation', async () => {
-      await expect(run(valid, AllocateWaterCostsDto)).resolves.toMatchObject({ tankerCost: 1000 });
+      await expect(run(valid, AllocateWaterCostsBodyDto)).resolves.toMatchObject({ tankerCost: 1000 });
     });
 
     it('rejects a negative cost field', async () => {
-      await expect(run({ ...valid, tankerCost: -1000 }, AllocateWaterCostsDto)).rejects.toThrow(BadRequestException);
+      await expect(run({ ...valid, tankerCost: -1000 }, AllocateWaterCostsBodyDto)).rejects.toThrow(BadRequestException);
     });
 
     it('rejects an electricityWaterPercent outside 0-100', async () => {
-      await expect(run({ ...valid, electricityWaterPercent: 150 }, AllocateWaterCostsDto)).rejects.toThrow(BadRequestException);
+      await expect(run({ ...valid, electricityWaterPercent: 150 }, AllocateWaterCostsBodyDto)).rejects.toThrow(BadRequestException);
     });
 
     it('rejects an empty readings array', async () => {
-      await expect(run({ ...valid, readings: [] }, AllocateWaterCostsDto)).rejects.toThrow(BadRequestException);
+      await expect(run({ ...valid, readings: [] }, AllocateWaterCostsBodyDto)).rejects.toThrow(BadRequestException);
     });
 
     it('rejects a reading with a non-numeric closingReading', async () => {
       await expect(
-        run({ ...valid, readings: [{ flatId: 'flat-1', openingReading: 100, closingReading: 'a lot' }] }, AllocateWaterCostsDto),
+        run({ ...valid, readings: [{ flatId: 'flat-1', openingReading: 100, closingReading: 'a lot' }] }, AllocateWaterCostsBodyDto),
       ).rejects.toThrow(BadRequestException);
     });
   });
