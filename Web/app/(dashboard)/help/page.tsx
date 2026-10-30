@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Search, ChevronDown, ChevronUp, HelpCircle,
   LayoutDashboard, Receipt, LayoutList, FileText, CreditCard,
@@ -10,6 +10,7 @@ import {
   UserPlus, Shield, BarChart3, ChevronRight, FolderOpen, Bell, PiggyBank, Landmark,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthContext';
+import { GuideView } from '@/components/help/GuideView';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { cn } from '@/lib/utils';
@@ -367,7 +368,7 @@ const ARTICLES: Article[] = [
       { text: 'Previous readings are auto-filled from the last period\'s closing readings.' },
       { text: 'Enter the current meter reading for each flat in the "Current (KL)" column.' },
       { text: 'Units consumed (difference) are calculated automatically.' },
-      { text: 'Water charges = Units × Rate per KL (configured in Settings → Billing Rules).', tip: 'Set the water rate under Billing Rules → Water Charge component.' },
+      { text: 'Enter the month\'s municipal bill, tanker cost, common electricity bill and the water-motor percentage at the top. The total is shared across flats by the units each used, which sets the rate per KL.', tip: 'A flat whose meter counts down: tick "Water meter counts down" on that flat (Flats → Edit) and enter its readings as the meter shows them.' },
       { text: 'Save readings before publishing the billing period — they\'re included in each flat\'s bill.' },
     ],
   },
@@ -381,7 +382,8 @@ const ARTICLES: Article[] = [
     roles: ['admin'],
     steps: [
       { text: 'Go to Residents to see all active society members.' },
-      { text: 'To invite a new resident: go to their flat, click "Assign Resident", and share the invite code. The resident uses this code on the Register page.' },
+      { text: 'To invite a new resident: share the invite code from Settings (Resident Invite Code). They use it on the Join page, pick their flat, and say whether they are the owner or a tenant.' },
+      { text: 'Mark each resident as an Owner or a Tenant with the drop-down on their row. Tenants do not see the corpus fund or bank balances.', tip: 'Existing residents are owners until you change them.' },
       { text: 'A flat\'s first resident joins instantly. Anyone joining a flat that already has an active resident (a spouse, tenant, or co-owner) shows up in a "Pending Approvals" panel at the top of this page instead — click ✓ to approve or ✕ to reject.', tip: 'They can\'t sign in at all while pending, so review these promptly.' },
       { text: 'Click a resident\'s name to view and edit their details — phone number, email, and flat assignment.' },
       { text: 'To remove a resident: click the three-dot menu → Remove from Society. Their billing history is preserved.', tip: 'A flat must have at most one active resident for billing to work correctly.' },
@@ -398,7 +400,7 @@ const ARTICLES: Article[] = [
     roles: ['admin'],
     steps: [
       { text: 'Go to Expenses → "New Expense". Enter the vendor, amount, category, and date.' },
-      { text: 'Upload a receipt or invoice as proof (optional but recommended).' },
+      { text: 'Attach the bill as proof (optional but recommended). On the mobile app, Add Expense has a Take photo button that opens the camera.' },
       { text: 'Submitted expenses start as "Pending". An admin or accountant must approve them.' },
       { text: 'To approve: find the expense and click "Approve". This records that the committee agreed to the spend — it does not move any money yet.' },
       { text: 'Then click "Mark Paid" and choose which account the money came out of. This is the step that reduces your bank balance and writes the payment into that account\'s ledger.', tip: 'If your balances look higher than the bank says, check for approved expenses still waiting to be marked paid.' },
@@ -418,7 +420,7 @@ const ARTICLES: Article[] = [
       { text: 'Go to Settings → Payment Settings.' },
       { text: 'Enter your Society UPI ID (e.g. "societyname@ybl"). This is displayed to residents when they pay.', tip: 'Get this from your bank or the UPI app linked to the society account.' },
       { text: 'Leave "Require payment verification" ON. With it on, you approve each payment and choose which account it lands in, which is what puts the money into your balances.', tip: 'Switching it off marks bills paid automatically, but the money is not added to any account and no ledger entry is written — your balances will drift from the bank.' },
-      { text: 'Go to Settings → Billing Rules to set maintenance amounts per flat category, water rates, and late fee structure.' },
+      { text: 'Go to Settings → Billing Rules → Add Rule to set the maintenance amount (and any corpus) once, for every flat. Under Billing and Late Fees set the due day, grace period and the fine.', tip: 'A rule needs an amount, or it bills nothing. Click "Show everything in this rule" to check what it charges.' },
       { text: 'Go to Settings → Society Info to update the society\'s display name, address, and contact email — shown on bills and statements.' },
     ],
   },
@@ -594,7 +596,11 @@ export default function HelpPage() {
     !!user?.isPlatformAdmin;
 
   const [activeTab, setActiveTab] = useState<'admin' | 'resident'>(isAdmin ? 'admin' : 'resident');
+  // The role is not known on the first render, so an admin started on the Residents tab. Follow it once it is.
+  useEffect(() => { setActiveTab(isAdmin ? 'admin' : 'resident'); }, [isAdmin]);
   const [query, setQuery] = useState('');
+  // The complete guide (every setting, with screenshots) or the short how-to cards.
+  const [mode, setMode] = useState<'guide' | 'howto'>('guide');
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
@@ -614,6 +620,22 @@ export default function HelpPage() {
       <Header title="Help Center" subtitle="Step-by-step guides for NG Home" />
       <PageContainer className="space-y-6 max-w-4xl">
 
+        {/* Which kind of help */}
+        <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+          {([['guide', 'Complete guide'], ['howto', 'Quick how-tos']] as const).map(([m, label]) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={cn(
+                'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
+                mode === m ? 'bg-primary-600 text-white' : 'text-slate-600 hover:bg-slate-100',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {/* Search */}
         <div className="relative">
           <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -621,7 +643,7 @@ export default function HelpPage() {
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search articles…"
+            placeholder={mode === 'guide' ? 'Search the guide, e.g. “late fine”, “corpus”, “tenant”…' : 'Search articles…'}
             className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-3 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-400 placeholder:text-slate-400"
           />
         </div>
@@ -646,8 +668,11 @@ export default function HelpPage() {
           </div>
         )}
 
+        {/* The complete guide */}
+        {mode === 'guide' && <GuideView query={query} audience={activeTab} />}
+
         {/* Articles */}
-        {filtered.length === 0 ? (
+        {mode === 'howto' && filtered.length === 0 ? (
           <div className="rounded-xl border border-slate-200 bg-white py-16 text-center">
             <HelpCircle size={36} className="mx-auto mb-3 text-slate-300" />
             <p className="text-sm font-medium text-slate-600">No articles match &ldquo;{query}&rdquo;</p>
@@ -655,13 +680,13 @@ export default function HelpPage() {
               Clear search
             </button>
           </div>
-        ) : (
+        ) : mode === 'howto' ? (
           <div className="space-y-3">
             {filtered.map(article => (
               <ArticleCard key={article.id} article={article} />
             ))}
           </div>
-        )}
+        ) : null}
 
         {/* Footer */}
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-4 flex items-start gap-3">

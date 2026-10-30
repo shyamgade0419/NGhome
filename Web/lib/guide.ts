@@ -61,6 +61,21 @@ export const GUIDE: GuidePart[] = [
         ],
       },
       {
+        id: 'dashboard',
+        title: 'The dashboard',
+        audience: 'admin',
+        summary: 'The month at a glance: billed, collected, outstanding, balances.',
+        blocks: [
+          { type: 'shot', src: '/help/dashboard.jpg', alt: 'The admin dashboard with billed, collected, outstanding, expenses, bank balance and corpus fund', caption: 'The dashboard. Pick a month with the pills at the top; the bank balance and corpus fund are always current.' },
+          { type: 'list', items: [
+            '**Total Billed, Collected and Outstanding** are for the month you choose. Only published months appear.',
+            '**Total Expenses** is that month\'s approved and paid spending.',
+            '**Bank Balance** is the total of your accounts, and **Corpus Fund** is the balance of your corpus fund. Both are shown to the admin and accountant only.',
+            'A yellow banner appears when payments are waiting for you to verify. **review now** opens them.',
+          ] },
+        ],
+      },
+      {
         id: 'first-setup',
         title: 'Set up a new society',
         audience: 'admin',
@@ -185,7 +200,7 @@ export const GUIDE: GuidePart[] = [
         blocks: [
           { type: 'table', head: ['Field', 'What it does'], rows: [
             ['Currency', 'INR. Printed with amounts.'],
-            ['Billing Cycle', 'Monthly, quarterly or annual. Most societies use Monthly.'],
+            ['Billing Cycle', 'How often you bill: Monthly, Quarterly, Yearly or Custom. Most societies use Monthly.'],
             ['Due Day of Month', 'The day of the month a bill is due, for example 10. A new period uses it as the due date.'],
             ['Financial Year Start', 'The month your accounts year begins (April in India).'],
             ['Invoice Prefix', 'The letters before each invoice number, for example INV gives INV-000013.'],
@@ -208,7 +223,7 @@ export const GUIDE: GuidePart[] = [
             'To remove a fine, the admin clicks **Waive fine** on that bill and gives a reason. It is kept in the audit log and the bill is not fined again.',
           ] },
           { type: 'shot', src: '/help/period-detail.jpg', alt: 'A billing period with a Late fine column and Apply late fines and Waive fine buttons', caption: 'A published period: the Late fine column, the Apply late fines button, and Waive fine on each bill that has one.' },
-          { type: 'tip', text: 'Choose "None" (or a rate of zero) to switch fines off.' },
+          { type: 'tip', text: 'To switch fines off, set the rate to zero (or choose None on mobile).' },
         ],
       },
       {
@@ -387,6 +402,7 @@ export const GUIDE: GuidePart[] = [
             'For each flat enter the closing reading. The opening reading is last month\'s closing, carried forward.',
             'Click **Calculate & Save**. Do this before you generate and publish the period.',
           ] },
+          { type: 'shot', src: '/help/water.jpg', alt: 'Water Billing with meter readings for each flat and a flat marked counts down', caption: 'Water Billing: opening and closing readings per flat. The flat whose meter counts down carries a "counts down" tag, and its 26 units are worked out the other way round.' },
           { type: 'p', text: '**A meter that counts down.** A faulty meter can run backwards (98362 last month, 98336 now, so 26 units used). On the web, open **Flats**, edit that flat and tick **Water meter counts down**. Then enter readings exactly as the meter shows them: for that flat the units are worked out as earlier minus later, so 26. Every other flat is unchanged. Untick it when the meter is fixed.' },
           { type: 'warn', text: 'The app never guesses the direction from the numbers. A reading lower than the last one on an ordinary flat is refused, because a typo or a replaced meter looks just the same.' },
         ],
@@ -414,6 +430,7 @@ export const GUIDE: GuidePart[] = [
         summary: 'Where the money is tracked, and who can see it.',
         blocks: [
           { type: 'p', text: '**Accounts** are where money is tracked: a bank account or a cash box. An account is a record, not a connection to your bank; its balance moves as you approve payments and mark expenses paid. **Funds** (the corpus, a sinking fund) are earmarks inside your accounts, not separate bank accounts, which is why the page shows Total Bank Balance and Total Fund Balance as two figures.' },
+          { type: 'shot', src: '/help/accounts.jpg', alt: 'Accounts and Funds with two bank accounts and two reserve funds', caption: 'Accounts & Funds: your accounts with their balances, and the reserve funds, each with a "Visible to residents" setting.' },
           { type: 'steps', items: [
             '**Accounts → New Account:** name, type (Savings, Current, Cash), optional bank details and the opening balance.',
             '**New Fund:** name it, enter what it holds today, and decide whether **residents can see it**. This is off by default.',
@@ -550,6 +567,7 @@ export const GUIDE: GuidePart[] = [
         audience: 'resident',
         summary: 'See what you owe, and pay with UPI.',
         blocks: [
+          { type: 'shot', src: '/help/my-bills.jpg', alt: 'My Bills showing total pending and a list of monthly bills', caption: 'My Bills: what you owe and what you have paid, with each month\'s bill below.' },
           { type: 'steps', items: [
             'Open **My Bills**. The top shows what you owe and what you have paid.',
             'Tap a bill to see the breakdown: maintenance, corpus, water, any late fine, and arrears from earlier months.',
@@ -557,6 +575,7 @@ export const GUIDE: GuidePart[] = [
             'After paying, enter the transaction ID (UTR) and, if you like, attach the receipt, then confirm.',
             'The admin approves it, and you are notified. Your oldest dues are cleared first.',
           ] },
+          { type: 'shot', src: '/help/pay-upi.jpg', alt: 'A bill breakdown and the Pay via UPI panel showing the total owed and earlier months', caption: 'A bill opened out: maintenance, corpus, water and any late fee, then the UPI panel. The amount to pay is the total owed, and it says how much is from earlier months.' },
           { type: 'tip', text: 'If you pay part of what you owe, it clears the oldest month first, then the next.' },
         ],
       },
@@ -566,6 +585,7 @@ export const GUIDE: GuidePart[] = [
         audience: 'resident',
         summary: 'Your bills, the Maintenance Sheet and expenses, but not the corpus or bank balances.',
         blocks: [
+          { type: 'shot', src: '/help/tenant-finances.jpg', alt: 'A tenant\'s Society Finances page showing expenses and a note that corpus and bank balances are for owners', caption: 'A tenant\'s Society Finances page: this month\'s expenses, and a note that the corpus and bank balances are for flat owners.' },
           { type: 'p', text: 'If your society has marked you as a **tenant**, you see everything about your own flat and the society\'s running costs, but the **corpus fund and the bank balances are shown to flat owners only**. Your Society Finances page says so. If you are in fact an owner, ask your society admin to update your details.' },
         ],
       },

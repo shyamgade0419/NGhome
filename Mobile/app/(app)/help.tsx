@@ -534,6 +534,22 @@ export default function HelpScreen() {
           )}
         </View>
 
+        {/* The complete guide lives on the website, with screenshots of every screen */}
+        <View style={[styles.supportBox, { marginBottom: spacing.sm }]}>
+          <Ionicons name="book-outline" size={20} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.supportTitle}>Complete user guide</Text>
+            <Text style={styles.supportSub}>Every setting explained, with screenshots</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.supportBtn}
+            onPress={() => Linking.openURL('https://www.novagade.in/help')}
+            accessibilityLabel="Open the complete user guide on the website"
+          >
+            <Text style={styles.supportBtnText}>Open</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Contact support */}
         <View style={styles.supportBox}>
           <Ionicons name="headset-outline" size={20} color={colors.primary} />
