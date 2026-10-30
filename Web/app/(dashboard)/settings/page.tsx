@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { societyApi, billingRulesApi, usersApi } from '@/lib/api/endpoints';
 import { BASIS_LABEL, KIND_LABEL, buildRulePayload, describeRule } from '@/lib/billingRules';
+import { ruleDetailRows } from '@/lib/billingRuleDetails';
 import type { Basis, ChargeKind, RuleForm } from '@/lib/billingRules';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
@@ -436,6 +437,7 @@ function AddBillingRuleModal({ onClose }: { onClose: () => void }) {
 function BillingRulesSection({ admin }: { admin: boolean }) {
   const qc = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
+  const [openRule, setOpenRule] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['billing-rules'],
@@ -475,7 +477,8 @@ function BillingRulesSection({ admin }: { admin: boolean }) {
           </div>
         ) : (
           rules.map((rule: any) => (
-            <div key={rule.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <div key={rule.id} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <div className="flex items-center justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-medium text-slate-900">{rule.name}</p>
@@ -500,6 +503,41 @@ function BillingRulesSection({ admin }: { admin: boolean }) {
                   disabled={toggleMutation.isPending}
                 />
               )}
+              </div>
+              <button
+                onClick={() => setOpenRule(openRule === rule.id ? null : rule.id)}
+                className="mt-2 text-xs font-medium text-primary-600 hover:underline"
+              >
+                {openRule === rule.id ? 'Hide details' : 'Show everything in this rule'}
+              </button>
+              {openRule === rule.id && (() => {
+                const d = ruleDetailRows(rule);
+                return (
+                  <div className="mt-2 space-y-2">
+                    <dl className="divide-y divide-slate-100 rounded-lg border border-slate-100 text-xs">
+                      {d.summary.map((r) => (
+                        <div key={r.label} className="flex justify-between gap-4 px-3 py-1.5">
+                          <dt className="text-slate-500">{r.label}</dt>
+                          <dd className="text-right font-medium text-slate-800">{r.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    {d.components.map((c) => (
+                      <div key={c.title} className="rounded-lg border border-slate-100 text-xs">
+                        <p className="bg-slate-50 px-3 py-1.5 font-semibold text-slate-700">{c.title}</p>
+                        <dl className="divide-y divide-slate-100">
+                          {c.rows.map((r) => (
+                            <div key={r.label} className="flex justify-between gap-4 px-3 py-1.5">
+                              <dt className="text-slate-500">{r.label}</dt>
+                              <dd className="text-right font-medium text-slate-800">{r.value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           ))
         )}

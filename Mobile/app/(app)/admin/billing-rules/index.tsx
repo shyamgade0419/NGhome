@@ -36,6 +36,7 @@ import {
   CALCULATION_TYPES,
 } from '@/api/endpoints/billing-rules.api';
 import { BASIS_LABEL, KIND_LABEL, buildRulePayload, describeRule } from '@/utils/billingRules';
+import { ruleDetailRows } from '@/utils/billingRuleDetails';
 import type { Basis, ChargeKind, RuleForm } from '@/utils/billingRules';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -234,11 +235,57 @@ function CreateRuleModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ── Details sheet: everything in a rule ──────────────────────────────────────
+
+function RuleDetailModal({ rule, onClose }: { rule: BillingRule; onClose: () => void }) {
+  const d = ruleDetailRows(rule);
+  const Row = ({ label, value }: { label: string; value: string }) => (
+    <View style={detail.row}>
+      <Text style={detail.label}>{label}</Text>
+      <Text style={detail.value}>{value}</Text>
+    </View>
+  );
+  return (
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle} numberOfLines={1}>{rule.name}</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={8} accessibilityLabel="Close">
+            <Ionicons name="close" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+        <ScrollView contentContainerStyle={styles.modalBody}>
+          <View style={detail.box}>
+            {d.summary.map((r) => <Row key={r.label} {...r} />)}
+          </View>
+          {d.components.length > 0 && <Text style={[styles.label, { marginTop: spacing.base }]}>Components</Text>}
+          {d.components.map((c) => (
+            <View key={c.title} style={[detail.box, { marginTop: spacing.sm }]}>
+              <Text style={detail.compTitle}>{c.title}</Text>
+              {c.rows.map((r) => <Row key={r.label} {...r} />)}
+            </View>
+          ))}
+          <View style={{ height: spacing['3xl'] }} />
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+const detail = StyleSheet.create({
+  box: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surface, paddingHorizontal: spacing.md },
+  row: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.borderLight },
+  label: { ...typography.bodySmall, color: colors.textSecondary, flexShrink: 0, maxWidth: '45%' },
+  value: { ...typography.bodyMedium, color: colors.text, flex: 1, textAlign: 'right' },
+  compTitle: { ...typography.labelLarge, color: colors.text, paddingTop: 10 },
+});
+
 // ── Screen ───────────────────────────────────────────────────────────────────
 
 export default function BillingRulesScreen() {
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
+  const [viewing, setViewing] = useState<BillingRule | null>(null);
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['billing-rules'],
@@ -307,7 +354,7 @@ export default function BillingRulesScreen() {
           renderItem={({ item }) => (
             <View style={[styles.card, !item.isActive && styles.cardInactive]}>
               <View style={styles.cardTop}>
-                <View style={{ flex: 1 }}>
+                <TouchableOpacity style={{ flex: 1 }} onPress={() => setViewing(item)} activeOpacity={0.7} accessibilityLabel={`Open ${item.name}`}>
                   <Text style={styles.ruleName}>{item.name}</Text>
                   {item.description ? <Text style={styles.ruleDesc}>{item.description}</Text> : null}
                   <Text style={[styles.ruleName, { fontSize: 13 }, describeRule(item).startsWith('No amount') && { color: colors.error }]}>
@@ -323,7 +370,8 @@ export default function BillingRulesScreen() {
                   {item.priority > 0 ? (
                     <Text style={styles.ruleMeta}>Priority {item.priority}</Text>
                   ) : null}
-                </View>
+                  <Text style={[styles.ruleMeta, { color: colors.primary, marginTop: 4 }]}>Tap to see everything in this rule</Text>
+                </TouchableOpacity>
                 <Switch
                   value={item.isActive}
                   onValueChange={(v) => toggleMutation.mutate({ id: item.id, isActive: v })}
@@ -362,6 +410,7 @@ export default function BillingRulesScreen() {
       )}
 
       {showCreate && <CreateRuleModal onClose={() => setShowCreate(false)} />}
+      {viewing && <RuleDetailModal rule={viewing} onClose={() => setViewing(null)} />}
     </SafeAreaView>
   );
 }
