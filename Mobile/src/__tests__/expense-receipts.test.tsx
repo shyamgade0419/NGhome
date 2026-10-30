@@ -83,16 +83,19 @@ async function mount() {
   await act(async () => {
     tree = TestRenderer.create(<QueryClientProvider client={qc}><ExpensesScreen /></QueryClientProvider>);
   });
-  await flush();
-  await flush();
+  // Ready means the list has loaded, not "two pauses have passed" — a slow machine overruns those.
+  await until(() => !textOf(tree.root).includes('Loading expenses'));
   return tree;
 }
 
 /** Open the Add Expense form and fill the two required fields. */
 async function openForm(tree: any) {
   // The "+" in the header is the only pressable before anything else is on screen.
+  await until(() => pressables(tree).length > 0);
   await act(async () => { pressables(tree)[0].props.onPress(); });
-  const inputs = tree.root.findAll((n: any) => n.props.placeholder === 'e.g. Plumber repair work' || n.props.placeholder === '0.00');
+  const formInputs = () => tree.root.findAll((n: any) => n.props.placeholder === 'e.g. Plumber repair work' || n.props.placeholder === '0.00');
+  await until(() => formInputs().length >= 2);
+  const inputs = formInputs();
   await act(async () => { inputs.find((n: any) => n.props.placeholder === 'e.g. Plumber repair work').props.onChangeText('Tap washers'); });
   await act(async () => { inputs.find((n: any) => n.props.placeholder === '0.00').props.onChangeText('350'); });
 }
