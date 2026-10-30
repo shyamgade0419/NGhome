@@ -22,6 +22,8 @@ import { Badge, paymentStatusBadge } from '@/components/ui/Badge';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import Link from 'next/link';
+import { useAuth } from '@/lib/auth/AuthContext';
+import { can } from '@/lib/permissions';
 
 const MONTH_NAMES = [
   '', 'January', 'February', 'March', 'April', 'May', 'June',
@@ -29,6 +31,10 @@ const MONTH_NAMES = [
 ];
 
 export default function DashboardPage() {
+  const { user, activeMembership } = useAuth();
+  // The bank balance and the corpus are the finance team's figures. A resident (an owner sees them on the
+  // Society Finances page if the society allows; a tenant never does) gets no tile at all, not a misleading zero.
+  const showMoneyTiles = can.manageBilling(activeMembership?.role, user?.isPlatformAdmin);
   /* Load published periods to populate the month picker */
   const { data: periodsRaw } = useQuery({
     queryKey: ['published-periods'],
@@ -218,6 +224,7 @@ export default function DashboardPage() {
               iconBg="bg-orange-50"
               href="/expenses"
             />
+            {showMoneyTiles && (
             <StatCard
               label="Bank Balance"
               value={s ? formatCurrency(s.accountBalance) : '—'}
@@ -226,6 +233,8 @@ export default function DashboardPage() {
               iconBg="bg-primary-50"
               href="/accounts"
             />
+            )}
+            {showMoneyTiles && (
             <StatCard
               label="Corpus Fund"
               value={s ? formatCurrency(s.corpusBalance) : '—'}
@@ -234,6 +243,7 @@ export default function DashboardPage() {
               iconBg="bg-purple-50"
               href="/accounts"
             />
+            )}
           </div>
         </section>
 
