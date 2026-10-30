@@ -215,8 +215,8 @@ function BillingConfigSection({ admin }: { admin: boolean }) {
           options={[
             { value: 'MONTHLY', label: 'Monthly' },
             { value: 'QUARTERLY', label: 'Quarterly' },
-            { value: 'HALF_YEARLY', label: 'Half-Yearly' },
-            { value: 'YEARLY', label: 'Yearly' },
+            { value: 'ANNUAL', label: 'Yearly' },
+            { value: 'CUSTOM', label: 'Custom' },
           ]}
         />
         <Input label="Due Day of Month" type="number" value={form.billingDueDay ?? ''} onChange={inp('billingDueDay')} disabled={!admin} placeholder="10" />

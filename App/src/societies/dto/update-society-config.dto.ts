@@ -1,5 +1,5 @@
 import {
-  IsOptional, IsString, IsInt, IsBoolean, IsNumber, Min, Max,
+  IsOptional, IsString, IsInt, IsBoolean, IsNumber, IsEnum, Min, Max,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { BillingCycleType } from '@prisma/client';
@@ -19,7 +19,7 @@ export class UpdateSocietyConfigDto {
 
   @ApiPropertyOptional({ enum: BillingCycleType })
   @IsOptional()
-  @IsString()
+  @IsEnum(BillingCycleType, { message: 'billingCycle must be one of: MONTHLY, QUARTERLY, ANNUAL, CUSTOM' })
   billingCycle?: BillingCycleType;
 
   @ApiPropertyOptional({ minimum: 1, maximum: 31 })

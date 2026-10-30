@@ -31,6 +31,7 @@ import { CreateDocumentDto } from '../documents/dto/create-document.dto';
 import { CreateWaterConfigDto } from '../water/dto/create-water-config.dto';
 import { RecordReadingDto } from '../water/dto/record-reading.dto';
 import { AllocateWaterCostsBodyDto } from '../water/dto/allocate-water-costs.dto';
+import { UpdateSocietyConfigDto } from '../societies/dto/update-society-config.dto';
 import { SendNotificationDto } from '../notifications/dto/send-notification.dto';
 import { CreateForumTopicDto } from '../forum/dto/create-forum-topic.dto';
 import { CreateForumReplyDto } from '../forum/dto/create-forum-reply.dto';
@@ -676,6 +677,20 @@ describe('Society details DTOs', () => {
 
     it('measures the minimum length after trimming', async () => {
       await expect(run(body('  ab  '), RegisterSocietyDto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('UpdateSocietyConfigDto — billing cycle', () => {
+    it('accepts every cycle the database has', async () => {
+      for (const billingCycle of ['MONTHLY', 'QUARTERLY', 'ANNUAL', 'CUSTOM']) {
+        await expect(run({ billingCycle }, UpdateSocietyConfigDto)).resolves.toMatchObject({ billingCycle });
+      }
+    });
+
+    it('refuses one it does not — the web once offered Half-Yearly and Yearly, which would have failed in the database', async () => {
+      for (const billingCycle of ['HALF_YEARLY', 'YEARLY', 'weekly']) {
+        await expect(run({ billingCycle }, UpdateSocietyConfigDto)).rejects.toThrow(BadRequestException);
+      }
     });
   });
 });
