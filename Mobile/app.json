@@ -49,6 +49,14 @@
           "sounds": []
         }
       ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "NG Home uses the camera so you can photograph a bill or receipt and attach it to an expense.",
+          "photosPermission": false,
+          "microphonePermission": false
+        }
+      ],
       "./plugins/withReleaseSigning"
     ],
     "experiments": {

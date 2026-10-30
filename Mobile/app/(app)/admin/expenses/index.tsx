@@ -28,6 +28,10 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { colors, spacing, typography, radius } from '@/theme';
 import { inr } from '@/utils/format';
+import { expensesApi } from '@/api/endpoints/expenses.api';
+import { ReceiptPicker } from '@/components/expenses/ReceiptPicker';
+import { ExpenseReceipts } from '@/components/expenses/ExpenseReceipts';
+import { Receipt, StoredReceipt } from '@/utils/receipts';
 
 interface Expense {
   id: string;
@@ -39,6 +43,8 @@ interface Expense {
   payeeName: string | null;
   notes: string | null;
   createdAt: string;
+  /** The receipts on file (photos or PDFs of the bill). */
+  documents?: StoredReceipt[];
 }
 
 const CATEGORIES = [
@@ -68,24 +74,50 @@ function AddExpenseModal({ visible, onClose }: { visible: boolean; onClose: () =
     vendorPayee: '',
     notes: '',
   });
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      apiClient.post('/expenses', {
+    mutationFn: async () => {
+      const res = await apiClient.post('/expenses', {
         description: form.description.trim(),
         amount: parseFloat(form.amount),
         category: form.category,
         expenseDate: form.expenseDate,
         vendorPayee: form.vendorPayee.trim() || undefined,
         notes: form.notes.trim() || undefined,
-      }),
-    onSuccess: () => {
+      });
+      // The expense exists now; the receipts go one at a time, and one failing must not lose the
+      // expense or the others — the card has an "Add receipt" for whatever did not make it.
+      const expenseId = res?.data?.data?.id as string | undefined;
+      let failed = 0;
+      if (expenseId) {
+        for (const receipt of receipts) {
+          try {
+            await expensesApi.uploadReceipt(expenseId, receipt);
+          } catch {
+            failed += 1;
+          }
+        }
+      }
+      return { failed, sent: receipts.length };
+    },
+    onSuccess: ({ failed, sent }) => {
       qc.invalidateQueries({ queryKey: ['expenses'] });
       // Close the sheet first and raise the alert once its slide-out has
       // finished — showing both in the same instant is what could wedge
       // Android's native modal layer for whatever opened next.
       onClose();
-      setTimeout(() => Alert.alert('Added', 'Expense recorded successfully.'), 400);
+      setTimeout(() => {
+        if (failed === 0) {
+          Alert.alert('Added', sent > 0 ? `Expense recorded with ${sent === 1 ? '1 receipt' : `${sent} receipts`}.` : 'Expense recorded successfully.');
+        } else {
+          Alert.alert(
+            'Expense saved',
+            `${failed === 1 ? '1 receipt was' : `${failed} receipts were`} not uploaded. Open the expense and tap "Add receipt" to try again.`,
+          );
+        }
+      }, 400);
+      setReceipts([]);
       setForm({
         description: '', amount: '', category: CATEGORIES[0],
         expenseDate: new Date().toISOString().slice(0, 10),
@@ -195,8 +227,11 @@ function AddExpenseModal({ visible, onClose }: { visible: boolean; onClose: () =
               textAlignVertical="top"
             />
 
+            <Text style={modal.label}>Receipt</Text>
+            <ReceiptPicker receipts={receipts} onChange={setReceipts} disabled={mutation.isPending} />
+
             <Button
-              label={mutation.isPending ? 'Saving…' : 'Save Expense'}
+              label={mutation.isPending ? (receipts.length > 0 ? 'Saving and uploading…' : 'Saving…') : 'Save Expense'}
               onPress={() => mutation.mutate()}
               loading={mutation.isPending}
               disabled={!canSubmit}
@@ -380,6 +415,9 @@ export default function ExpensesScreen() {
           <StatusBadge label={item.status} variant={expenseStatusVariant(item.status)} size="sm" />
         </View>
       </View>
+
+      {/* The bill: photos or PDFs, opened, added (camera) or removed here */}
+      <ExpenseReceipts expenseId={item.id} status={item.status} receipts={item.documents ?? []} />
 
       {/* Approve / Reject for PENDING */}
       {item.status === 'PENDING' && (
