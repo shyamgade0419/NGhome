@@ -33,9 +33,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   billingRulesApi,
   BillingRule,
-  CalculationType,
   CALCULATION_TYPES,
 } from '@/api/endpoints/billing-rules.api';
+import { BASIS_LABEL, KIND_LABEL, buildRulePayload, describeRule } from '@/utils/billingRules';
+import type { Basis, ChargeKind, RuleForm } from '@/utils/billingRules';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -48,40 +49,56 @@ import { inr } from '@/utils/format';
 function CreateRuleModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const [showDate, setShowDate] = useState(false);
-  const [form, setForm] = useState({
-    name: '',
-    description: '',
-    calculationType: 'EQUAL_PER_FLAT' as CalculationType,
-    effectiveFrom: new Date().toISOString().split('T')[0],
-    priority: '0',
+  const today = new Date().toISOString().split('T')[0];
+  const [form, setForm] = useState<RuleForm>({
+    kind: 'MAINTENANCE',
+    name: 'Monthly maintenance',
+    basis: 'EQUAL_PER_FLAT',
+    amount: '',
+    installments: '1',
+    startMonth: today.slice(0, 7),
+    effectiveFrom: `${today.slice(0, 7)}-01`,
+    effectiveTo: '',
   });
 
   const mutation = useMutation({
-    mutationFn: () =>
-      billingRulesApi.create({
-        name: form.name.trim(),
-        description: form.description.trim() || undefined,
-        calculationType: form.calculationType,
-        // The DTO wants an ISO datetime, not a bare date string.
-        effectiveFrom: new Date(form.effectiveFrom).toISOString(),
-        priority: parseInt(form.priority || '0', 10),
-      }),
+    mutationFn: (payload: Record<string, unknown>) => billingRulesApi.create(payload as any),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['billing-rules'] });
-      Alert.alert('Created', 'Billing rule added.');
+      Alert.alert('Added', "The charge will appear on every flat's next bills.");
       onClose();
     },
     onError: (e: any) =>
-      Alert.alert('Error', e?.response?.data?.message ?? 'Failed to create rule.'),
+      Alert.alert('Error', e?.response?.data?.message ?? 'Failed to add the charge.'),
   });
 
-  const canSubmit = form.name.trim().length > 0;
+  const corpus = form.kind === 'CORPUS';
+  const n = Math.max(1, parseInt(form.installments || '1', 10) || 1);
+  const value = parseFloat(form.amount);
+  const each = Number.isFinite(value) && value > 0 ? Math.round((value / n) * 100) / 100 : 0;
+  const unit = form.basis === 'EQUAL_PER_FLAT' ? '₹ per flat' : form.basis === 'AREA_BASED' ? '₹ per sq ft' : '₹ per resident';
+
+  // Changing what the charge is also changes its suggested name, unless the person typed their own.
+  const pickKind = (kind: ChargeKind) =>
+    setForm((f) => {
+      const suggested = (k: ChargeKind) => (k === 'MAINTENANCE' ? 'Monthly maintenance' : KIND_LABEL[k]);
+      return { ...f, kind, name: !f.name || f.name === suggested(f.kind) ? suggested(kind) : f.name };
+    });
+
+  const submit = () => {
+    const built = buildRulePayload(form);
+    if ('error' in built) {
+      Alert.alert('Check the charge', built.error);
+      return;
+    }
+    mutation.mutate(built.payload);
+  };
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>New Billing Rule</Text>
+          <Text style={styles.modalTitle}>Add a charge</Text>
           <TouchableOpacity onPress={onClose} hitSlop={8}>
             <Ionicons name="close" size={22} color={colors.text} />
           </TouchableOpacity>
@@ -89,77 +106,122 @@ function CreateRuleModal({ onClose }: { onClose: () => void }) {
 
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
-            <Text style={styles.label}>Rule Name *</Text>
+            <Text style={styles.ruleDesc}>
+              Set it once here. Every flat&apos;s bill picks it up when bills are generated, so nothing is typed in the sheet.
+            </Text>
+
+            <Text style={styles.label}>What is this charge? *</Text>
+            <View style={styles.typeGrid}>
+              {(Object.keys(KIND_LABEL) as ChargeKind[]).map((k) => (
+                <TouchableOpacity
+                  key={k}
+                  style={[styles.typeChip, form.kind === k && styles.typeChipActive]}
+                  onPress={() => pickKind(k)}
+                >
+                  <Text style={[styles.typeText, form.kind === k && styles.typeTextActive]}>{KIND_LABEL[k]}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.label}>Name on the bill *</Text>
             <TextInput
               style={styles.input}
               value={form.name}
               onChangeText={(v) => setForm((f) => ({ ...f, name: v }))}
-              placeholder="e.g. Standard Maintenance"
+              placeholder="e.g. Monthly maintenance"
               placeholderTextColor={colors.textTertiary}
             />
 
-            <Text style={styles.label}>Description</Text>
-            <TextInput
-              style={styles.input}
-              value={form.description}
-              onChangeText={(v) => setForm((f) => ({ ...f, description: v }))}
-              placeholder="Optional"
-              placeholderTextColor={colors.textTertiary}
-            />
-
-            <Text style={styles.label}>Calculation Type *</Text>
+            <Text style={styles.label}>How is it worked out? *</Text>
             <View style={styles.typeGrid}>
-              {CALCULATION_TYPES.map((t) => {
-                const active = form.calculationType === t.value;
-                return (
-                  <TouchableOpacity
-                    key={t.value}
-                    style={[styles.typeChip, active && styles.typeChipActive]}
-                    onPress={() => setForm((f) => ({ ...f, calculationType: t.value }))}
-                  >
-                    <Text style={[styles.typeText, active && styles.typeTextActive]}>{t.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+              {(Object.keys(BASIS_LABEL) as Basis[]).map((b) => (
+                <TouchableOpacity
+                  key={b}
+                  style={[styles.typeChip, form.basis === b && styles.typeChipActive]}
+                  onPress={() => setForm((f) => ({ ...f, basis: b }))}
+                >
+                  <Text style={[styles.typeText, form.basis === b && styles.typeTextActive]}>{BASIS_LABEL[b]}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
-            <Text style={styles.label}>Effective From *</Text>
-            <TouchableOpacity style={styles.dateTouchable} onPress={() => setShowDate(true)} activeOpacity={0.7}>
-              <Ionicons name="calendar-outline" size={18} color={colors.textSecondary} />
-              <Text style={styles.dateText}>
-                {new Date(form.effectiveFrom).toLocaleDateString('en-IN', {
-                  day: 'numeric', month: 'long', year: 'numeric',
-                })}
-              </Text>
-              <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
-            </TouchableOpacity>
-            {showDate && (
-              <DateTimePicker
-                value={new Date(form.effectiveFrom)}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(_: DateTimePickerEvent, d?: Date) => {
-                  setShowDate(Platform.OS === 'ios');
-                  if (d) setForm((f) => ({ ...f, effectiveFrom: d.toISOString().split('T')[0] }));
-                }}
-              />
-            )}
-
-            <Text style={styles.label}>Priority</Text>
+            <Text style={styles.label}>{corpus ? `Total to collect (${unit}) *` : `Amount each month (${unit}) *`}</Text>
             <TextInput
               style={styles.input}
-              value={form.priority}
-              onChangeText={(v) => setForm((f) => ({ ...f, priority: v.replace(/[^0-9]/g, '') }))}
-              keyboardType="number-pad"
-              placeholder="0 = default"
+              value={form.amount}
+              onChangeText={(v) => setForm((f) => ({ ...f, amount: v.replace(/[^0-9.]/g, '') }))}
+              keyboardType="decimal-pad"
+              placeholder={form.basis === 'EQUAL_PER_FLAT' ? '2500' : '2.50'}
               placeholderTextColor={colors.textTertiary}
             />
 
+            {corpus ? (
+              <>
+                <Text style={styles.label}>Collect over (months)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={form.installments}
+                  onChangeText={(v) => setForm((f) => ({ ...f, installments: v.replace(/[^0-9]/g, '') }))}
+                  keyboardType="number-pad"
+                  placeholder="1 = in one go"
+                  placeholderTextColor={colors.textTertiary}
+                />
+                <Text style={styles.label}>First instalment in (YYYY-MM)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={form.startMonth}
+                  onChangeText={(v) => setForm((f) => ({ ...f, startMonth: v.replace(/[^0-9-]/g, '').slice(0, 7) }))}
+                  placeholder="2026-11"
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="none"
+                />
+                {each > 0 ? (
+                  <Text style={styles.ruleDesc}>
+                    {n === 1
+                      ? `Billed once, in the ${form.startMonth} bill.`
+                      : `${each.toLocaleString('en-IN')} a month for ${n} months, starting ${form.startMonth}.`}{' '}
+                    An amount not paid stays pending and carries into the next month.
+                  </Text>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <Text style={styles.label}>Applies from *</Text>
+                <TouchableOpacity style={styles.dateTouchable} onPress={() => setShowDate(true)} activeOpacity={0.7}>
+                  <Ionicons name="calendar-outline" size={18} color={colors.textSecondary} />
+                  <Text style={styles.dateText}>
+                    {new Date(form.effectiveFrom).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </Text>
+                  <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
+                </TouchableOpacity>
+                {showDate && (
+                  <DateTimePicker
+                    value={new Date(form.effectiveFrom)}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(_: DateTimePickerEvent, d?: Date) => {
+                      setShowDate(Platform.OS === 'ios');
+                      if (d) setForm((f) => ({ ...f, effectiveFrom: d.toISOString().split('T')[0] }));
+                    }}
+                  />
+                )}
+                <Text style={styles.label}>Until (optional, YYYY-MM-DD)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={form.effectiveTo}
+                  onChangeText={(v) => setForm((f) => ({ ...f, effectiveTo: v.replace(/[^0-9-]/g, '').slice(0, 10) }))}
+                  placeholder="Leave blank to keep charging"
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="none"
+                />
+              </>
+            )}
+
             <Button
-              label={mutation.isPending ? 'Creating…' : 'Create Rule'}
-              onPress={() => mutation.mutate()}
+              label={mutation.isPending ? 'Adding…' : 'Add charge'}
+              onPress={submit}
               loading={mutation.isPending}
-              disabled={!canSubmit}
+              disabled={!form.name.trim() || !form.amount}
               fullWidth
               size="lg"
               style={{ marginTop: spacing.base }}
@@ -248,6 +310,9 @@ export default function BillingRulesScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.ruleName}>{item.name}</Text>
                   {item.description ? <Text style={styles.ruleDesc}>{item.description}</Text> : null}
+                  <Text style={[styles.ruleName, { fontSize: 13 }, describeRule(item).startsWith('No amount') && { color: colors.error }]}>
+                    {describeRule(item)}
+                  </Text>
                   <Text style={styles.ruleMeta}>
                     {CALCULATION_TYPES.find((t) => t.value === item.calculationType)?.label ??
                       item.calculationType?.replace(/_/g, ' ')}

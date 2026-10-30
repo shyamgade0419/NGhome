@@ -64,6 +64,12 @@ export const billingApi = {
   deletePeriod: (periodId: string): Promise<{ data: { success: boolean } }> =>
     api.delete(`/billing/periods/${periodId}`),
 
+  /** Add the late fine to every bill past its due date and grace days (the server also does this hourly). */
+  applyLateFees: (): Promise<{ data: { applied: number; total: string } }> => api.post('/billing/late-fees/apply'),
+
+  /** Waive one bill's late fine (admin only). */
+  waiveLateFee: (billId: string, reason: string) => api.post(`/billing/bills/${billId}/waive-late-fee`, { reason }),
+
   generateBills: (periodId: string): Promise<{ data: { generated: number; errors: number } }> =>
     api.post(`/billing/periods/${periodId}/generate`),
 

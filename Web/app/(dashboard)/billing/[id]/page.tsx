@@ -194,6 +194,32 @@ export default function BillingPeriodDetailPage({ params }: { params: { id: stri
     onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to close period'),
   });
 
+  /* Late fines: run the pass now, and waive one bill's */
+  const applyFinesMutation = useMutation({
+    mutationFn: () => billingApi.applyLateFees().then((r: any) => r.data ?? r),
+    onSuccess: (r: any) => {
+      toast.success(r.applied > 0 ? `Late fine added to ${r.applied} overdue bill${r.applied === 1 ? '' : 's'}` : 'No overdue bills to fine right now');
+      qc.invalidateQueries({ queryKey: ['billing-period', id] });
+      qc.invalidateQueries({ queryKey: ['billing-period-bills', id] });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Could not apply late fines'),
+  });
+
+  const waiveMutation = useMutation({
+    mutationFn: ({ billId, reason }: { billId: string; reason: string }) => billingApi.waiveLateFee(billId, reason),
+    onSuccess: () => {
+      toast.success('Late fine waived');
+      qc.invalidateQueries({ queryKey: ['billing-period', id] });
+      qc.invalidateQueries({ queryKey: ['billing-period-bills', id] });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Could not waive the fine'),
+  });
+
+  const waiveFine = (bill: MaintenanceBill) => {
+    const reason = window.prompt(`Why is the late fine on Flat ${bill.flatCode} being waived? (kept in the audit trail)`);
+    if (reason && reason.trim().length >= 3) waiveMutation.mutate({ billId: bill.id, reason: reason.trim() });
+  };
+
   const handleDownload = () => {
     // Open print dialog to save as PDF
     window.print();
@@ -208,6 +234,9 @@ export default function BillingPeriodDetailPage({ params }: { params: { id: stri
   const canGenerate = isAdmin && ['DRAFT', 'CALCULATED'].includes(status);
   const canPublish = isAdmin && ['CALCULATED', 'REVIEW'].includes(status);
   const canClose = isAdmin && ['PUBLISHED', 'PARTIALLY_PAID', 'PAID'].includes(status);
+  const canApplyFines = isAdmin && ['PUBLISHED', 'PARTIALLY_PAID'].includes(status);
+  // Waiving a fine is the admin's call, not the accountant's.
+  const canWaive = activeMembership?.role === 'SOCIETY_ADMIN' || !!user?.isPlatformAdmin;
 
   const reportBills: any[] = reportData?.bills ?? [];
 
@@ -255,6 +284,17 @@ export default function BillingPeriodDetailPage({ params }: { params: { id: stri
                       loading={publishMutation.isPending}
                     >
                       <Send size={13} className="mr-1.5" /> Publish
+                    </Button>
+                  )}
+                  {canApplyFines && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => applyFinesMutation.mutate()}
+                      loading={applyFinesMutation.isPending}
+                      title="Add the late fine to bills past their due date and grace days. This also happens automatically every hour."
+                    >
+                      Apply late fines
                     </Button>
                   )}
                   {canClose && (
@@ -421,6 +461,7 @@ export default function BillingPeriodDetailPage({ params }: { params: { id: stri
                     <Th>Flat</Th>
                     <Th>Base</Th>
                     <Th>Water</Th>
+                    <Th>Late fine</Th>
                     <Th>Total</Th>
                     <Th>Paid</Th>
                     <Th>Pending</Th>
@@ -437,6 +478,9 @@ export default function BillingPeriodDetailPage({ params }: { params: { id: stri
                       <Td className="tabular-nums text-blue-600">
                         {parseFloat(bill.waterCharges ?? '0') > 0 ? formatCurrency(bill.waterCharges ?? '0') : '—'}
                       </Td>
+                      <Td className="tabular-nums text-amber-700">
+                        {parseFloat(bill.lateFee ?? '0') > 0 ? formatCurrency(bill.lateFee) : '—'}
+                      </Td>
                       <Td className="font-semibold tabular-nums">{formatCurrency(bill.totalAmount)}</Td>
                       <Td className="text-green-600 tabular-nums">{formatCurrency(bill.paidAmount)}</Td>
                       <Td className={cn('tabular-nums', parseFloat(bill.pendingAmount) > 0 ? 'text-red-600 font-semibold' : '')}>
@@ -449,6 +493,15 @@ export default function BillingPeriodDetailPage({ params }: { params: { id: stri
                       </Td>
                       {isAdmin && (
                         <Td>
+                          {canWaive && parseFloat(bill.lateFee ?? '0') > 0 && (
+                            <button
+                              onClick={() => waiveFine(bill)}
+                              title={`Waive the late fine on Flat ${bill.flatCode}`}
+                              className="mr-1 rounded-lg px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 transition-colors"
+                            >
+                              Waive fine
+                            </button>
+                          )}
                           {bill.isPublished && !bill.isPaid && (
                             <button
                               onClick={() => openWhatsApp(

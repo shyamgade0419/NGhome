@@ -10,6 +10,8 @@ import {
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { societyApi, billingRulesApi, usersApi } from '@/lib/api/endpoints';
+import { BASIS_LABEL, KIND_LABEL, buildRulePayload, describeRule } from '@/lib/billingRules';
+import type { Basis, ChargeKind, RuleForm } from '@/lib/billingRules';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -321,73 +323,108 @@ function BillingConfigSection({ admin }: { admin: boolean }) {
 /* ─── Add Billing Rule Modal ────────────────────────────────────── */
 function AddBillingRuleModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({
-    name: '',
-    description: '',
-    calculationType: 'EQUAL_PER_FLAT',
-    effectiveFrom: new Date().toISOString().split('T')[0],
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const [form, setForm] = useState<RuleForm>({
+    kind: 'MAINTENANCE',
+    name: 'Monthly maintenance',
+    basis: 'EQUAL_PER_FLAT',
+    amount: '',
+    installments: '1',
+    startMonth: thisMonth,
+    effectiveFrom: `${thisMonth}-01`,
     effectiveTo: '',
-    priority: '1',
   });
 
   const mutation = useMutation({
-    mutationFn: () =>
-      billingRulesApi.create({
-        name: form.name.trim(),
-        description: form.description.trim() || undefined,
-        calculationType: form.calculationType as any,
-        effectiveFrom: new Date(form.effectiveFrom).toISOString(),
-        effectiveTo: form.effectiveTo ? new Date(form.effectiveTo).toISOString() : undefined,
-        priority: form.priority ? Number(form.priority) : undefined,
-      }),
+    mutationFn: (payload: Record<string, unknown>) => billingRulesApi.create(payload as any),
     onSuccess: () => {
-      toast.success('Billing rule created');
+      toast.success("Charge added — it will appear on every flat's next bills");
       qc.invalidateQueries({ queryKey: ['billing-rules'] });
       onClose();
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to create rule'),
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to add the charge'),
   });
 
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+  const set = (k: keyof RuleForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
+  // Changing what the charge is also changes its suggested name, unless the person has typed their own.
+  const pickKind = (kind: ChargeKind) =>
+    setForm((f) => {
+      const suggested = (k: ChargeKind) => (k === 'MAINTENANCE' ? 'Monthly maintenance' : KIND_LABEL[k]);
+      return { ...f, kind, name: !f.name || f.name === suggested(f.kind) ? suggested(kind) : f.name };
+    });
+
+  const built = buildRulePayload(form);
+  const submit = () => {
+    if ('error' in built) return toast.error(built.error);
+    mutation.mutate(built.payload);
+  };
+  const corpus = form.kind === 'CORPUS';
+  const n = Math.max(1, parseInt(form.installments || '1', 10) || 1);
+  const value = parseFloat(form.amount);
+  const each = Number.isFinite(value) && value > 0 ? Math.round((value / n) * 100) / 100 : 0;
+  const unit = form.basis === 'EQUAL_PER_FLAT' ? '₹ per flat' : form.basis === 'AREA_BASED' ? '₹ per sq ft' : '₹ per resident';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-full w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
         <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">Add Billing Rule</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Add a charge</h2>
           <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
+        <p className="mb-4 text-xs text-slate-500">
+          Set it once here — every flat&apos;s bill picks it up when bills are generated, so nothing is typed in the sheet.
+        </p>
         <div className="space-y-4">
-          <Input label="Rule Name *" placeholder="Standard Maintenance" value={form.name} onChange={set('name')} />
-          <Input label="Description" placeholder="Monthly maintenance charge per flat" value={form.description} onChange={set('description')} />
           <Select
-            label="Calculation Type"
-            value={form.calculationType}
-            onChange={set('calculationType')}
-            /* These must match the CalculationType enum in schema.prisma exactly —
-               the DTO validates with @IsEnum, so any other value is a 400. */
-            options={[
-              { value: 'EQUAL_PER_FLAT', label: 'Equal per flat' },
-              { value: 'AREA_BASED', label: 'Area based (per sq ft)' },
-              { value: 'PER_PERSON', label: 'Per person' },
-              { value: 'WATER_USAGE_BASED', label: 'Water usage based' },
-              { value: 'PERCENTAGE_BASED', label: 'Percentage based' },
-              { value: 'HYBRID', label: 'Hybrid' },
-              { value: 'FIXED_CUSTOM', label: 'Fixed custom' },
-              { value: 'CUSTOM_FORMULA', label: 'Custom formula' },
-            ]}
+            label="What is this charge?"
+            value={form.kind}
+            onChange={(e) => pickKind(e.target.value as ChargeKind)}
+            options={(Object.keys(KIND_LABEL) as ChargeKind[]).map((k) => ({ value: k, label: KIND_LABEL[k] }))}
           />
-          <div className="grid grid-cols-2 gap-4">
-            <Input label="Effective From *" type="date" value={form.effectiveFrom} onChange={set('effectiveFrom')} />
-            <Input label="Effective To (optional)" type="date" value={form.effectiveTo} onChange={set('effectiveTo')} />
-          </div>
-          <Input label="Priority" type="number" placeholder="1 = highest" value={form.priority} onChange={set('priority')} />
+          <Input label="Name on the bill *" value={form.name} onChange={set('name')} />
+          <Select
+            label="How is it worked out?"
+            value={form.basis}
+            onChange={set('basis')}
+            options={(Object.keys(BASIS_LABEL) as Basis[]).map((b) => ({ value: b, label: BASIS_LABEL[b] }))}
+          />
+          <Input
+            label={corpus ? `Total to collect (${unit}) *` : `Amount each month (${unit}) *`}
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder={form.basis === 'EQUAL_PER_FLAT' ? '2500' : '2.50'}
+            value={form.amount}
+            onChange={set('amount')}
+          />
+
+          {corpus ? (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Collect over (months)" type="number" min="1" max="60" value={form.installments} onChange={set('installments')} />
+                <Input label="First instalment in" type="month" value={form.startMonth} onChange={set('startMonth')} />
+              </div>
+              {each > 0 && (
+                <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  {n === 1
+                    ? `Billed once, in the ${form.startMonth} bill.`
+                    : `${each.toLocaleString('en-IN')} a month for ${n} months, starting ${form.startMonth}.`}{' '}
+                  An amount not paid stays pending and carries into the next month.
+                </p>
+              )}
+            </>
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              <Input label="Applies from *" type="date" value={form.effectiveFrom} onChange={set('effectiveFrom')} />
+              <Input label="Until (optional)" type="date" value={form.effectiveTo} onChange={set('effectiveTo')} />
+            </div>
+          )}
         </div>
         <div className="mt-6 flex justify-end gap-3">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => mutation.mutate()} loading={mutation.isPending} disabled={!form.name.trim()}>
-            Create Rule
+          <Button onClick={submit} loading={mutation.isPending} disabled={!form.name.trim() || !form.amount}>
+            Add charge
           </Button>
         </div>
       </div>
@@ -447,6 +484,9 @@ function BillingRulesSection({ admin }: { admin: boolean }) {
                   </Badge>
                 </div>
                 {rule.description && <p className="text-xs text-slate-500">{rule.description}</p>}
+                <p className={`text-xs mt-0.5 ${describeRule(rule).startsWith('No amount') ? 'font-medium text-red-600' : 'text-slate-700'}`}>
+                  {describeRule(rule)}
+                </p>
                 <p className="text-xs text-slate-400 mt-0.5">
                   {rule.calculationType?.replace(/_/g, ' ')}
                   {rule.effectiveFrom ? ` · From ${new Date(rule.effectiveFrom).toLocaleDateString('en-IN')}` : ''}

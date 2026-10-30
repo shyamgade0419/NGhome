@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/Button';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { colors, spacing, typography, radius } from '@/theme';
 import { toNum, inr } from '@/utils/format';
+import { totalDue, earlierDue } from '@/utils/dues';
 
 // NEFT and RTGS used to also be listed as their own buttons, redundant
 // with "Bank Transfer / NEFT / RTGS" above (still a valid backend
@@ -83,6 +84,16 @@ export default function SubmitPaymentScreen() {
     enabled: !!activePeriod?.id,
   });
 
+  // Payments clear the oldest month first, so what to pay is everything owed — this month's bill and any
+  // earlier month still unpaid — not this month alone.
+  const { data: allBills } = useQuery({
+    queryKey: ['my-bills-all'],
+    queryFn: () => billingApi.getMyBills({ limit: 100 }),
+  });
+  const owed = totalDue(allBills?.data ?? []);
+  const owedStr = owed > 0 ? owed.toFixed(2) : (myBill?.pendingAmount ?? '');
+  const arrears = owed > 0 ? earlierDue(owed, myBill?.pendingAmount) : 0;
+
   const { data: societyConfig } = useQuery({
     queryKey: ['society-config'],
     queryFn: societiesApi.getSocietyConfig,
@@ -112,7 +123,7 @@ export default function SubmitPaymentScreen() {
   } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
-      amount: myBill ? myBill.pendingAmount : '',
+      amount: owedStr,
       paymentDate: new Date().toISOString().split('T')[0],
       paymentMethod: 'UPI',
     },
@@ -121,10 +132,10 @@ export default function SubmitPaymentScreen() {
   // Pre-fill the amount once the bill query resolves. useForm captures
   // defaultValues on first render, before myBill has loaded.
   useEffect(() => {
-    if (myBill?.pendingAmount) {
-      setValue('amount', myBill.pendingAmount);
+    if (owedStr) {
+      setValue('amount', owedStr);
     }
-  }, [myBill, setValue]);
+  }, [owedStr, setValue]);
 
   const onSubmit = (data: FormData) => {
     submitMutation.mutate({
@@ -156,12 +167,17 @@ export default function SubmitPaymentScreen() {
                   </Text>
                 </View>
                 <View style={styles.billAmountItem}>
-                  <Text style={styles.billAmountLabel}>Outstanding</Text>
+                  <Text style={styles.billAmountLabel}>{arrears > 0 ? 'Total due' : 'Outstanding'}</Text>
                   <Text style={[styles.billAmountValue, { color: colors.warning }]}>
-                    {inr(myBill.pendingAmount)}
+                    {inr(owedStr)}
                   </Text>
                 </View>
               </View>
+              {arrears > 0 && (
+                <Text style={styles.billAmountLabel}>
+                  Includes {inr(arrears)} from earlier months. Payments clear the oldest month first.
+                </Text>
+              )}
             </View>
           )}
 
@@ -249,7 +265,7 @@ export default function SubmitPaymentScreen() {
             {selectedMethod === 'UPI' && upiId && myBill && (() => {
               // Guarded: an undefined pendingAmount would put "NaN" in the UPI
               // deep link's am= parameter, which UPI apps reject outright.
-              const amount = toNum(myBill.pendingAmount).toFixed(2);
+              const amount = toNum(owedStr).toFixed(2);
               const note = activePeriod ? billingPeriodName(activePeriod) : 'Maintenance';
               const upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent('Society')}&am=${amount}&tn=${encodeURIComponent(note)}&cu=INR`;
 
@@ -268,7 +284,7 @@ export default function SubmitPaymentScreen() {
                     <View style={styles.upiCardLeft}>
                       <Ionicons name="qr-code-outline" size={28} color={colors.primary} />
                       <View style={styles.upiCardText}>
-                        <Text style={styles.upiCardTitle}>Pay {inr(myBill.pendingAmount)} via UPI</Text>
+                        <Text style={styles.upiCardTitle}>Pay {inr(owedStr)} via UPI</Text>
                         <Text style={styles.upiCardSub}>Opens PhonePe · GPay · Paytm · BHIM</Text>
                         <Text style={styles.upiCardId}>{upiId}</Text>
                       </View>

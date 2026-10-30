@@ -105,6 +105,8 @@ export interface MaintenanceBill {
   pendingAmount: string;
   /** Water charges allocated to this flat for the period. */
   waterCharges?: string | null;
+  /** The late fine on this bill, once added (zero otherwise). */
+  lateFee?: string | null;
   isPaid: boolean;
   isPublished: boolean;
   dueDate: string;

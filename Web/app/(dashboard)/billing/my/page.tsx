@@ -23,19 +23,24 @@ function UpiPayCard({
   upiId,
   societyName,
   verificationRequired,
+  owed,
   onPaid,
 }: {
   bill: any;
   upiId: string;
   societyName: string;
   verificationRequired: boolean;
+  /** Everything the flat owes — this bill and any earlier month still unpaid. */
+  owed: number;
   onPaid: () => void;
 }) {
   const [utr, setUtr] = useState('');
   const [copied, setCopied] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [receipt, setReceipt] = useState<File | null>(null);
-  const pending = parseDecimalLike(bill.pendingAmount);
+  // A payment clears the oldest month first, so what to pay is everything owed, not this bill alone.
+  const pending = owed;
+  const earlier = Math.max(0, owed - parseDecimalLike(bill.pendingAmount));
 
   const upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(societyName)}&am=${pending}&tn=${encodeURIComponent(`Invoice ${bill.invoiceNumber}`)}&cu=INR`;
 
@@ -107,6 +112,11 @@ function UpiPayCard({
       <div className="text-center">
         <p className="text-xs text-slate-500">Amount to pay</p>
         <p className="text-2xl font-bold text-primary-700">{formatCurrency(pending)}</p>
+        {earlier > 0 && (
+          <p className="text-xs text-amber-700 mt-1">
+            Includes {formatCurrency(earlier)} from earlier months. Payments clear the oldest month first.
+          </p>
+        )}
         <p className="text-xs text-slate-400 mt-1">Ref: Invoice {bill.invoiceNumber}</p>
       </div>
 
@@ -182,8 +192,9 @@ function UpiPayCard({
   );
 }
 
-function BillCard({ bill, upiId, societyName, verificationRequired, onPaid }: {
+function BillCard({ bill, owed, upiId, societyName, verificationRequired, onPaid }: {
   bill: any;
+  owed: number;
   upiId: string;
   societyName: string;
   verificationRequired: boolean;
@@ -307,11 +318,12 @@ function BillCard({ bill, upiId, societyName, verificationRequired, onPaid }: {
                   className="flex items-center justify-center gap-2 w-full rounded-xl border-2 border-primary-300 bg-primary-50 text-primary-700 py-3 text-sm font-semibold hover:bg-primary-100 transition-colors"
                 >
                   <Smartphone size={16} />
-                  Pay ₹{pending.toLocaleString('en-IN')} via UPI
+                  Pay ₹{owed.toLocaleString('en-IN')} via UPI
                 </button>
               ) : (
                 <UpiPayCard
                   bill={bill}
+                  owed={owed}
                   upiId={upiId}
                   societyName={societyName}
                   verificationRequired={verificationRequired}
@@ -412,6 +424,7 @@ export default function MyBillsPage() {
                 <BillCard
                   key={bill.id}
                   bill={bill}
+                  owed={totalPending}
                   upiId={upiId}
                   societyName={societyName}
                   verificationRequired={verificationRequired}

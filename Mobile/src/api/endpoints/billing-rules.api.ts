@@ -35,6 +35,8 @@ export interface BillingRule {
   effectiveFrom: string;
   effectiveTo: string | null;
   priority: number;
+  /** Where the amount lives: amount / ratePerSqft / ratePerPerson, plus chargeType (MAINTENANCE, CORPUS, OTHER). */
+  config?: Record<string, unknown> | null;
   components?: Array<{ id: string; name: string; componentType: string; amount?: string | null }>;
 }
 
@@ -60,6 +62,7 @@ export const billingRulesApi = {
     effectiveFrom: string;
     effectiveTo?: string;
     priority?: number;
+    config?: Record<string, unknown>;
   }) => {
     const { data } = await apiClient.post<ApiResponse<BillingRule>>('/billing-rules', payload);
     return data.data ?? (data as unknown as BillingRule);
