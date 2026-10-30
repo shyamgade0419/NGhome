@@ -89,7 +89,9 @@ function BookingsTab() {
     queryKey: ['accounts'],
     queryFn: () => accountsApi.listAccounts({ limit: 100 }).then((r: any) => r.data),
   });
-  const accounts: any[] = accountsData?.data ?? [];
+  // The client hands back a plain array for a list with no paging (accounts, funds), and {data, meta} only
+  // for a paged one. Reading `.data` off the array found nothing, so these pages always showed no accounts.
+  const accounts: any[] = Array.isArray(accountsData) ? accountsData : (accountsData?.data ?? []);
 
   const done = (message: string) => () => {
     toast.success(message);
