@@ -667,8 +667,10 @@ function InviteCodeSection() {
 /* ─── Roles & Permissions section ──────────────────────────────── */
 const ROLE_OPTIONS = [
   { value: 'SOCIETY_ADMIN', label: 'Society Admin' },
+  { value: 'COMMITTEE_MEMBER', label: 'Committee Member' },
   { value: 'SOCIETY_ACCOUNTANT', label: 'Accountant' },
   { value: 'SOCIETY_STAFF', label: 'Staff' },
+  { value: 'SECURITY_GUARD', label: 'Security Guard' },
   { value: 'RESIDENT', label: 'Resident' },
 ];
 
@@ -676,6 +678,8 @@ const roleColor: Record<string, string> = {
   SOCIETY_ADMIN: 'bg-red-50 text-red-700',
   SOCIETY_ACCOUNTANT: 'bg-amber-50 text-amber-700',
   SOCIETY_STAFF: 'bg-blue-50 text-blue-700',
+  COMMITTEE_MEMBER: 'bg-violet-50 text-violet-700',
+  SECURITY_GUARD: 'bg-slate-100 text-slate-700',
   RESIDENT: 'bg-green-50 text-green-700',
 };
 
