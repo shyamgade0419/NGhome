@@ -32,6 +32,7 @@ import {
   Package,
   UserCheck,
   Car,
+  ClipboardCheck,
 } from 'lucide-react';
 import { cn, initials } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -60,6 +61,7 @@ const ADMIN_NAV = [
   { href: '/parcels', icon: Package, label: 'Parcels' },
   { href: '/household-help', icon: UserCheck, label: 'Household Help' },
   { href: '/vehicles', icon: Car, label: 'Vehicles & Parking' },
+  { href: '/staff-attendance', icon: ClipboardCheck, label: 'Staff Attendance' },
   { href: '/salaries', icon: UserCircle, label: 'Salaries' },
   { href: '/audit-logs', icon: ShieldCheck, label: 'Audit Logs' },
   { href: '/notifications', icon: Bell, label: 'Notifications' },

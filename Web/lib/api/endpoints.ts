@@ -14,6 +14,7 @@ import type { VisitorEntryStatus, VisitorLogEntry, VisitorPolicy, VisitorType } 
 import type { ParcelLogEntry, ParcelStatus } from '@/lib/parcels';
 import type { HelperRow, HelperStatus, HelperVisitRow } from '@/lib/helpers';
 import type { SlotFor, SlotRow, SlotStatus, VehicleRow } from '@/lib/vehicles';
+import type { AttendanceStatus, DayRow, MonthDay, RosterRow, Shift, SummaryRow } from '@/lib/attendance';
 
 // Dashboard — composites several report endpoints
 export const dashboardApi = {
@@ -809,4 +810,21 @@ export const vehiclesApi = {
   deleteSlot: (id: string) => api.delete(`/parking-slots/${id}`),
   allocate: (id: string, flatId: string) => api.post(`/parking-slots/${id}/allocate`, { flatId }),
   release: (id: string) => api.post(`/parking-slots/${id}/release`),
+};
+
+// Staff attendance — committee side. Guards check staff in and out in the mobile app.
+export const staffAttendanceApi = {
+  staff: (): Promise<{ data: { id: string; name: string; designation: string }[] }> => api.get('/staff-attendance/staff'),
+  shifts: (): Promise<{ data: Shift[] }> => api.get('/staff-shifts'),
+  createShift: (body: { name: string; startTime: string; endTime: string }) => api.post('/staff-shifts', body),
+  updateShift: (id: string, body: { name?: string; startTime?: string; endTime?: string; active?: boolean }) => api.patch(`/staff-shifts/${id}`, body),
+  roster: (from: string, to: string): Promise<{ data: RosterRow[] }> => api.get('/staff-roster', { params: { from, to } }),
+  assign: (body: { employeeIds: string[]; from: string; to: string; shiftId?: string | null; post?: string; weekdays?: number[] }): Promise<{ data: { assigned: number; days: number } }> => api.post('/staff-roster/assign', body),
+  clear: (body: { employeeIds: string[]; from: string; to: string }): Promise<{ data: { cleared: number } }> => api.post('/staff-roster/clear', body),
+  day: (date: string): Promise<{ data: { date: string; rows: DayRow[] } }> => api.get('/staff-attendance/day', { params: { date } }),
+  mark: (body: { employeeId: string; date: string; status: AttendanceStatus; checkIn?: string; checkOut?: string; note?: string }) => api.post('/staff-attendance/mark', body),
+  markDay: (date: string, entries: { employeeId: string; status: AttendanceStatus }[]) => api.post('/staff-attendance/mark-day', { date, entries }),
+  summary: (month: string): Promise<{ data: { month: string; through: string | null; rows: SummaryRow[] } }> => api.get('/staff-attendance/summary', { params: { month } }),
+  employeeMonth: (id: string, month: string): Promise<{ data: { employee: { id: string; name: string; designation: string }; month: string; summary: Omit<SummaryRow, 'employeeId' | 'name' | 'designation'>; days: MonthDay[] } }> =>
+    api.get(`/staff-attendance/employee/${id}`, { params: { month } }),
 };
