@@ -11,6 +11,7 @@ import { DeleteUserDto } from './dto/delete-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 import { AssignFlatDto } from './dto/assign-flat.dto';
+import { SetResidencyDto } from './dto/set-residency.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -83,7 +84,21 @@ export class UsersController {
       body.flatId,
       body.role,
       body.isPrimary ?? false,
+      body.residencyType,
     );
+  }
+
+  @Patch('society/:userId/residency')
+  @UseGuards(TenantGuard, RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @ApiOperation({ summary: 'Mark a resident as owner or tenant' })
+  async setResidency(
+    @SocietyId() societyId: string,
+    @Param('userId') userId: string,
+    @Body() dto: SetResidencyDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.usersService.setResidency(societyId, userId, dto.residencyType, dto.flatId, actor.id);
   }
 
   @Patch('society/:userId/flat')

@@ -4,6 +4,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
 import { SocietiesService } from './societies.service';
+import { ResidencyService } from '../common/residency.service';
 import { SocietyPurgeService } from './society-purge.service';
 import { SocietyBrandingService } from './society-branding.service';
 import { UpdateBrandingDto } from './dto/update-branding.dto';
@@ -31,6 +32,7 @@ export class SocietiesController {
     private readonly societiesService: SocietiesService,
     private readonly purgeService: SocietyPurgeService,
     private readonly brandingService: SocietyBrandingService,
+    private readonly residency: ResidencyService,
   ) {}
 
   @Post()
@@ -92,8 +94,8 @@ export class SocietiesController {
   @Get('my/financial-summary')
   @UseGuards(TenantGuard)
   @ApiOperation({ summary: 'Resident-safe financial transparency summary (gated by society config)' })
-  async getFinancialSummary(@SocietyId() societyId: string) {
-    return this.societiesService.getResidentFinancialSummary(societyId);
+  async getFinancialSummary(@SocietyId() societyId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.societiesService.getResidentFinancialSummary(societyId, await this.residency.isTenantViewer(user));
   }
 
   @Patch('my/config')

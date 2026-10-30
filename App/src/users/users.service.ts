@@ -8,7 +8,7 @@ import * as argon2 from 'argon2';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { SystemRole, AuditAction, Prisma } from '@prisma/client';
+import { SystemRole, AuditAction, Prisma, ResidencyType } from '@prisma/client';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
 
 const USER_SELECT = {
@@ -198,6 +198,8 @@ export class UsersService {
     flatId: string | undefined,
     role: SystemRole,
     isPrimary: boolean,
+    // Left alone unless given: changing someone's role must not turn a tenant back into an owner.
+    residencyType?: ResidencyType,
   ) {
     // Verify society and user exist
     const [society, user] = await Promise.all([
@@ -229,7 +231,7 @@ export class UsersService {
       if (existing.length === 1) {
         return this.prisma.societyMembership.update({
           where: { id: existing[0].id },
-          data: { role, isPrimary },
+          data: { role, isPrimary, ...(residencyType ? { residencyType } : {}) },
         });
       }
       if (existing.length > 1) {
@@ -242,8 +244,40 @@ export class UsersService {
 
     return this.prisma.societyMembership.upsert({
       where: { societyId_userId_flatId: { societyId, userId, flatId: flatId ?? '' } },
-      create: { societyId, userId, flatId, role, isPrimary, status: 'ACTIVE' },
-      update: { role, isPrimary, status: 'ACTIVE', leftAt: null },
+      create: { societyId, userId, flatId, role, isPrimary, ...(residencyType ? { residencyType } : {}), status: 'ACTIVE' },
+      update: { role, isPrimary, ...(residencyType ? { residencyType } : {}), status: 'ACTIVE', leftAt: null },
+    });
+  }
+
+  /**
+   * Say whether a resident owns their flat or rents it. Tenants are kept away from the corpus and bank
+   * balances (see ResidencyService). A person in two flats needs the flat named, so the right one changes.
+   */
+  async setResidency(societyId: string, userId: string, residencyType: ResidencyType, flatId: string | undefined, actorId: string) {
+    const memberships = await this.prisma.societyMembership.findMany({
+      where: { societyId, userId, status: 'ACTIVE', ...(flatId ? { flatId } : {}) },
+    });
+    if (memberships.length === 0) throw new NotFoundException('That person is not an active member of this society');
+    if (memberships.length > 1) {
+      throw new ConflictException('This member holds more than one flat in this society — say which flat to change.');
+    }
+    const membership = memberships[0];
+    if (membership.residencyType === residencyType) return membership;
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.societyMembership.update({ where: { id: membership.id }, data: { residencyType } });
+      await tx.auditLog.create({
+        data: {
+          societyId,
+          actorId,
+          action: AuditAction.USER_MODIFIED,
+          entityType: 'SocietyMembership',
+          entityId: membership.id,
+          oldValues: { residencyType: membership.residencyType } as Prisma.InputJsonValue,
+          newValues: { residencyType, action: 'RESIDENCY_CHANGED' } as Prisma.InputJsonValue,
+        },
+      });
+      return updated;
     });
   }
 

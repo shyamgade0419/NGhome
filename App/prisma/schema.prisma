@@ -26,6 +26,12 @@ enum SystemRole {
   SECURITY_GUARD
 }
 
+// Whether a resident owns the flat or rents it. Tenants do not see the corpus or bank balances.
+enum ResidencyType {
+  OWNER
+  TENANT
+}
+
 enum BillingCycleType {
   MONTHLY
   QUARTERLY
@@ -521,6 +527,8 @@ model SocietyMembership {
   joinedAt              DateTime         @default(now())
   leftAt                DateTime?
   isPrimary             Boolean          @default(false)
+  // Owner or tenant. Existing members are owners until the admin says otherwise.
+  residencyType         ResidencyType    @default(OWNER)
   additionalPermissions Json             @default("[]")
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt

@@ -26,6 +26,7 @@ export default function JoinPage() {
 
   // Step 2: personal details
   const [flatId, setFlatId] = useState('');
+  const [residencyType, setResidencyType] = useState<'OWNER' | 'TENANT'>('OWNER');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -68,6 +69,7 @@ export default function JoinPage() {
         body: JSON.stringify({
           joinCode: code.trim().toUpperCase(),
           flatId,
+          residencyType,
           firstName: firstName.trim(),
           lastName: lastName.trim(),
           email: email.trim(),
@@ -200,6 +202,15 @@ export default function JoinPage() {
                     options={flatOptions}
                   />
                 )}
+                <Select
+                  label="I am the flat's *"
+                  value={residencyType}
+                  onChange={(e) => setResidencyType(e.target.value as 'OWNER' | 'TENANT')}
+                  options={[
+                    { value: 'OWNER', label: 'Owner' },
+                    { value: 'TENANT', label: 'Tenant (renting)' },
+                  ]}
+                />
                 <div className="grid grid-cols-2 gap-4">
                   <Input label="First Name *" placeholder="Ravi" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
                   <Input label="Last Name *" placeholder="Kumar" value={lastName} onChange={(e) => setLastName(e.target.value)} />

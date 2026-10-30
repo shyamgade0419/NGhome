@@ -523,10 +523,11 @@ export class SocietiesService {
    * a third flag (showCorpusToResidents) claimed to control corpus while
    * being read by nothing at all; both are fixed as of this change.
    */
-  async getResidentFinancialSummary(societyId: string) {
+  async getResidentFinancialSummary(societyId: string, tenant = false) {
     const config = await this.prisma.societyConfiguration.findUnique({ where: { societyId } });
 
-    const showBalances = config?.showAccountBalancesToResidents ?? false;
+    // A tenant never sees the bank balance, whatever the society has switched on for residents.
+    const showBalances = !tenant && (config?.showAccountBalancesToResidents ?? false);
     const showExpenses = config?.showExpensesToResidents ?? false;
 
     const now = new Date();
@@ -588,6 +589,9 @@ export class SocietiesService {
 
     return {
       showBalances,
+      // True when a figure is withheld because the viewer is a tenant, so the screen can say so rather
+      // than look as if the society keeps nothing.
+      ownersOnlyHidden: tenant,
       showExpenses,
       totalBalance: showBalances ? (totalBalance?._sum.currentBalance?.toNumber() ?? 0) : null,
       monthlyExpenses,

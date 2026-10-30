@@ -53,7 +53,8 @@ export default function ResidentFinancesScreen() {
   const visibleFunds = funds ?? [];
   const showBalances = summary?.showBalances ?? false;
   const showExpenses = summary?.showExpenses ?? false;
-  const nothingToShow = visibleFunds.length === 0 && !showBalances && !showExpenses;
+  const ownersOnlyHidden = summary?.ownersOnlyHidden ?? false;
+  const nothingToShow = visibleFunds.length === 0 && !showBalances && !showExpenses && !ownersOnlyHidden;
 
   if (isLoading) return <LoadingState fullscreen message="Loading…" />;
 
@@ -78,6 +79,18 @@ export default function ResidentFinancesScreen() {
           />
         ) : (
           <>
+            {ownersOnlyHidden && (
+              <View style={[styles.card, { backgroundColor: colors.infoLight ?? colors.surface }]}>
+                <View style={styles.cardHeader}>
+                  <Ionicons name="lock-closed-outline" size={18} color={colors.info} />
+                  <Text style={styles.cardLabel}>Corpus and bank balances are for flat owners</Text>
+                </View>
+                <Text style={styles.cardHint}>
+                  You are registered as a tenant, so these are not shown to you. Maintenance, your bills and the society&apos;s
+                  expenses are. If this is wrong, ask your society admin to update your details.
+                </Text>
+              </View>
+            )}
             {showBalances && (
               <View style={styles.card}>
                 <View style={styles.cardHeader}>

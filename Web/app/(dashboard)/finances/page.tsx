@@ -42,7 +42,8 @@ export default function FinancesPage() {
   const visibleFunds = funds ?? [];
   const showBalances = summary?.showBalances ?? false;
   const showExpenses = summary?.showExpenses ?? false;
-  const nothingToShow = visibleFunds.length === 0 && !showBalances && !showExpenses;
+  const ownersOnlyHidden = summary?.ownersOnlyHidden ?? false;
+  const nothingToShow = visibleFunds.length === 0 && !showBalances && !showExpenses && !ownersOnlyHidden;
 
   return (
     <>
@@ -58,6 +59,18 @@ export default function FinancesPage() {
           />
         ) : (
           <>
+            {ownersOnlyHidden && (
+              <Card padding="lg" className="flex items-start gap-3 border-violet-200 bg-violet-50">
+                <Lock size={18} className="mt-0.5 shrink-0 text-violet-600" />
+                <div>
+                  <p className="text-sm font-semibold text-violet-900">Corpus and bank balances are for flat owners</p>
+                  <p className="text-xs text-violet-700">
+                    You are registered as a tenant, so these are not shown to you. Maintenance, your bills and the society&apos;s
+                    expenses are. If this is wrong, ask your society admin to update your details.
+                  </p>
+                </div>
+              </Card>
+            )}
             {showBalances && (
               <Card padding="lg" className="space-y-1">
                 <div className="flex items-center gap-2 text-primary-600">

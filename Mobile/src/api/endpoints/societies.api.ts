@@ -1,3 +1,4 @@
+import { normalizeResidency } from '@/utils/residency';
 import apiClient from '@/api/client';
 import { ApiResponse, PaginatedResponse, PaginationQuery } from '@/api/types';
 import { Society, Building, Flat, Announcement, Meeting } from '@/types/society.types';
@@ -163,6 +164,8 @@ export const societiesApi = {
       showBalances: boolean;
       showExpenses: boolean;
       totalBalance: number | null;
+      /** True when the corpus and bank balance are withheld because the viewer is a tenant. */
+      ownersOnlyHidden?: boolean;
       monthlyExpenses: number | null;
       // Folds SalaryRecord (a separate ledger from Expense) in as a "Staff
       // Salaries" row — same shape as the admin monthly-overview report.
@@ -217,6 +220,7 @@ export const societiesApi = {
         memberships: Array<{
           role: string;
           status: string;
+          residencyType?: string;
           flat: { id: string; flatCode: string } | null;
         }>;
       }>;
@@ -238,6 +242,8 @@ export const societiesApi = {
         buildingName: '',
         role: m?.role ?? 'RESIDENT',
         status: m?.status ?? 'ACTIVE',
+        residencyType: normalizeResidency(m?.residencyType),
+        flatId: m?.flat?.id ?? null,
       };
     });
 
@@ -264,8 +270,14 @@ export const societiesApi = {
       joinedAt: string;
       user: { id: string; firstName: string; lastName: string; email: string; phone: string | null };
       flat: { id: string; flatCode: string; unitNumber: string; building: { name: string } | null } | null;
+      residencyType?: string;
     }>>>('/users/society/pending');
     return data.data ?? [];
+  },
+
+  /** Mark a resident as owner or tenant (admin). Tenants do not see the corpus or bank balances. */
+  setResidency: async (userId: string, residencyType: 'OWNER' | 'TENANT', flatId?: string | null) => {
+    await apiClient.patch(`/users/society/${userId}/residency`, { residencyType, flatId: flatId ?? undefined });
   },
 
   approvePendingMembership: async (membershipId: string) => {

@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, UseGuards, NotFoundException } from '@nestjs/common';
+import { ResidencyService } from '../common/residency.service';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
 import { FundsService, CreateFundDto } from './funds.service';
@@ -17,7 +18,10 @@ import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interfa
 @UseGuards(JwtAuthGuard, TenantGuard)
 @Controller('funds')
 export class FundsController {
-  constructor(private readonly fundsService: FundsService) {}
+  constructor(
+    private readonly fundsService: FundsService,
+    private readonly residency: ResidencyService,
+  ) {}
 
   @Post()
   @UseGuards(RolesGuard)
@@ -29,18 +33,22 @@ export class FundsController {
 
   @Get()
   @ApiOperation({ summary: 'List funds (residents see only visible ones)' })
-  findAll(@SocietyId() societyId: string, @CurrentUser() user: AuthenticatedUser) {
+  async findAll(@SocietyId() societyId: string, @CurrentUser() user: AuthenticatedUser) {
+    // The corpus and the other funds are the owners' business: a tenant is sent none, whatever each fund's
+    // "visible to residents" switch says.
+    if (await this.residency.isTenantViewer(user)) return [];
     const forResident = !user.isPlatformAdmin && user.currentRole === 'RESIDENT';
     return this.fundsService.findAll(societyId, forResident);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get fund by ID' })
-  findOne(
+  async findOne(
     @SocietyId() societyId: string,
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
   ) {
+    if (await this.residency.isTenantViewer(user)) throw new NotFoundException('Fund not found');
     return this.fundsService.findOne(societyId, id, user.currentRole === 'RESIDENT');
   }
 

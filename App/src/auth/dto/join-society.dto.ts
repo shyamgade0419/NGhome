@@ -1,7 +1,8 @@
 import {
-  IsString, IsEmail, IsNotEmpty, IsUUID, MinLength, MaxLength, Matches,
+  IsString, IsEmail, IsNotEmpty, IsUUID, MinLength, MaxLength, Matches, IsEnum, IsOptional,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ResidencyType } from '@prisma/client';
 
 export class JoinSocietyDto {
   @ApiProperty({
@@ -45,4 +46,10 @@ export class JoinSocietyDto {
   @ApiProperty({ minLength: 8 })
   @IsString() @IsNotEmpty() @MinLength(8) @MaxLength(128)
   password: string;
+
+  /** Whether they own the flat or rent it. The admin sees this when approving, and can change it. */
+  @ApiPropertyOptional({ enum: ResidencyType })
+  @IsOptional()
+  @IsEnum(ResidencyType)
+  residencyType?: ResidencyType;
 }

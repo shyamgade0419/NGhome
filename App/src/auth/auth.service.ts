@@ -22,7 +22,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
-import { AuditAction, SystemRole } from '@prisma/client';
+import { AuditAction, ResidencyType, SystemRole } from '@prisma/client';
 import { generateJoinCode, generateUniqueJoinCode } from '../common/utils/join-code.util';
 
 // ─── Canonical response shapes ────────────────────────────────────────────────
@@ -937,6 +937,7 @@ export class AuthService {
         role: SystemRole.RESIDENT,
         status: isFirstClaimant ? ('ACTIVE' as const) : ('PENDING' as const),
         isPrimary: isFirstClaimant,
+        residencyType: dto.residencyType ?? ResidencyType.OWNER,
       };
       const membership = onThisFlat
         ? await tx.societyMembership.update({

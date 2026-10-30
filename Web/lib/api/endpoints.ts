@@ -288,6 +288,8 @@ export const societyApi = {
     showBalances: boolean;
     showExpenses: boolean;
     totalBalance: number | null;
+    /** True when the corpus and bank balance are withheld because the viewer is a tenant. */
+    ownersOnlyHidden?: boolean;
     monthlyExpenses: number | null;
     byCategory: Array<{ category: string; total: number }> | null;
   } }> => api.get('/societies/my/financial-summary'),
@@ -300,7 +302,12 @@ export const societyApi = {
     joinedAt: string;
     user: { id: string; firstName: string; lastName: string; email: string; phone: string | null };
     flat: { id: string; flatCode: string; unitNumber: string; building: { name: string } | null } | null;
+    /** What they said when they joined — the admin can change it afterwards. */
+    residencyType?: 'OWNER' | 'TENANT';
   }> }> => api.get('/users/society/pending'),
+  /** Mark a resident as owner or tenant (admin). Tenants do not see the corpus or bank balances. */
+  setResidency: (userId: string, residencyType: 'OWNER' | 'TENANT', flatId?: string) =>
+    api.patch(`/users/society/${userId}/residency`, { residencyType, flatId }),
   approvePending: (membershipId: string) => api.post(`/users/society/pending/${membershipId}/approve`),
   rejectPending: (membershipId: string) => api.post(`/users/society/pending/${membershipId}/reject`),
 };

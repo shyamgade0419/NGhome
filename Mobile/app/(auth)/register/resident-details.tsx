@@ -8,6 +8,7 @@
  * sent to sign in later once the admin approves.
  */
 import React, { useState, useEffect, useMemo } from 'react';
+import type { ResidencyType } from '@/utils/residency';
 import {
   View,
   Text,
@@ -174,6 +175,7 @@ export default function ResidentDetailsScreen() {
   const [society, setSociety] = useState<SocietyByCode | null>(null);
   const [joinCode, setJoinCode] = useState('');
   const [selectedFlat, setSelectedFlat] = useState<{ id: string; flatCode: string } | null>(null);
+  const [residencyType, setResidencyType] = useState<ResidencyType>('OWNER');
   const [showFlatPicker, setShowFlatPicker] = useState(false);
 
   const {
@@ -209,6 +211,7 @@ export default function ResidentDetailsScreen() {
       const result = await authApi.joinSociety({
         joinCode,
         flatId: selectedFlat.id,
+        residencyType,
         firstName: form.firstName,
         lastName: form.lastName,
         email: form.email,
@@ -322,6 +325,25 @@ export default function ResidentDetailsScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Owner or tenant — the admin sees this when approving, and tenants do not see the corpus or bank balances */}
+            <View>
+              <Text style={styles.flatLabel}>I am the flat&apos;s <Text style={styles.required}>*</Text></Text>
+              <View style={styles.residencyRow}>
+                {(['OWNER', 'TENANT'] as ResidencyType[]).map((t) => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[styles.residencyChip, residencyType === t && styles.residencyChipActive]}
+                    onPress={() => setResidencyType(t)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.residencyText, residencyType === t && styles.residencyTextActive]}>
+                      {t === 'OWNER' ? 'Owner' : 'Tenant (renting)'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
             <Controller control={control} name="password" render={({ field: { onChange, onBlur, value } }) => (
               <Input label="Password" placeholder="At least 8 characters" value={value ?? ''} onChangeText={onChange} onBlur={onBlur} error={errors.password?.message} secureTextEntry leftIcon="lock-closed-outline" hint="Min 8 chars, 1 uppercase, 1 number" required />
             )} />
@@ -390,6 +412,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   flatPickerEmpty: { borderColor: colors.borderLight },
+  residencyRow: { flexDirection: 'row', gap: 10 },
+  residencyChip: {
+    flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 10,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
+  },
+  residencyChipActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
+  residencyText: { ...typography.bodyMedium, color: colors.textSecondary },
+  residencyTextActive: { color: colors.primary, fontWeight: '600' },
   flatPickerText: { flex: 1, ...typography.bodyMedium, color: colors.text },
   flatPickerPlaceholder: { color: colors.textTertiary },
 

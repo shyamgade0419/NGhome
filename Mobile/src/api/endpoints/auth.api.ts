@@ -11,6 +11,8 @@ export interface JoinSocietyPayload {
   email: string;
   phone: string;
   password: string;
+  /** Whether they own the flat or rent it. */
+  residencyType?: 'OWNER' | 'TENANT';
 }
 
 export interface SocietyByCode {

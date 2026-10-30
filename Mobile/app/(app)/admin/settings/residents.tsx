@@ -22,6 +22,7 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { RESIDENCY_LABEL, ResidencyType, joiningAs, otherResidency, residencyChangePrompt } from '@/utils/residency';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius } from '@/theme';
 
@@ -37,6 +38,8 @@ interface Resident {
   buildingName: string;
   role: string;
   status: string;
+  residencyType: ResidencyType;
+  flatId: string | null;
 }
 
 // ── Edit resident modal ──────────────────────────────────────────────────
@@ -190,7 +193,7 @@ function PendingApprovalsSection() {
             </Text>
             <Text style={styles.sub} numberOfLines={1}>{p.user.email}</Text>
             <Text style={styles.pendingFlat}>
-              Wants to join {p.flat?.flatCode ?? 'a flat'} — already occupied
+              Wants to join {p.flat?.flatCode ?? 'a flat'} as {joiningAs(p.residencyType)} — already occupied
             </Text>
           </View>
           <View style={styles.actions}>
@@ -260,6 +263,22 @@ export default function ManageResidentsScreen() {
     queryKey: ['admin-residents'],
     queryFn: () => societiesApi.getResidents({ limit: 200 }),
   });
+
+  const residencyMutation = useMutation({
+    mutationFn: ({ r, to }: { r: Resident; to: ResidencyType }) => societiesApi.setResidency(r.userId, to, r.flatId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-residents'] }),
+    onError: (e: any) => Alert.alert('Could not change this', e?.response?.data?.message ?? 'Please try again.'),
+  });
+
+  // Tapping the owner/tenant chip asks first, and says what changes for the person.
+  const confirmResidency = (r: Resident) => {
+    const to = otherResidency(r.residencyType);
+    const p = residencyChangePrompt(r.displayName, to);
+    Alert.alert(p.title, p.message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: p.confirm, onPress: () => residencyMutation.mutate({ r, to }) },
+    ]);
+  };
 
   const removeMutation = useMutation({
     mutationFn: (userId: string) =>
@@ -362,6 +381,16 @@ export default function ManageResidentsScreen() {
                   {r.buildingName ? <Text style={styles.flatTagText}>· {r.buildingName}</Text> : null}
                 </View>
                 <StatusBadge label={roleLabel(r.role)} variant={roleVariant(r.role)} />
+                {r.role === 'RESIDENT' ? (
+                  <TouchableOpacity
+                    disabled={!canManage || residencyMutation.isPending}
+                    onPress={() => confirmResidency(r)}
+                    accessibilityLabel={`${RESIDENCY_LABEL[r.residencyType]}. ${canManage ? 'Tap to change' : ''}`}
+                    activeOpacity={0.7}
+                  >
+                    <StatusBadge label={RESIDENCY_LABEL[r.residencyType]} variant={r.residencyType === 'TENANT' ? 'info' : 'neutral'} />
+                  </TouchableOpacity>
+                ) : null}
               </View>
               {r.phone ? (
                 <Text style={styles.phone}>

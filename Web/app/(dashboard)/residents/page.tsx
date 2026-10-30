@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Users, Phone, MessageSquare, Pencil, AlertCircle, X, Hourglass, Check } from 'lucide-react';
 import { societyApi } from '@/lib/api/endpoints';
+import { useAuth } from '@/lib/auth/AuthContext';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { Table, Thead, Tbody, Tr, Th, Td } from '@/components/ui/Table';
@@ -28,6 +29,9 @@ interface Resident {
   buildingName: string;
   role: string;
   status: string;
+  /** Owner or tenant (only meaningful for a resident). */
+  residencyType: 'OWNER' | 'TENANT';
+  flatId: string | null;
 }
 
 const ROLE_COLOR: Record<string, string> = {
@@ -236,7 +240,7 @@ function PendingApprovals() {
                 {p.user.firstName} {p.user.lastName} <span className="text-slate-400 font-normal">· {p.user.email}</span>
               </p>
               <p className="text-xs text-amber-700">
-                Wants to join {p.flat?.flatCode ?? 'a flat'} — already has an active resident
+                Wants to join {p.flat?.flatCode ?? 'a flat'} as {p.residencyType === 'TENANT' ? 'a tenant' : 'an owner'} — already has an active resident
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
@@ -277,6 +281,8 @@ function PendingApprovals() {
 /* ── Main page ───────────────────────────────────────────────── */
 export default function ResidentsPage() {
   const qc = useQueryClient();
+  const { user, activeMembership } = useAuth();
+  const isAdmin = activeMembership?.role === 'SOCIETY_ADMIN' || !!user?.isPlatformAdmin;
   const [page] = useState(1);
   const [editingResident, setEditingResident] = useState<Resident | null>(null);
   const [deleting, setDeleting] = useState<MemberToDelete | null>(null);
@@ -292,6 +298,16 @@ export default function ResidentsPage() {
   const { data: removed = [] } = useQuery({
     queryKey: ['removed-members'],
     queryFn: () => societyApi.removedMembers().then((r) => r.data),
+  });
+
+  const residencyMutation = useMutation({
+    mutationFn: ({ r, residencyType }: { r: Resident; residencyType: 'OWNER' | 'TENANT' }) =>
+      societyApi.setResidency(r.userId, residencyType, r.flatId ?? undefined),
+    onSuccess: (_d, v) => {
+      toast.success(v.residencyType === 'TENANT' ? `${v.r.displayName} is now a tenant` : `${v.r.displayName} is now an owner`);
+      qc.invalidateQueries({ queryKey: ['residents'] });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Could not change this'),
   });
 
   const removeMutation = useMutation({
@@ -332,6 +348,8 @@ export default function ResidentsPage() {
       buildingName: membership?.flat?.building?.name ?? '',
       role: membership?.role ?? '',
       status: membership?.status ?? (u.isActive ? 'ACTIVE' : 'INACTIVE'),
+      residencyType: membership?.residencyType === 'TENANT' ? 'TENANT' : 'OWNER',
+      flatId: membership?.flat?.id ?? membership?.flatId ?? null,
     };
   });
 
@@ -373,6 +391,7 @@ export default function ResidentsPage() {
                   <Th>Name</Th>
                   <Th>Flat</Th>
                   <Th>Role</Th>
+                  <Th>Owner / Tenant</Th>
                   <Th>Phone (WhatsApp)</Th>
                   <Th>Status</Th>
                   <Th></Th>
@@ -412,6 +431,27 @@ export default function ResidentsPage() {
                       )}>
                         {roleLabel(r.role)}
                       </span>
+                    </Td>
+
+                    {/* Owner or tenant — a tenant does not see the corpus or bank balances */}
+                    <Td>
+                      {r.role === 'RESIDENT' ? (
+                        <select
+                          value={r.residencyType}
+                          disabled={!isAdmin || residencyMutation.isPending}
+                          onChange={(e) => residencyMutation.mutate({ r, residencyType: e.target.value as 'OWNER' | 'TENANT' })}
+                          title={isAdmin ? 'Tenants do not see the corpus fund or bank balances' : 'Only the admin can change this'}
+                          className={cn(
+                            'rounded-full border px-2.5 py-1 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-default',
+                            r.residencyType === 'TENANT' ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-slate-200 bg-slate-50 text-slate-700',
+                          )}
+                        >
+                          <option value="OWNER">Owner</option>
+                          <option value="TENANT">Tenant</option>
+                        </select>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
                     </Td>
 
                     {/* Phone */}

@@ -1,6 +1,6 @@
-import { IsString, IsOptional, IsIn, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsIn, IsBoolean, IsEnum } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { SystemRole } from '@prisma/client';
+import { ResidencyType, SystemRole } from '@prisma/client';
 
 /**
  * The roles a society admin may give someone in their own society. PLATFORM_ADMIN
@@ -42,4 +42,10 @@ export class AddMemberDto {
   @IsOptional()
   @IsBoolean()
   isPrimary?: boolean;
+
+  /** Owner or tenant. Owner when left out. */
+  @ApiPropertyOptional({ enum: ResidencyType })
+  @IsOptional()
+  @IsEnum(ResidencyType)
+  residencyType?: ResidencyType;
 }
