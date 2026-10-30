@@ -2,8 +2,10 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
+import { NO_USAGE, PeriodUsage, deleteBlocker } from './billing-period-delete';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { BillingCalculatorService } from './billing-calculator.service';
@@ -302,7 +304,7 @@ export class BillingService {
 
   async findPeriods(societyId: string, page: number, limit: number) {
     const { skip, take } = getPaginationParams({ page, limit });
-    const [data, total] = await Promise.all([
+    const [periods, total] = await Promise.all([
       this.prisma.billingPeriod.findMany({
         skip,
         take,
@@ -311,7 +313,67 @@ export class BillingService {
       }),
       this.prisma.billingPeriod.count({ where: { societyId } }),
     ]);
+
+    // Each period says whether it can be deleted, so the screen shows the option only where it works.
+    const usage = await this.periodUsage(societyId, periods.map((p) => p.id));
+    const data = periods.map((p) => ({ ...p, canDelete: deleteBlocker(p.status, usage.get(p.id) ?? NO_USAGE) === null }));
     return { data, meta: buildPaginationMeta(total, page, limit) };
+  }
+
+  /** What each period holds. Payments and water readings carry only the period's id, with no database link to it. */
+  private async periodUsage(societyId: string, periodIds: string[]): Promise<Map<string, PeriodUsage>> {
+    const usage = new Map<string, PeriodUsage>(periodIds.map((id) => [id, { ...NO_USAGE }]));
+    if (periodIds.length === 0) return usage;
+    const where = { societyId, billingPeriodId: { in: periodIds } };
+    const [bills, payments, readings, statements] = await Promise.all([
+      this.prisma.maintenanceBill.groupBy({ by: ['billingPeriodId'], where, _count: { _all: true } }),
+      this.prisma.paymentSubmission.groupBy({ by: ['billingPeriodId'], where, _count: { _all: true } }),
+      this.prisma.waterMeterReading.groupBy({ by: ['billingPeriodId'], where, _count: { _all: true } }),
+      this.prisma.monthlyStatement.groupBy({ by: ['billingPeriodId'], where, _count: { _all: true } }),
+    ]);
+    const add = (rows: { billingPeriodId: string | null; _count: { _all: number } }[], key: keyof PeriodUsage) => {
+      for (const r of rows) if (r.billingPeriodId) usage.get(r.billingPeriodId)![key] = r._count._all;
+    };
+    add(bills, 'bills');
+    add(payments, 'payments');
+    add(readings, 'waterReadings');
+    add(statements, 'statements');
+    return usage;
+  }
+
+  /**
+   * Delete a period, only if it holds nothing. The bills and the statement are also held by the
+   * database (a delete with either present is refused), so a bill generated at the same instant
+   * cannot be lost; payments and water readings are checked here.
+   */
+  async deletePeriod(societyId: string, periodId: string, actorId: string) {
+    const period = await this.findPeriod(societyId, periodId);
+    const usage = (await this.periodUsage(societyId, [periodId])).get(periodId) ?? NO_USAGE;
+    const blocker = deleteBlocker(period.status, usage);
+    if (blocker) throw new ConflictException(blocker);
+
+    try {
+      await this.prisma.$transaction([
+        this.prisma.billingPeriod.delete({ where: { id: periodId } }),
+        this.prisma.auditLog.create({
+          data: {
+            societyId,
+            actorId,
+            action: 'OTHER',
+            entityType: 'BillingPeriod',
+            entityId: periodId,
+            oldValues: { periodYear: period.periodYear, periodMonth: period.periodMonth, status: period.status } as Prisma.InputJsonValue,
+          },
+        }),
+      ]);
+    } catch (err) {
+      // A bill or statement appeared between the check and the delete: the database refused.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') {
+        throw new ConflictException('This period just received data, so it cannot be deleted.');
+      }
+      throw err;
+    }
+    return { success: true };
   }
 
   async findPeriod(societyId: string, periodId: string) {

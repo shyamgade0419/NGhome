@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query, UseGuards,
+  Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
@@ -64,6 +64,18 @@ export class BillingController {
   @ApiOperation({ summary: 'Get billing period by ID' })
   findPeriod(@SocietyId() societyId: string, @Param('periodId') periodId: string) {
     return this.billingService.findPeriod(societyId, periodId);
+  }
+
+  @Delete('periods/:periodId')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
+  @ApiOperation({ summary: 'Delete a billing period — only while it has no bills, payments, readings or statement' })
+  deletePeriod(
+    @SocietyId() societyId: string,
+    @Param('periodId') periodId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.billingService.deletePeriod(societyId, periodId, user.id);
   }
 
   @Post('periods/:periodId/generate')
