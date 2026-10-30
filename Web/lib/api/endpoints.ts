@@ -21,17 +21,22 @@ export const dashboardApi = {
   getSummary: async (): Promise<{ data: DashboardSummary }> => {
     const currentYear = new Date().getFullYear();
     const currentMonth = new Date().getMonth() + 1;
-    const [collectionRes, accountsRes, pendingRes, statsRes] = await Promise.all([
+    const [collectionRes, accountsRes, pendingRes, statsRes, fundsRes] = await Promise.all([
       api.get('/reports/collection-summary', { params: { year: currentYear, month: currentMonth } }).catch(() => ({ data: null })),
       api.get('/reports/account-balances').catch(() => ({ data: [] })),
       api.get('/payments', { params: { status: 'PENDING', limit: 1 } }).catch(() => ({ data: null })),
       api.get('/societies/my/stats').catch(() => ({ data: null })),
+      // The corpus is kept as a Fund (Accounts & Funds), not as a bank account named "corpus".
+      api.get('/funds').catch(() => ({ data: [] })),
     ]);
     const collection = collectionRes.data;
     const accounts: any[] = accountsRes.data ?? [];
     const pendingPayments = (pendingRes.data as any)?.meta?.total ?? 0;
     const stats = statsRes.data as any;
     const bankAccount = accounts.find((a: any) => a.accountType === 'CURRENT' || a.accountType === 'SAVINGS') ?? accounts[0];
+    const funds: any[] = Array.isArray(fundsRes.data) ? fundsRes.data : ((fundsRes.data as any)?.data ?? []);
+    const corpusFunds = funds.filter((f: any) => f.name?.toLowerCase().includes('corpus'));
+    const corpusFromFunds = corpusFunds.reduce((sum: number, f: any) => sum + Number(f.currentBalance ?? 0), 0);
     const corpusAccount = accounts.find((a: any) => a.name?.toLowerCase().includes('corpus'));
     return {
       data: {
@@ -40,7 +45,7 @@ export const dashboardApi = {
         totalOutstanding: collection?.totalPending ?? '0',
         totalExpenses: '0',
         accountBalance: bankAccount?.currentBalance ?? '0',
-        corpusBalance: corpusAccount?.currentBalance ?? '0',
+        corpusBalance: corpusFunds.length > 0 ? String(corpusFromFunds) : (corpusAccount?.currentBalance ?? '0'),
         pendingApprovals: pendingPayments,
         buildings: stats?.buildings ?? 0,
         flats: stats?.flats ?? 0,

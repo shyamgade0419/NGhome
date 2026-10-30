@@ -108,7 +108,7 @@ export const billingApi = {
     const monthStart = new Date(currentYear, currentMonth - 1, 1).toISOString().split('T')[0];
     const today = new Date().toISOString().split('T')[0];
 
-    const [collectionRes, accountsRes, pendingRes, expenseRes] = await Promise.all([
+    const [collectionRes, accountsRes, pendingRes, expenseRes, fundsRes] = await Promise.all([
       apiClient
         .get<ApiResponse<{
           totalBilled: string;
@@ -138,8 +138,15 @@ export const billingApi = {
           { params: { fromDate: monthStart, toDate: today } },
         )
         .catch(() => null),
+      // The corpus is kept as a Fund (Accounts & Funds), not as a bank account named "corpus".
+      apiClient
+        .get<ApiResponse<Array<{ name: string; currentBalance: string }>>>('/funds')
+        .catch(() => null),
     ]);
 
+    const funds = fundsRes?.data?.data ?? [];
+    const corpusFunds = funds.filter((f) => f.name?.toLowerCase().includes('corpus'));
+    const corpusFromFunds = corpusFunds.reduce((sum, f) => sum + Number(f.currentBalance ?? 0), 0);
     const collection = collectionRes?.data?.data;
     const accounts = accountsRes?.data?.data ?? [];
     const pendingApprovals = pendingRes?.data?.meta?.total ?? 0;
@@ -158,7 +165,7 @@ export const billingApi = {
       totalOutstanding: collection?.totalPending ?? '0',
       totalExpenses: String(totalExpenses),
       accountBalance: bankAccount?.currentBalance ?? '0',
-      corpusBalance: corpusAccount?.currentBalance ?? '0',
+      corpusBalance: corpusFunds.length > 0 ? String(corpusFromFunds) : (corpusAccount?.currentBalance ?? '0'),
       pendingApprovals,
     };
   },
