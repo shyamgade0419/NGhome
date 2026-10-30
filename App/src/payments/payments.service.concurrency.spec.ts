@@ -19,6 +19,14 @@
 
 import { Prisma, PaymentStatus } from '@prisma/client';
 import { PaymentsService } from './payments.service';
+// How a payment is shared across a flat's bills (oldest first, under a row lock) is exercised against a
+// real Postgres in test/payments-settlement.e2e-spec.ts. These cases are about everything around it —
+// idempotency, the atomic status claim, the ledger — so the settlement is stood in for.
+jest.mock('./settlement', () => ({
+  outstandingForFlat: jest.fn().mockResolvedValue(new (jest.requireActual('@prisma/client').Prisma.Decimal)('1000000000')),
+  settleOldestFirst: jest.fn().mockResolvedValue([]),
+}));
+
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from '../documents/sftp-storage.service';
 import { StoragePathService } from '../documents/storage-path.service';
@@ -358,84 +366,9 @@ describe('PaymentsService.approve — concurrent approval of the same payment', 
   });
 });
 
-describe('PaymentsService.submit — two genuinely different concurrent payments both land correctly', () => {
-  it(
-    'two different UTRs against the same bill, submitted concurrently with auto-approve on: both succeed, ' +
-      "and the bill/account end up reflecting BOTH payments — not one overwriting the other's write",
-    async () => {
-      const { service, bills, accounts, payments, configApi, seedAccount, seedBill } = makeStatefulServices();
-      seedAccount(ACCOUNT_ID, { currentBalance: new Prisma.Decimal(0) });
-      seedBill(BILL_ID, { totalAmount: new Prisma.Decimal(5000), paidAmount: new Prisma.Decimal(0), pendingAmount: new Prisma.Decimal(5000) });
-      // Auto-approve requires verification off, exactly one active account,
-      // a linked bill, and a UTR — see PaymentsService.submit.
-      configApi.findUnique.mockResolvedValue({ paymentVerificationRequired: false });
+// Two different payments landing together, and two that would jointly overpay a flat, are settled under a row
+// lock on the flat's bills — a real-database concern, covered in test/payments-settlement.e2e-spec.ts.
 
-      const makeDto = (utr: string) => ({
-        maintenanceBillId: BILL_ID, amount: 2500, paymentDate: '2026-09-09', paymentMethod: 'UPI' as any, utrNumber: utr,
-      });
-
-      const results = await Promise.allSettled([
-        service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, makeDto('utr-concurrent-a')),
-        service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, makeDto('utr-concurrent-b')),
-      ]);
-
-      expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
-      expect([...payments.values()]).toHaveLength(2); // two distinct UTRs, two distinct payments
-
-      // Both ₹2500 payments landed: not "initial + one payment" (a lost
-      // update from an unguarded read-modify-write) and not "initial +
-      // payment, doubled" (a duplicate write) — initial + both.
-      expect(accounts.get(ACCOUNT_ID).currentBalance.toString()).toBe('5000');
-      const bill = bills.get(BILL_ID);
-      expect(bill.paidAmount.toString()).toBe('5000');
-      expect(bill.isPaid).toBe(true);
-    },
-  );
-});
-
-describe('PaymentsService.submit — the overpayment guard under a genuine joint-overpayment race', () => {
-  it(
-    'two concurrent payments that each individually fit but would jointly exceed the bill: only one is ' +
-      'accepted — paidAmount never exceeds totalAmount, even though neither payment alone was over the limit ' +
-      "at the moment it was checked. (Confirmed this was a real gap before the fix: a read-then-check-then-" +
-      'increment version of this guard let paidAmount reach 6000 against a 5000 total in this exact scenario.)',
-    async () => {
-      const { service, bills, seedAccount, seedBill, configApi } = makeStatefulServices();
-      seedAccount(ACCOUNT_ID, { currentBalance: new Prisma.Decimal(0) });
-      seedBill(BILL_ID, { totalAmount: new Prisma.Decimal(5000), paidAmount: new Prisma.Decimal(0), pendingAmount: new Prisma.Decimal(5000) });
-      configApi.findUnique.mockResolvedValue({ paymentVerificationRequired: false });
-
-      const makeDto = (utr: string) => ({
-        maintenanceBillId: BILL_ID, amount: 3000, paymentDate: '2026-09-09', paymentMethod: 'UPI' as any, utrNumber: utr,
-      });
-
-      const results = await Promise.allSettled([
-        service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, makeDto('utr-overpay-a')),
-        service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, makeDto('utr-overpay-b')),
-      ]);
-
-      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-      expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
-
-      const bill = bills.get(BILL_ID);
-      expect(bill.paidAmount.toString()).toBe('3000'); // NOT 6000
-      expect(bill.paidAmount.lessThanOrEqualTo(bill.totalAmount)).toBe(true);
-    },
-  );
-});
-
-/**
- * The resume path (resumeExistingSubmission / tryAutoApproveExisting /
- * creditAndApprove) is the newer of the two ways a payment gets
- * auto-approved — a retry against a row that already exists, rather than
- * the fresh-creation path above. It shares creditAndApprove's atomic claim
- * with the create path, but unlike the create path (where nothing else can
- * see the row until the transaction commits), a resume's target row is
- * already visible to every other concurrent caller — an admin's manual
- * approve(), or another concurrent resume of the identical UTR. These
- * tests are the direct proof for the requirement that retrying/racing a
- * payment submission can never create a second financial Transaction.
- */
 describe('PaymentsService.submit — concurrent resume of an existing PENDING payment', () => {
   it(
     'two concurrent retries of the same (flat, UTR) against an existing PENDING, auto-approve-eligible payment: ' +

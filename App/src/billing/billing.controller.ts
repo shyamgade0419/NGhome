@@ -4,6 +4,8 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
 import { BillingService } from './billing.service';
+import { LateFeeService } from './late-fee.service';
+import { WaiveLateFeeDto } from './dto/waive-late-fee.dto';
 import { CreateBillingPeriodDto } from './dto/create-billing-period.dto';
 import { AdjustBillDto } from './dto/adjust-bill.dto';
 import { BillNotesDto } from './dto/bill-notes.dto';
@@ -20,7 +22,10 @@ import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interfa
 @UseGuards(JwtAuthGuard, TenantGuard)
 @Controller('billing')
 export class BillingController {
-  constructor(private readonly billingService: BillingService) {}
+  constructor(
+    private readonly billingService: BillingService,
+    private readonly lateFees: LateFeeService,
+  ) {}
 
   // ── Admin: Period management ──────────────────────────────────────────────
 
@@ -149,6 +154,28 @@ export class BillingController {
   @ApiOperation({ summary: 'Get a specific bill (admin)' })
   findBill(@SocietyId() societyId: string, @Param('billId') billId: string) {
     return this.billingService.findBillById(societyId, billId);
+  }
+
+  /** Run the late-fine pass now, instead of waiting for the hourly one. */
+  @Post('late-fees/apply')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
+  @ApiOperation({ summary: 'Add the late fine to every bill that is past its due date and grace days' })
+  applyLateFees(@SocietyId() societyId: string) {
+    return this.lateFees.applyForSociety(societyId);
+  }
+
+  @Post('bills/:billId/waive-late-fee')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @ApiOperation({ summary: 'Waive the late fine on one bill (admin only, with a reason)' })
+  waiveLateFee(
+    @SocietyId() societyId: string,
+    @Param('billId') billId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: WaiveLateFeeDto,
+  ) {
+    return this.lateFees.waive(societyId, billId, user.id, dto.reason.trim());
   }
 
   @Patch('bills/:billId/notes')

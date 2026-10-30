@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { chargeTypeOf } from '../billing-rules/rule-config';
 
 export interface BillingRuleWithComponents {
   id: string;
@@ -85,6 +86,11 @@ export class BillingCalculatorService {
     }
 
     const item = this.calculateByType(flat, rule.calculationType, rule.config, rule.name, rule.id);
+    if (item) {
+      // A corpus is labelled as one on the bill, not as maintenance.
+      const chargeType = chargeTypeOf(rule.config);
+      if (chargeType) item.componentType = chargeType;
+    }
     return item ? [item] : [];
   }
 

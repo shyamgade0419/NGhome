@@ -543,7 +543,14 @@ export class BillingService {
         flatId: { in: flatIds },
         isPublished: true,
         isPaid: false,
-        billingPeriodId: { not: periodId },
+        // Earlier months only. Arrears are what was left unpaid BEFORE this month; counting every
+        // other period also pulled later months' bills into an older statement.
+        billingPeriod: {
+          OR: [
+            { periodYear: { lt: period.periodYear } },
+            { periodYear: period.periodYear, periodMonth: { lt: period.periodMonth } },
+          ],
+        },
       },
       _sum: { pendingAmount: true },
     });

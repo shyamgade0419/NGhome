@@ -633,6 +633,9 @@ model MaintenanceBill {
   dueDate             DateTime
   isPaid              Boolean  @default(false)
   isPublished         Boolean  @default(false)
+  // When the late fine was put on this bill — set once, even when the fine is later waived, so a
+  // bill is fined at most one time.
+  lateFeeAppliedAt    DateTime?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -640,6 +643,7 @@ model MaintenanceBill {
   flat               Flat                @relation(fields: [flatId], references: [id])
   lineItems          BillLineItem[]
   paymentSubmissions PaymentSubmission[]
+  paymentAllocations PaymentAllocation[]
 
   @@unique([societyId, billingPeriodId, flatId])
   @@unique([societyId, invoiceNumber])
@@ -939,6 +943,7 @@ model PaymentSubmission {
   user            User             @relation(fields: [userId], references: [id])
   maintenanceBill MaintenanceBill? @relation(fields: [maintenanceBillId], references: [id])
   documents       Document[]       @relation("PaymentDocuments")
+  allocations     PaymentAllocation[]
 
   // A UTR is a real bank-assigned reference for one specific transaction —
   // the same (flat, UTR) pair can only ever mean the same payment
@@ -1898,4 +1903,23 @@ model StaffAttendance {
   @@unique([employeeId, date])
   @@index([societyId, date])
   @@map("staff_attendance")
+}
+
+// How an approved payment was shared across the flat's bills — oldest dues first. One payment can
+// settle several months; the rows add up to the payment.
+model PaymentAllocation {
+  id        String   @id @default(uuid())
+  societyId String
+  paymentId String
+  billId    String
+  amount    Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+
+  payment PaymentSubmission @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  bill    MaintenanceBill   @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([billId])
+  @@index([societyId])
+  @@map("payment_allocations")
 }

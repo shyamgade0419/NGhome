@@ -4,6 +4,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from '../documents/sftp-storage.service';
 import { assertAllowedUpload } from '../documents/file-safety';
+import { outstandingForFlat, settleOldestFirst } from './settlement';
 import { StoragePathService } from '../documents/storage-path.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SubmitPaymentDto } from './dto/submit-payment.dto';
@@ -72,15 +73,13 @@ export class PaymentsService {
       });
       if (!bill) throw new NotFoundException('Bill not found');
       if (bill.isPaid) throw new BadRequestException('Bill is already fully paid');
-      // NG Home has no overpayment/advance-credit model — a bill's
-      // paidAmount is not allowed to exceed its totalAmount. Without this,
-      // a payment larger than what's owed would increment paidAmount past
-      // totalAmount while pendingAmount gets clamped to 0, silently
-      // recording money that was never actually credited anywhere.
-      if (new Prisma.Decimal(dto.amount).greaterThan(bill.pendingAmount)) {
-        throw new BadRequestException(
-          `Payment amount exceeds the outstanding balance on this bill (₹${bill.pendingAmount.toString()}).`,
-        );
+      // There is no advance-credit model yet, so a payment cannot be more than the flat owes. What
+      // it may be is everything the flat owes on published bills — this month's and any earlier
+      // months' arrears — because the payment is settled oldest month first (see settleOldestFirst),
+      // not against this one bill only. Without the cap, money would be recorded that no bill takes.
+      const owed = await outstandingForFlat(this.prisma, societyId, flatId);
+      if (new Prisma.Decimal(dto.amount).greaterThan(owed)) {
+        throw new BadRequestException(`Payment amount exceeds what this flat owes (₹${owed.toString()}).`);
       }
     }
 
@@ -446,39 +445,12 @@ export class PaymentsService {
       },
     });
 
-    /**
-     * Atomically claims the right to apply this amount, not just an
-     * increment. A plain `paidAmount: { increment: amount }` is itself
-     * atomic against losing an update, but says nothing about whether the
-     * bill can still absorb this amount — two different payments for the
-     * same bill, each individually within the outstanding balance at the
-     * moment they were checked, can both pass a separate "read pending,
-     * then increment" check and still jointly push paidAmount past
-     * totalAmount, because neither check accounts for the other's
-     * concurrent write. Folding the check into the WHERE clause of the
-     * increment itself closes that: Postgres serializes two concurrent
-     * UPDATEs against the same row, so the second one's WHERE
-     * (pendingAmount >= amount) is evaluated against the first's already-
-     * committed, already-reduced pendingAmount — at most one of two such
-     * payments that would jointly overpay ever reports count === 1.
-     */
-    const billClaim = await tx.maintenanceBill.updateMany({
-      where: { id: billId, pendingAmount: { gte: payment.amount } },
-      data: { paidAmount: { increment: payment.amount } },
-    });
-    if (billClaim.count !== 1) {
-      throw new BadRequestException('Payment amount exceeds the outstanding balance on this bill.');
-    }
-    const updatedBill = await tx.maintenanceBill.findUnique({ where: { id: billId } });
-    if (!updatedBill) throw new NotFoundException('Bill not found');
-    const pending = updatedBill.totalAmount.minus(updatedBill.paidAmount);
-    await tx.maintenanceBill.update({
-      where: { id: billId },
-      data: {
-        pendingAmount: pending.lessThan(0) ? new Prisma.Decimal(0) : pending,
-        isPaid: pending.lessThanOrEqualTo(0),
-      },
-    });
+    // Settle the flat's dues, oldest month first, with the flat's open bills locked while it is done
+    // (see settleOldestFirst). Throws — rolling back everything above, including the claim — if the
+    // payment is more than the flat owes.
+    const target = await tx.maintenanceBill.findFirst({ where: { id: billId, societyId }, select: { flatId: true } });
+    if (!target) throw new NotFoundException('Bill not found');
+    await settleOldestFirst(tx, societyId, target.flatId, payment.id, payment.amount);
 
     const updatedPayment = await tx.paymentSubmission.update({
       where: { id: payment.id },
@@ -620,46 +592,11 @@ export class PaymentsService {
         },
       });
 
-      // 5. Update bill paid/pending amounts if linked
+      // 5. Settle the flat's dues if this is a bill payment — oldest month first, so an unpaid month
+      //    carries forward and clears before a newer one. The flat's open bills are locked while it is
+      //    done, which is what keeps two payments approved at the same moment from jointly overpaying.
       if (payment.maintenanceBillId) {
-        /**
-         * Atomically claims the right to apply this amount, re-checked
-         * against the bill's current state, not just what was true at
-         * submission — another payment for the same bill may have been
-         * approved first. Folding the check into the WHERE clause of the
-         * increment itself (rather than a separate read-then-check) is
-         * what makes this safe even when two *different* payments for the
-         * same bill are approved at the exact same instant: Postgres
-         * serializes two concurrent UPDATEs against the same row, so the
-         * second's WHERE (pendingAmount >= amount) is evaluated against
-         * the first's already-committed, already-reduced pendingAmount —
-         * at most one of two approvals that would jointly overpay the bill
-         * ever reports count === 1. Same pattern as submit()'s
-         * auto-approve path above.
-         */
-        const claimed = await tx.maintenanceBill.updateMany({
-          where: { id: payment.maintenanceBillId, pendingAmount: { gte: payment.amount } },
-          data: { paidAmount: { increment: payment.amount } },
-        });
-        if (claimed.count !== 1) {
-          throw new BadRequestException(
-            "This payment exceeds the bill's current outstanding balance — another payment for the same " +
-              'bill was likely approved first. Reject this payment or verify the amount before approving.',
-          );
-        }
-        const updatedBill = await tx.maintenanceBill.findUnique({ where: { id: payment.maintenanceBillId } });
-        if (!updatedBill) throw new NotFoundException('Bill not found');
-        // Decimal, not float. `newPending === 0` on a float subtraction can
-        // land on 1e-13 for a bill with paise, leaving a fully paid bill
-        // marked unpaid with no way for the resident to clear it.
-        const pending = updatedBill.totalAmount.minus(updatedBill.paidAmount);
-        await tx.maintenanceBill.update({
-          where: { id: payment.maintenanceBillId },
-          data: {
-            pendingAmount: pending.lessThan(0) ? new Prisma.Decimal(0) : pending,
-            isPaid: pending.lessThanOrEqualTo(0),
-          },
-        });
+        await settleOldestFirst(tx, societyId, payment.flatId, paymentId, payment.amount);
       }
 
       // 6. Link transaction to payment

@@ -7,6 +7,14 @@
  */
 
 import { PaymentsService } from './payments.service';
+// How a payment is shared across a flat's bills (oldest first, under a row lock) is exercised against a
+// real Postgres in test/payments-settlement.e2e-spec.ts. These cases are about everything around it —
+// idempotency, the atomic status claim, the ledger — so the settlement is stood in for.
+jest.mock('./settlement', () => ({
+  outstandingForFlat: jest.fn().mockResolvedValue(new (jest.requireActual('@prisma/client').Prisma.Decimal)('1000000000')),
+  settleOldestFirst: jest.fn().mockResolvedValue([]),
+}));
+
 import { SubmitPaymentDto } from './dto/submit-payment.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from '../documents/sftp-storage.service';
@@ -379,14 +387,9 @@ describe('PaymentsService — auto-approve lands the money', () => {
     expect(tx.account.update).not.toHaveBeenCalled();
   });
 
-  it('claims the bill increment atomically (conditional on the outstanding balance), rather than an unconditional write', async () => {
-    const { service, tx } = makeSubmitServices({ accounts: [{ id: 'account-1' }] });
-    await service.submit(SOCIETY_ID, OWNER_ID, FLAT_ID, submitDto);
-
-    const [billArg] = tx.maintenanceBill.updateMany.mock.calls[0];
-    expect(billArg.where.pendingAmount).toEqual({ gte: expect.anything() });
-    expect(billArg.data).toEqual({ paidAmount: { increment: expect.anything() } });
-  });
+  // The bill is no longer settled by a single conditional increment here: a payment is shared across the
+  // flat's unpaid bills, oldest first, under a row lock (settleOldestFirst) — proven on a real database in
+  // test/payments-settlement.e2e-spec.ts.
 
   it(
     'is created PENDING, then atomically claimed (status → APPROVED) before the account/transaction/bill writes ' +
