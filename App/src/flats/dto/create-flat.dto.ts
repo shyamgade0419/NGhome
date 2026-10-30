@@ -1,5 +1,5 @@
 import {
-  IsString, IsOptional, IsNumber, IsInt, IsEnum, Min,
+  IsString, IsOptional, IsNumber, IsInt, IsEnum, IsBoolean, Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { FlatStatus } from '@prisma/client';
@@ -60,4 +60,13 @@ export class CreateFlatDto {
   @IsInt()
   @Min(0)
   parkingSlots?: number;
+
+  /**
+   * The flat's water meter counts down (the numbers run backwards — a fault in the meter, not in
+   * the readings). Its consumption is then the earlier reading minus the later one.
+   */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  waterMeterReversed?: boolean;
 }

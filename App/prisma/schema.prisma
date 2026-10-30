@@ -480,6 +480,8 @@ model Flat {
   status         FlatStatus @default(ACTIVE)
   ownershipType  String?
   parkingSlots   Int        @default(0)
+  // The water meter counts down (a fault in the meter): consumption is earlier minus later.
+  waterMeterReversed Boolean @default(false)
   additionalInfo Json       @default("{}")
   isActive       Boolean    @default(true)
   createdAt      DateTime   @default(now())

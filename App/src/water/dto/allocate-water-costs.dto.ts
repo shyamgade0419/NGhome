@@ -25,11 +25,12 @@ export class FlatReadingInputDto {
   notes?: string;
 }
 
-export class AllocateWaterCostsDto {
-  @ApiProperty()
-  @IsString()
-  billingPeriodId: string;
-
+/**
+ * What the route accepts. The period is in the URL (`periods/:periodId/allocate`), and neither app
+ * sends it again in the body — requiring it here made every allocation fail with "billingPeriodId
+ * must be a string" from the day this became a validated class until now.
+ */
+export class AllocateWaterCostsBodyDto {
   @ApiProperty()
   @IsDateString()
   readingDate: string;
@@ -66,4 +67,9 @@ export class AllocateWaterCostsDto {
   @ValidateNested({ each: true })
   @Type(() => FlatReadingInputDto)
   readings: FlatReadingInputDto[];
+}
+
+/** The body plus the period taken from the URL — what the service works with. Not validated: it is built, not received. */
+export class AllocateWaterCostsDto extends AllocateWaterCostsBodyDto {
+  billingPeriodId: string;
 }

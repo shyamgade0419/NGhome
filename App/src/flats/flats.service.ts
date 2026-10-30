@@ -41,6 +41,7 @@ export class FlatsService {
         status: dto.status ?? 'ACTIVE',
         ownershipType: dto.ownershipType,
         parkingSlots: dto.parkingSlots ?? 0,
+        waterMeterReversed: dto.waterMeterReversed ?? false,
       },
       include: { building: { select: { id: true, name: true } } },
     });

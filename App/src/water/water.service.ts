@@ -4,6 +4,7 @@ import { Prisma, WaterBillingModel } from '@prisma/client';
 import { CreateWaterConfigDto } from './dto/create-water-config.dto';
 import { RecordReadingDto } from './dto/record-reading.dto';
 import { AllocateWaterCostsDto } from './dto/allocate-water-costs.dto';
+import { readingOrderMessage, waterConsumption } from './water-rules';
 export { CreateWaterConfigDto } from './dto/create-water-config.dto';
 export { RecordReadingDto } from './dto/record-reading.dto';
 export { AllocateWaterCostsDto, FlatReadingInputDto as FlatReadingInput } from './dto/allocate-water-costs.dto';
@@ -40,8 +41,9 @@ export class WaterService {
     if (dto.openingReading < 0 || dto.closingReading < 0) {
       throw new BadRequestException('Water meter readings cannot be negative');
     }
-    if (dto.closingReading < dto.openingReading) {
-      throw new BadRequestException('Closing reading must be greater than or equal to opening reading');
+    const consumption = waterConsumption(dto.openingReading, dto.closingReading, flat.waterMeterReversed);
+    if (consumption === null) {
+      throw new BadRequestException(readingOrderMessage(flat.waterMeterReversed));
     }
 
     if (dto.billingPeriodId) {
@@ -50,8 +52,6 @@ export class WaterService {
       });
       if (!period) throw new NotFoundException('Billing period not found in this society');
     }
-
-    const consumption = dto.closingReading - dto.openingReading;
 
     let effectiveRate: number | undefined;
     let calculatedAmount: number | undefined;
@@ -123,20 +123,24 @@ export class WaterService {
     const flatIds = dto.readings.map((r) => r.flatId);
     const flats = await this.prisma.flat.findMany({
       where: { id: { in: flatIds }, societyId },
-      select: { id: true, flatCode: true },
+      select: { id: true, flatCode: true, waterMeterReversed: true },
     });
     if (flats.length !== flatIds.length) {
       throw new BadRequestException('One or more flat IDs are invalid or do not belong to this society');
     }
 
-    // Validate readings
+    // Validate readings, and work out each flat's units the way its own meter counts
+    const consumptionByFlat = new Map<string, number>();
     for (const r of dto.readings) {
       if (r.openingReading < 0 || r.closingReading < 0) {
         throw new BadRequestException(`Negative readings not allowed for flat ${r.flatId}`);
       }
-      if (r.closingReading < r.openingReading) {
-        throw new BadRequestException(`Closing reading must be ≥ opening reading for flat ${r.flatId}`);
+      const flat = flats.find((f) => f.id === r.flatId)!;
+      const used = waterConsumption(r.openingReading, r.closingReading, flat.waterMeterReversed);
+      if (used === null) {
+        throw new BadRequestException(readingOrderMessage(flat.waterMeterReversed, `Flat ${flat.flatCode}`));
       }
+      consumptionByFlat.set(r.flatId, used);
     }
 
     // Calculate total cost
@@ -146,10 +150,7 @@ export class WaterService {
       dto.municipalWaterBill + dto.tankerCost + electricityWaterCost;
 
     // Calculate total units consumed
-    const totalUnits = dto.readings.reduce(
-      (sum, r) => sum + (r.closingReading - r.openingReading),
-      0,
-    );
+    const totalUnits = dto.readings.reduce((sum, r) => sum + consumptionByFlat.get(r.flatId)!, 0);
 
     if (totalUnits <= 0) {
       throw new BadRequestException('Total water consumption across all flats must be greater than zero');
@@ -195,7 +196,7 @@ export class WaterService {
       });
 
       for (const r of dto.readings) {
-        const consumption = r.closingReading - r.openingReading;
+        const consumption = consumptionByFlat.get(r.flatId)!;
         const charge = consumption * ratePerUnit;
 
         await tx.waterMeterReading.create({

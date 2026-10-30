@@ -4,7 +4,7 @@ import { SystemRole } from '@prisma/client';
 import { WaterService } from './water.service';
 import { CreateWaterConfigDto } from './dto/create-water-config.dto';
 import { RecordReadingDto } from './dto/record-reading.dto';
-import { AllocateWaterCostsDto } from './dto/allocate-water-costs.dto';
+import { AllocateWaterCostsBodyDto } from './dto/allocate-water-costs.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -66,7 +66,7 @@ export class WaterController {
   allocate(
     @SocietyId() societyId: string,
     @Param('periodId') periodId: string,
-    @Body() dto: AllocateWaterCostsDto,
+    @Body() dto: AllocateWaterCostsBodyDto,
   ) {
     return this.waterService.allocatePeriodWaterCosts(societyId, {
       ...dto,
