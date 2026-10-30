@@ -21,6 +21,12 @@ export default function ResidentMaintenanceScreen() {
     queryFn: () => billingApi.getMyBills({ limit: 24 }),
   });
 
+  const { data: credit, refetch: refetchCredit } = useQuery({
+    queryKey: ['my-credit'],
+    queryFn: billingApi.getMyCredit,
+  });
+  const advance = toNum(credit?.balance ?? 0);
+
   const { data: preview, refetch: refetchPreview } = useQuery({
     queryKey: ['my-bill-preview'],
     queryFn: billingApi.previewMyBill,
@@ -132,12 +138,23 @@ export default function ResidentMaintenanceScreen() {
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
           ListHeaderComponent={
-            previewCard ? <View style={{ marginBottom: spacing.md }}>{previewCard}</View> : null
+            <>
+              {advance > 0 ? (
+                <View style={styles.advanceCard}>
+                  <Ionicons name="wallet-outline" size={18} color={colors.success} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.advanceTitle}>Advance paid: {inr(advance)}</Text>
+                    <Text style={styles.advanceSub}>It is adjusted against your next bill when that is published.</Text>
+                  </View>
+                </View>
+              ) : null}
+              {previewCard ? <View style={{ marginBottom: spacing.md }}>{previewCard}</View> : null}
+            </>
           }
           refreshControl={
             <RefreshControl
               refreshing={isRefetching}
-              onRefresh={() => { refetch(); refetchPreview(); }}
+              onRefresh={() => { refetch(); refetchPreview(); refetchCredit(); }}
               tintColor={colors.primary}
             />
           }
@@ -157,6 +174,14 @@ export default function ResidentMaintenanceScreen() {
 }
 
 const styles = StyleSheet.create({
+  advanceCard: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    padding: spacing.md, marginBottom: spacing.md, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.success, backgroundColor: colors.successLight ?? colors.surface,
+  },
+  advanceTitle: { ...typography.labelLarge, color: colors.text },
+  advanceSub: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },
+
   safe: { flex: 1, backgroundColor: colors.background },
   list: { padding: spacing.base },
   card: {

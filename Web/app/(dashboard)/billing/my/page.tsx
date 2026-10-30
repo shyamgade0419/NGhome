@@ -38,9 +38,12 @@ function UpiPayCard({
   const [copied, setCopied] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [receipt, setReceipt] = useState<File | null>(null);
-  // A payment clears the oldest month first, so what to pay is everything owed, not this bill alone.
-  const pending = owed;
+  // A payment clears the oldest month first, so what to pay is everything owed, not this bill alone. The
+  // resident can pay more: anything above what is owed is kept as an advance for the next bill.
+  const [amountText, setAmountText] = useState(owed > 0 ? owed.toFixed(2) : '');
+  const pending = parseFloat(amountText) > 0 ? parseFloat(amountText) : 0;
   const earlier = Math.max(0, owed - parseDecimalLike(bill.pendingAmount));
+  const advance = Math.max(0, Math.round((pending - owed) * 100) / 100);
 
   const upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(societyName)}&am=${pending}&tn=${encodeURIComponent(`Invoice ${bill.invoiceNumber}`)}&cu=INR`;
 
@@ -51,6 +54,7 @@ function UpiPayCard({
   }
 
   async function submitPayment() {
+    if (pending <= 0) { toast.error('Enter the amount you are paying'); return; }
     if (!utr.trim()) { toast.error('Please enter your UTR / transaction ID'); return; }
     if (!bill?.id || !bill?.billingPeriodId) { toast.error('Bill information missing. Please refresh and try again.'); return; }
     setSubmitting(true);
@@ -110,8 +114,21 @@ function UpiPayCard({
 
       {/* Amount */}
       <div className="text-center">
-        <p className="text-xs text-slate-500">Amount to pay</p>
-        <p className="text-2xl font-bold text-primary-700">{formatCurrency(pending)}</p>
+        <label htmlFor="pay-amount" className="text-xs text-slate-500">Amount to pay (₹)</label>
+        <input
+          id="pay-amount"
+          type="number"
+          min="0"
+          step="0.01"
+          value={amountText}
+          onChange={(e) => setAmountText(e.target.value)}
+          className="mx-auto mt-1 block w-48 rounded-lg border border-primary-200 bg-white px-3 py-2 text-center text-2xl font-bold text-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-400"
+        />
+        {advance > 0 && (
+          <p className="text-xs text-emerald-700 mt-1">
+            {formatCurrency(advance)} more than you owe is kept as an <strong>advance</strong> and adjusted against your next bill.
+          </p>
+        )}
         {earlier > 0 && (
           <p className="text-xs text-amber-700 mt-1">
             Includes {formatCurrency(earlier)} from earlier months. Payments clear the oldest month first.
@@ -357,6 +374,13 @@ export default function MyBillsPage() {
     queryFn: () => billingApi.getMyBills({ limit: 24 }).then((r: any) => r.data ?? r),
   });
 
+  const { data: creditRaw } = useQuery({
+    queryKey: ['my-credit'],
+    queryFn: () => billingApi.getMyCredit().then((r: any) => r.data ?? r),
+  });
+  const creditBalance = parseDecimalLike(creditRaw?.balance ?? 0);
+  const [payingAhead, setPayingAhead] = useState(false);
+
   const { data: configRaw } = useQuery({
     queryKey: ['society-config'],
     queryFn: () => societyApi.getConfig().then((r: any) => r.data ?? r),
@@ -406,6 +430,39 @@ export default function MyBillsPage() {
                 <p className="mt-1 text-2xl font-bold text-green-600">{formatCurrency(totalPaid)}</p>
               </Card>
             </div>
+
+            {/* Advance paid: what the flat holds, and a way to add to it */}
+            {(creditBalance > 0 || (upiId && totalPending <= 0)) && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                {creditBalance > 0 && (
+                  <p className="text-sm text-emerald-900">
+                    <strong>Advance paid: {formatCurrency(creditBalance)}.</strong>{' '}
+                    <span className="text-xs text-emerald-700">It is adjusted against your next bill when that is published.</span>
+                  </p>
+                )}
+                {upiId && totalPending <= 0 && bills[0] && (
+                  <div className={cn(creditBalance > 0 && 'mt-3')}>
+                    {!payingAhead ? (
+                      <button
+                        onClick={() => setPayingAhead(true)}
+                        className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                      >
+                        Pay in advance
+                      </button>
+                    ) : (
+                      <UpiPayCard
+                        bill={bills[0]}
+                        owed={0}
+                        upiId={upiId}
+                        societyName={societyName}
+                        verificationRequired={verificationRequired}
+                        onPaid={() => { setPayingAhead(false); refetch(); queryClient.invalidateQueries({ queryKey: ['my-credit'] }); }}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* UPI hint if configured */}
             {upiId && totalPending > 0 && (

@@ -62,6 +62,10 @@ interface FlatRow {
   lateFee: number;
   otherCharges: number;
   arrears: number;
+  /** Paid ahead earlier and used against this bill when it was published. */
+  advanceApplied?: number;
+  /** What the flat still holds in advance. */
+  advanceBalance?: number;
   totalPayable: number;
 }
 
@@ -282,6 +286,7 @@ function BillDetailModal({
                   {water > 0 && <BreakdownRow label="Water Charges" value={water} tint={colors.info} />}
                   {lateFee > 0 && <BreakdownRow label="Late Fee" value={lateFee} tint={colors.error} />}
                   {arrears > 0 && <BreakdownRow label="Arrears (earlier periods)" value={arrears} tint={colors.error} />}
+                  {toNum(flat.advanceApplied) > 0 && <BreakdownRow label="Advance (paid earlier)" value={toNum(flat.advanceApplied)} tint={colors.success} />}
                   {otherCharges > 0 && <BreakdownRow label="Other Charges" value={otherCharges} />}
                   {adjustments !== 0 && (
                     <BreakdownRow

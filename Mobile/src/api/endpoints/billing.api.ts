@@ -180,6 +180,14 @@ export const billingApi = {
     return data;
   },
 
+  /** What this flat has paid ahead (advance credit), and its recent movements. */
+  getMyCredit: async () => {
+    const { data } = await apiClient.get<ApiResponse<{ balance: string; entries: Array<{ id: string; amount: string; kind: string; createdAt: string }> }>>(
+      '/billing/my-credit',
+    );
+    return data.data;
+  },
+
   // Returns the most recent unpaid published bill for the resident.
   getMyCurrentBill: async (): Promise<MaintenanceBill | null> => {
     const { data } = await apiClient.get<PaginatedResponse<MaintenanceBill>>(

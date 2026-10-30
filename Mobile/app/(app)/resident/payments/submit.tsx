@@ -120,6 +120,7 @@ export default function SubmitPaymentScreen() {
     handleSubmit,
     formState: { errors },
     setValue,
+    watch,
   } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -136,6 +137,10 @@ export default function SubmitPaymentScreen() {
       setValue('amount', owedStr);
     }
   }, [owedStr, setValue]);
+
+  // Paying more than is owed is allowed: the extra is kept as an advance for the next bill.
+  const typedAmount = toNum(watch('amount'));
+  const advanceAmount = Math.max(0, Math.round((typedAmount - toNum(owedStr)) * 100) / 100);
 
   const onSubmit = (data: FormData) => {
     submitMutation.mutate({
@@ -201,6 +206,11 @@ export default function SubmitPaymentScreen() {
                 />
               )}
             />
+            {advanceAmount > 0 && (
+              <Text style={styles.billAmountLabel}>
+                {inr(advanceAmount)} more than you owe is kept as an advance and adjusted against your next bill.
+              </Text>
+            )}
 
             <Controller
               control={control}
@@ -265,7 +275,7 @@ export default function SubmitPaymentScreen() {
             {selectedMethod === 'UPI' && upiId && myBill && (() => {
               // Guarded: an undefined pendingAmount would put "NaN" in the UPI
               // deep link's am= parameter, which UPI apps reject outright.
-              const amount = toNum(owedStr).toFixed(2);
+              const amount = (typedAmount > 0 ? typedAmount : toNum(owedStr)).toFixed(2);
               const note = activePeriod ? billingPeriodName(activePeriod) : 'Maintenance';
               const upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent('Society')}&am=${amount}&tn=${encodeURIComponent(note)}&cu=INR`;
 
@@ -284,7 +294,7 @@ export default function SubmitPaymentScreen() {
                     <View style={styles.upiCardLeft}>
                       <Ionicons name="qr-code-outline" size={28} color={colors.primary} />
                       <View style={styles.upiCardText}>
-                        <Text style={styles.upiCardTitle}>Pay {inr(owedStr)} via UPI</Text>
+                        <Text style={styles.upiCardTitle}>Pay {inr(typedAmount > 0 ? typedAmount : owedStr)} via UPI</Text>
                         <Text style={styles.upiCardSub}>Opens PhonePe · GPay · Paytm · BHIM</Text>
                         <Text style={styles.upiCardId}>{upiId}</Text>
                       </View>

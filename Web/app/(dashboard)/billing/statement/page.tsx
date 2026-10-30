@@ -214,6 +214,7 @@ export default function MaintenanceStatementPage() {
                         <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Discount</th>
                         <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Late Fee</th>
                         <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Arrears</th>
+                        <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap" title="Paid ahead earlier and used against this bill when it was published">Advance</th>
                         <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Total Payable</th>
                         <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Status</th>
                         <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap min-w-[160px]">
@@ -269,6 +270,12 @@ export default function MaintenanceStatementPage() {
                             </td>
                             <td className="px-3 py-2.5 text-right tabular-nums text-red-600 whitespace-nowrap">
                               {s.arrears > 0 ? formatCurrency(s.arrears) : '—'}
+                            </td>
+                            <td
+                              className="px-3 py-2.5 text-right tabular-nums text-emerald-700 whitespace-nowrap"
+                              title={s.advanceBalance > 0 ? `Still holds ${formatCurrency(s.advanceBalance)} in advance` : undefined}
+                            >
+                              {s.advanceApplied > 0 ? formatCurrency(s.advanceApplied) : '—'}
                             </td>
                             <td className={cn('px-3 py-2.5 text-right tabular-nums font-bold whitespace-nowrap', isMyFlat ? 'text-primary-700' : 'text-slate-900')}>
                               {formatCurrency(s.totalPayable)}
@@ -386,6 +393,9 @@ export default function MaintenanceStatementPage() {
                         </td>
                         <td className="px-3 py-3 text-right tabular-nums text-red-600">
                           {formatCurrency(statements.reduce((s, r) => s + r.arrears, 0))}
+                        </td>
+                        <td className="px-3 py-3 text-right tabular-nums text-emerald-700">
+                          {formatCurrency(statements.reduce((s, r) => s + (r.advanceApplied ?? 0), 0))}
                         </td>
                         <td className="px-3 py-3 text-right tabular-nums text-slate-900">
                           {formatCurrency(statements.reduce((s, r) => s + r.totalPayable, 0))}

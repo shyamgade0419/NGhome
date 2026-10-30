@@ -103,6 +103,9 @@ export const billingApi = {
   // Resident: view own bills
   getMyBills: (params?: Record<string, unknown>) => api.get('/billing/my-bills', { params }),
   getMyBill: (billId: string) => api.get(`/billing/my-bills/${billId}`),
+  /** What this flat has paid ahead (advance credit), and its recent movements. */
+  getMyCredit: (): Promise<{ data: { balance: string; entries: Array<{ id: string; amount: string; kind: string; createdAt: string }> } }> =>
+    api.get('/billing/my-credit'),
 
   // Admin: update per-flat note on a bill (visible to all members on the statement)
   updateBillNotes: (billId: string, notes: string) =>
