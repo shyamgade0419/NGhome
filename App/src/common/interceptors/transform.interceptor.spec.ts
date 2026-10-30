@@ -11,7 +11,7 @@
  */
 
 import { of } from 'rxjs';
-import { CallHandler, ExecutionContext } from '@nestjs/common';
+import { CallHandler, ExecutionContext, StreamableFile } from '@nestjs/common';
 import { TransformInterceptor } from './transform.interceptor';
 
 function run(payload: unknown) {
@@ -49,5 +49,10 @@ describe('TransformInterceptor', () => {
   it('wraps a plain object with no data/meta keys as-is', () => {
     const obj = { id: 'x1', name: 'Cash box' };
     expect(run(obj)).toEqual({ success: true, data: obj });
+  });
+
+  it('hands a file download through untouched — wrapped, it reached the phone as JSON, not the file', () => {
+    const file = new StreamableFile(Buffer.from('%PDF-1.4'));
+    expect(run(file)).toBe(file);
   });
 });
