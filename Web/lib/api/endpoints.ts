@@ -61,6 +61,9 @@ export const billingApi = {
   createPeriod: (data: unknown): Promise<{ data: BillingPeriod }> =>
     api.post('/billing/periods', data),
 
+  deletePeriod: (periodId: string): Promise<{ data: { success: boolean } }> =>
+    api.delete(`/billing/periods/${periodId}`),
+
   generateBills: (periodId: string): Promise<{ data: { generated: number; errors: number } }> =>
     api.post(`/billing/periods/${periodId}/generate`),
 

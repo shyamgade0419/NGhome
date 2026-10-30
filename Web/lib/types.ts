@@ -80,6 +80,8 @@ export interface BillingPeriod {
   publishedAt: string | null;
   closedAt: string | null;
   createdAt: string;
+  /** Set by the period list: true only while the period holds no bills, payments, readings or statement. */
+  canDelete?: boolean;
 }
 
 export function billingPeriodLabel(p: BillingPeriod): string {

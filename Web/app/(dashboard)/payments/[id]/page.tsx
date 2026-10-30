@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, use } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CheckCircle2, XCircle, Paperclip } from 'lucide-react';
 import Link from 'next/link';
@@ -17,8 +17,10 @@ import { Modal } from '@/components/ui/Modal';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils';
 
-export default function PaymentDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+// Next 14 hands a page its params as a plain object. (Promise params, read with use(), are Next 15:
+// here they throw React error #438 and the whole page shows "Application error".)
+export default function PaymentDetailPage({ params }: { params: { id: string } }) {
+  const { id } = params;
   const router = useRouter();
   const qc = useQueryClient();
   const [showRejectModal, setShowRejectModal] = useState(false);

@@ -7,7 +7,6 @@ import {
   Send, CheckCircle2, Lock, Droplets, MessageSquare, LayoutList,
 } from 'lucide-react';
 import Link from 'next/link';
-import { use } from 'react';
 import { billingApi, waterApi } from '@/lib/api/endpoints';
 import { billingPeriodLabel } from '@/lib/types';
 import type { MaintenanceBill } from '@/lib/types';
@@ -120,8 +119,10 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-export default function BillingPeriodDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+// Next 14 hands a page its params as a plain object. (Promise params, read with use(), are Next 15:
+// here they throw React error #438 and the whole page shows "Application error".)
+export default function BillingPeriodDetailPage({ params }: { params: { id: string } }) {
+  const { id } = params;
   const qc = useQueryClient();
   const { user, activeMembership } = useAuth();
   const isAdmin = can.manageBilling(activeMembership?.role, user?.isPlatformAdmin);

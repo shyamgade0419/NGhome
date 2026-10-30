@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { billingApi } from '@/lib/api/endpoints';
@@ -66,6 +66,25 @@ export default function BillingPage() {
     },
     onError: () => toast.error('Failed to generate bills'),
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: (periodId: string) => billingApi.deletePeriod(periodId),
+    onSuccess: () => {
+      toast.success('Billing period deleted');
+      qc.invalidateQueries({ queryKey: ['billing-periods'] });
+    },
+    // The server says exactly why (it has bills, payments…), so say that rather than a generic failure.
+    onError: (e: any) => {
+      toast.error(e?.response?.data?.message ?? 'Failed to delete billing period');
+      qc.invalidateQueries({ queryKey: ['billing-periods'] });
+    },
+  });
+
+  const confirmDelete = (period: BillingPeriod) => {
+    if (window.confirm(`Delete the ${billingPeriodLabel(period)} billing period? It has no data, so nothing else is lost.`)) {
+      deleteMutation.mutate(period.id);
+    }
+  };
 
   const publishMutation = useMutation({
     mutationFn: (periodId: string) => billingApi.publishPeriod(periodId),
@@ -144,6 +163,18 @@ export default function BillingPage() {
                             onClick={() => publishMutation.mutate(period.id)}
                           >
                             Publish
+                          </Button>
+                        )}
+                        {/* Only a period holding nothing can go; once it has bills, payments or readings the option is not offered. */}
+                        {period.canDelete && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            loading={deleteMutation.isPending && deleteMutation.variables === period.id}
+                            onClick={() => confirmDelete(period)}
+                            title="This period has no data, so it can be deleted"
+                          >
+                            <Trash2 size={13} /> Delete
                           </Button>
                         )}
                       </div>
