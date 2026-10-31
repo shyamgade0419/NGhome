@@ -1,4 +1,4 @@
-import { OpeningRow, OpeningSaveResult, filterOpeningRows, isoDay, parseMoney, saveMessage } from '@/utils/openingBalances';
+import { OpeningRow, OpeningSaveResult, filterOpeningRows, isoDay, parseCsv, parseMoney, parseOpeningCsv, saveMessage } from '@/utils/openingBalances';
 
 const row = (over: Partial<OpeningRow> = {}): OpeningRow => ({
   flatId: 'f1', flatCode: 'A-101', residentName: 'Arjun Mehta', amount: null, paidAmount: '0', pendingAmount: '0', note: null, locked: null, ...over,
@@ -69,5 +69,46 @@ describe('the as-of date', () => {
     // what matters is that the local date is used as it stands.
     expect(isoDay(new Date(2026, 2, 31, 23, 30))).toBe('2026-03-31');
     expect(isoDay(new Date(2026, 0, 5, 0, 10))).toBe('2026-01-05');
+  });
+});
+
+describe('reading a CSV', () => {
+  it('splits rows and cells, with quoted commas, doubled quotes and either line ending', () => {
+    expect(parseCsv('a,b\r\n"x, y","say ""hi"""\n')).toEqual([['a', 'b'], ['x, y', 'say "hi"']]);
+  });
+
+  it('ignores a byte-order mark and blank lines, and keeps a last row with no line ending', () => {
+    expect(parseCsv(String.fromCharCode(0xfeff) + 'a,b\n\n1,2')).toEqual([['a', 'b'], ['1', '2']]);
+  });
+
+  it('copes with semicolons and tabs, which some Excel settings save with', () => {
+    expect(parseCsv('a;b\n1;2')).toEqual([['a', 'b'], ['1', '2']]);
+    expect(parseCsv('a\tb\n1\t2')).toEqual([['a', 'b'], ['1', '2']]);
+  });
+});
+
+describe('reading a file of opening balances', () => {
+  it('finds the columns however they are named, and skips flats with no amount', () => {
+    const { lines, missing } = parseOpeningCsv('Flat No,Dues,Remarks\nA-101,"12,000",Ledger p.3\nA-102,,\nA-103,Rs. 800,\n');
+    expect(missing).toBeNull();
+    expect(lines).toEqual([
+      { line: 2, flatCode: 'A-101', amount: 12000, note: 'Ledger p.3', error: null },
+      { line: 4, flatCode: 'A-103', amount: 800, note: '', error: null },
+    ]);
+  });
+
+  it('reports a row with a bad amount or no flat, with its line in the file', () => {
+    const { lines } = parseOpeningCsv('Flat,Amount\nA-101,abc\n,500\n');
+    expect(lines).toEqual([
+      { line: 2, flatCode: 'A-101', amount: null, note: '', error: '"abc" is not an amount.' },
+      { line: 3, flatCode: '', amount: null, note: '', error: 'The flat is missing.' },
+    ]);
+  });
+
+  it('says which column is missing, or that there are no rows', () => {
+    expect(parseOpeningCsv('Name,Phone\nA,1').missing).toContain('Flat column');
+    expect(parseOpeningCsv('Flat,Phone\nA,1').missing).toContain('Amount column');
+    expect(parseOpeningCsv('Flat,Amount').missing).toBe('The file has no rows.');
+    expect(parseOpeningCsv('').missing).toBe('The file has no rows.');
   });
 });

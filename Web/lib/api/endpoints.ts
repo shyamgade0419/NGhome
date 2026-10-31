@@ -16,6 +16,7 @@ import type { HelperRow, HelperStatus, HelperVisitRow } from '@/lib/helpers';
 import type { SlotFor, SlotRow, SlotStatus, VehicleRow } from '@/lib/vehicles';
 import type { AttendanceStatus, DayRow, MonthDay, RosterRow, Shift, SummaryRow } from '@/lib/attendance';
 import type { OpeningBalances, OpeningInputRow, OpeningSaveResult } from '@/lib/openingBalances';
+import type { AdvanceCredits, FlatDiscount, FlatDiscountInput } from '@/lib/flatDiscounts';
 
 // Dashboard — composites several report endpoints
 export const dashboardApi = {
@@ -120,6 +121,20 @@ export const billingApi = {
     rows: OpeningInputRow[];
     dryRun?: boolean;
   }): Promise<{ data: OpeningSaveResult }> => api.post('/billing/opening-balances', body),
+  /** Admin only: correct an opening balance a payment has touched. Paid money above the new amount becomes the flat's advance. */
+  correctOpeningBalance: (flatId: string, body: { amount: number; reason: string }) =>
+    api.post(`/billing/opening-balances/${flatId}/correct`, body),
+
+  // Standing discounts for a flat
+  listFlatDiscounts: (): Promise<{ data: FlatDiscount[] }> => api.get('/billing/flat-discounts'),
+  createFlatDiscount: (body: FlatDiscountInput) => api.post('/billing/flat-discounts', body),
+  updateFlatDiscount: (id: string, body: Partial<FlatDiscountInput> & { isActive?: boolean }) => api.patch(`/billing/flat-discounts/${id}`, body),
+  deleteFlatDiscount: (id: string) => api.delete(`/billing/flat-discounts/${id}`),
+
+  // Advance credit held by flats, and refunding it (admin only)
+  listAdvanceCredits: (): Promise<{ data: AdvanceCredits }> => api.get('/billing/advance-credits'),
+  refundAdvance: (body: { flatId: string; amount: number; accountId: string; reason: string; referenceNumber?: string }) =>
+    api.post('/billing/advance-credits/refund', body),
 };
 
 // Billing rules

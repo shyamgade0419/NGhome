@@ -14,17 +14,20 @@ import {
   Alert,
   Switch,
 } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { billingApi } from '@/api/endpoints/billing.api';
+import { useIsSocietyAdmin } from '@/hooks/useAuth';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius } from '@/theme';
 import { inr, toNum } from '@/utils/format';
-import { OpeningRow, filterOpeningRows, isoDay, parseMoney, saveMessage } from '@/utils/openingBalances';
+import { OpeningRow, OpeningSaveResult, ParsedLine, filterOpeningRows, isoDay, parseMoney, parseOpeningCsv, saveMessage } from '@/utils/openingBalances';
 
 // ── Edit one flat ─────────────────────────────────────────────────────────────
 
@@ -56,6 +59,31 @@ function EditSheet({
     onError: (e: any) => Alert.alert('Could not save', e?.response?.data?.message ?? 'Please try again.'),
   });
 
+  // A balance a payment has touched cannot be edited; the admin can correct it, with a reason.
+  const isAdmin = useIsSocietyAdmin();
+  const [correcting, setCorrecting] = useState(false);
+  const [fixAmount, setFixAmount] = useState('');
+  const [fixReason, setFixReason] = useState('');
+  const fixParsed = parseMoney(fixAmount);
+  const fixProblem =
+    fixParsed === null || Number.isNaN(fixParsed) || fixParsed <= 0 ? 'Enter what the flat really owed.'
+    : fixParsed === toNum(row.amount) ? 'That is the amount already recorded.'
+    : fixReason.trim().length < 3 ? 'Give a short reason.'
+    : null;
+  const correct = useMutation({
+    mutationFn: () => billingApi.correctOpeningBalance(row.flatId, { amount: fixParsed as number, reason: fixReason.trim() }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['opening-balances'] });
+      onClose();
+      const moved = toNum(res.movedToAdvance);
+      setTimeout(
+        () => Alert.alert('Corrected', moved > 0 ? `${inr(moved)} was paid in excess and is now the flat's advance.` : 'The opening balance has been corrected.'),
+        400,
+      );
+    },
+    onError: (e: any) => Alert.alert('Could not correct', e?.response?.data?.message ?? 'Please try again.'),
+  });
+
   const hadBalance = row.amount !== null;
   const canSave = !row.locked && !invalid && parsed !== null && parsed > 0;
 
@@ -81,7 +109,31 @@ function EditSheet({
                   {inr(row.amount)} owed, {inr(row.paidAmount)} paid. {row.locked}
                 </Text>
               </View>
-            ) : (
+            ) : null}
+            {row.locked && isAdmin ? (
+              correcting ? (
+                <>
+                  <Text style={sheet.label}>What the flat really owed (₹)</Text>
+                  <TextInput style={sheet.input} value={fixAmount} onChangeText={setFixAmount} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textTertiary} accessibilityLabel="Corrected amount" />
+                  <Text style={sheet.label}>Reason (kept in the audit log)</Text>
+                  <TextInput style={sheet.input} value={fixReason} onChangeText={setFixReason} maxLength={200} placeholder="Ledger page 14 was misread" placeholderTextColor={colors.textTertiary} accessibilityLabel="Correction reason" />
+                  <Text style={sheet.hint}>If the true amount is less than what was paid, the extra becomes the flat&apos;s advance. If it is more, the flat owes the rest.</Text>
+                  {fixProblem ? <Text style={sheet.bad}>{fixProblem}</Text> : null}
+                  <View style={sheet.actions}>
+                    <View style={{ flex: 1 }}>
+                      <Button label="Correct balance" onPress={() => correct.mutate()} loading={correct.isPending} disabled={!!fixProblem} fullWidth />
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <View style={sheet.actions}>
+                  <View style={{ flex: 1 }}>
+                    <Button label="Correct the amount" variant="outline" onPress={() => setCorrecting(true)} fullWidth />
+                  </View>
+                </View>
+              )
+            ) : null}
+            {row.locked ? null : (
               <>
                 <Text style={sheet.label}>What this flat owed (₹)</Text>
                 <TextInput
@@ -139,6 +191,73 @@ function EditSheet({
   );
 }
 
+// ── Load balances from a file ────────────────────────────────────────────────
+
+interface LoadedFile {
+  name: string;
+  lines: ParsedLine[];
+  /** What was sent to be checked: the lines with an amount and a flat, in order. */
+  sendable: { flatCode: string; amount: number; note?: string }[];
+  preview: OpeningSaveResult | null;
+}
+
+function ImportSheet({ loaded, asOfDate, onClose }: { loaded: LoadedFile; asOfDate: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const sentLines = loaded.lines.filter((l) => !l.error);
+  const fileLine = (row: number) => sentLines[row - 1]?.line ?? row;
+  const fileProblems = loaded.lines.filter((l) => l.error);
+  const serverProblems = (loaded.preview?.results ?? []).filter((r) => r.action === 'REJECTED');
+  const willSave = loaded.preview ? loaded.preview.summary.created + loaded.preview.summary.updated + loaded.preview.summary.removed : 0;
+  const same = loaded.preview?.summary.unchanged ?? 0;
+  const problems = [
+    ...fileProblems.map((l) => ({ line: l.line, text: `${l.flatCode || '—'}: ${l.error}` })),
+    ...serverProblems.map((r) => ({ line: fileLine(r.row), text: `${r.flatCode || '—'}: ${r.message}` })),
+  ].sort((a, b) => a.line - b.line);
+
+  const save = useMutation({
+    mutationFn: () => billingApi.saveOpeningBalances({ asOfDate, rows: loaded.sendable }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['opening-balances'] });
+      onClose();
+      setTimeout(() => Alert.alert(res.summary.rejected > 0 ? 'Partly saved' : 'Saved', saveMessage(res)), 400);
+    },
+    onError: (e: any) => Alert.alert('Could not save', e?.response?.data?.message ?? 'Please try again.'),
+  });
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <View style={sheet.overlay}>
+        <View style={sheet.card}>
+          <View style={sheet.header}>
+            <View style={{ flex: 1 }}>
+              <Text style={sheet.title}>Load from a file</Text>
+              <Text style={sheet.sub} numberOfLines={1}>{loaded.name}</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} hitSlop={10} accessibilityLabel="Close">
+              <Ionicons name="close" size={22} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+          <Text style={sheet.summary}>
+            {willSave} to save{same > 0 ? ` · ${same} already the same` : ''}{problems.length > 0 ? ` · ${problems.length} with a problem` : ''}
+          </Text>
+          {problems.length > 0 ? (
+            <View style={sheet.problems}>
+              {problems.slice(0, 8).map((pr) => (
+                <Text key={`${pr.line}`} style={sheet.problemText}>Row {pr.line} — {pr.text}</Text>
+              ))}
+              {problems.length > 8 ? <Text style={sheet.problemText}>…and {problems.length - 8} more</Text> : null}
+              <Text style={sheet.hint}>Rows with a problem are skipped. Fix them in the file and load it again, or save just the ones that are ready.</Text>
+            </View>
+          ) : null}
+          <View style={{ marginTop: spacing.md }}>
+            <Button label={`Save ${willSave} balance${willSave === 1 ? '' : 's'}`} onPress={() => save.mutate()} loading={save.isPending} disabled={willSave === 0} fullWidth />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ── Screen ───────────────────────────────────────────────────────────────────
 
 export default function OpeningBalancesScreen() {
@@ -152,10 +271,37 @@ export default function OpeningBalancesScreen() {
   const [search, setSearch] = useState('');
   const [onlyWithBalance, setOnlyWithBalance] = useState(false);
   const [editing, setEditing] = useState<OpeningRow | null>(null);
+  const [loaded, setLoaded] = useState<LoadedFile | null>(null);
+  const [reading, setReading] = useState(false);
 
   const today = isoDay(new Date());
   const asOfDate = asOf || (data?.asOfDate ? data.asOfDate.slice(0, 10) : today);
   const rows = useMemo(() => filterOpeningRows(data?.rows ?? [], search, onlyWithBalance), [data, search, onlyWithBalance]);
+
+  // Pick a CSV (Excel: File > Save As > CSV), read it, and have the server check it before anything is saved.
+  const loadFile = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: ['text/csv', 'text/comma-separated-values', 'text/plain', 'application/vnd.ms-excel', '*/*'],
+        copyToCacheDirectory: true,
+      });
+      if (res.canceled || !res.assets?.[0]) return;
+      setReading(true);
+      const asset = res.assets[0];
+      const parsed = parseOpeningCsv(await FileSystem.readAsStringAsync(asset.uri));
+      if (parsed.missing) { Alert.alert('Cannot read this file', parsed.missing); return; }
+      if (parsed.lines.length === 0) { Alert.alert('Nothing to load', 'No flat in the file has an amount.'); return; }
+      const sendable = parsed.lines
+        .filter((l) => !l.error && l.amount !== null)
+        .map((l) => ({ flatCode: l.flatCode, amount: l.amount as number, ...(l.note ? { note: l.note } : {}) }));
+      const preview = sendable.length > 0 ? await billingApi.saveOpeningBalances({ asOfDate, rows: sendable, dryRun: true }) : null;
+      setLoaded({ name: asset.name, lines: parsed.lines, sendable, preview });
+    } catch {
+      Alert.alert('Could not read the file', 'Save it as CSV (comma separated) from Excel, and try again.');
+    } finally {
+      setReading(false);
+    }
+  };
 
   const header = data ? (
     <View style={styles.header}>
@@ -206,6 +352,15 @@ export default function OpeningBalancesScreen() {
           }}
         />
       ) : null}
+
+      <TouchableOpacity style={styles.loadBtn} onPress={loadFile} disabled={reading} activeOpacity={0.7} accessibilityLabel="Load balances from a file">
+        <Ionicons name="document-attach-outline" size={18} color={colors.primary} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.loadTitle}>{reading ? 'Reading the file…' : 'Load from a file'}</Text>
+          <Text style={styles.loadSub}>A CSV with Flat, Amount and Note columns</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={15} color={colors.textTertiary} />
+      </TouchableOpacity>
 
       <TextInput
         style={styles.search}
@@ -275,6 +430,7 @@ export default function OpeningBalancesScreen() {
         />
       )}
 
+      {loaded ? <ImportSheet loaded={loaded} asOfDate={asOfDate} onClose={() => setLoaded(null)} /> : null}
       {editing ? <EditSheet row={editing} asOfDate={asOfDate} onClose={() => setEditing(null)} /> : null}
     </SafeAreaView>
   );
@@ -306,9 +462,13 @@ const sheet = StyleSheet.create({
   },
   inputBad: { borderColor: colors.error },
   bad: { ...typography.bodySmall, color: colors.error },
+  hint: { ...typography.bodySmall, color: colors.textTertiary, marginTop: spacing.sm },
   actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, alignItems: 'center' },
   locked: { flexDirection: 'row', gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.warningLight },
   lockedText: { ...typography.bodySmall, color: colors.text, flex: 1 },
+  summary: { ...typography.labelLarge, color: colors.text, marginTop: spacing.sm },
+  problems: { marginTop: spacing.sm, gap: 4, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.errorLight },
+  problemText: { ...typography.bodySmall, color: colors.text },
 });
 
 const styles = StyleSheet.create({
@@ -337,6 +497,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
     paddingHorizontal: spacing.md, paddingVertical: 10, ...typography.bodyMedium, color: colors.text,
   },
+  loadBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md,
+    borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+  },
+  loadTitle: { ...typography.labelLarge, color: colors.text },
+  loadSub: { ...typography.bodySmall, color: colors.textSecondary },
   toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   toggleText: { ...typography.bodyMedium, color: colors.textSecondary },
   row: {

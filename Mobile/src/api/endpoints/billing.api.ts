@@ -2,6 +2,7 @@ import apiClient from '@/api/client';
 import { ApiResponse, PaginatedResponse, PaginationQuery } from '@/api/types';
 import { BillingPeriod, MaintenanceBill } from '@/types/billing.types';
 import { OpeningBalances, OpeningSaveResult } from '@/utils/openingBalances';
+import { AdvanceCredits, DiscountType, FlatDiscount } from '@/utils/flatDiscounts';
 
 export const billingApi = {
   // ─── Admin: billing periods ────────────────────────────────────────────────
@@ -116,6 +117,58 @@ export const billingApi = {
   }): Promise<OpeningSaveResult> => {
     const { data } = await apiClient.post<ApiResponse<OpeningSaveResult>>('/billing/opening-balances', body);
     return data.data;
+  },
+
+  /** Admin only: correct an opening balance a payment has touched. Paid money above the new amount becomes the flat's advance. */
+  correctOpeningBalance: async (flatId: string, body: { amount: number; reason: string }) => {
+    const { data } = await apiClient.post<ApiResponse<{ flatCode: string; previous: string; amount: string; movedToAdvance: string }>>(
+      `/billing/opening-balances/${flatId}/correct`,
+      body,
+    );
+    return data.data;
+  },
+
+  // ─── Admin: standing discounts for a flat ─────────────────────────────────
+
+  listFlatDiscounts: async (): Promise<FlatDiscount[]> => {
+    const { data } = await apiClient.get<ApiResponse<FlatDiscount[]>>('/billing/flat-discounts');
+    return data.data ?? [];
+  },
+  createFlatDiscount: async (body: {
+    flatId: string;
+    type: DiscountType;
+    value: number;
+    reason: string;
+    effectiveFrom: string;
+    effectiveTo?: string | null;
+  }) => {
+    const { data } = await apiClient.post('/billing/flat-discounts', body);
+    return data;
+  },
+  updateFlatDiscount: async (id: string, body: { isActive?: boolean }) => {
+    const { data } = await apiClient.patch(`/billing/flat-discounts/${id}`, body);
+    return data;
+  },
+  deleteFlatDiscount: async (id: string) => {
+    await apiClient.delete(`/billing/flat-discounts/${id}`);
+  },
+
+  // ─── Admin: advance credit held by flats, and refunding it ─────────────────
+
+  listAdvanceCredits: async (): Promise<AdvanceCredits> => {
+    const { data } = await apiClient.get<ApiResponse<AdvanceCredits>>('/billing/advance-credits');
+    return data.data;
+  },
+  /** Admin only. Pays a flat's advance back out of an account. */
+  refundAdvance: async (body: { flatId: string; amount: number; accountId: string; reason: string; referenceNumber?: string }) => {
+    const { data } = await apiClient.post<ApiResponse<{ flatCode: string; refunded: string; remaining: string }>>('/billing/advance-credits/refund', body);
+    return data.data;
+  },
+
+  /** Admin only: take the late fine off one bill, with a reason that is kept in the audit trail. */
+  waiveLateFee: async (billId: string, reason: string) => {
+    const { data } = await apiClient.post(`/billing/bills/${billId}/waive-late-fee`, { reason });
+    return data;
   },
 
   // ─── Admin: dashboard summary ──────────────────────────────────────────────

@@ -6,6 +6,8 @@ import { AlertCircle, BookOpen, CheckCircle2, Download, Lock, Upload, X } from '
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { billingApi } from '@/lib/api/endpoints';
+import { useAuth } from '@/lib/auth/AuthContext';
+import { Modal } from '@/components/ui/Modal';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import {
   parseMoney,
@@ -13,6 +15,7 @@ import {
   type OpeningBalances,
   type OpeningInputRow,
   type OpeningPlanItem,
+  type OpeningRow,
   type OpeningSaveResult,
   type ParsedLine,
 } from '@/lib/openingBalances';
@@ -260,12 +263,69 @@ function ImportModal({ data, asOfDate, onClose }: { data: OpeningBalances; asOfD
   );
 }
 
+/* ─── Correct a locked balance (admin) ─────────────────────────────────────── */
+
+function CorrectModal({ row, onClose }: { row: OpeningRow | null; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const paid = row ? parseFloat(row.paidAmount) : 0;
+  const parsed = parseMoney(amount);
+  const problem =
+    parsed === null || Number.isNaN(parsed) || parsed <= 0 ? 'Enter what the flat really owed.'
+    : row && parsed === parseFloat(row.amount ?? '0') ? 'That is the amount already recorded.'
+    : reason.trim().length < 3 ? 'Give a short reason.'
+    : null;
+
+  const correct = useMutation({
+    mutationFn: () => billingApi.correctOpeningBalance(row!.flatId, { amount: parsed as number, reason: reason.trim() }),
+    onSuccess: (res: any) => {
+      const moved = parseFloat(res.data?.movedToAdvance ?? '0');
+      toast.success(moved > 0 ? `Corrected. ${formatCurrency(moved)} was paid in excess and is now the flat's advance.` : 'Corrected');
+      qc.invalidateQueries({ queryKey: ['opening-balances'] });
+      setAmount(''); setReason('');
+      onClose();
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Could not correct the balance'),
+  });
+
+  return (
+    <Modal open={!!row} onClose={onClose} title={row ? `Correct the opening balance — ${row.flatCode}` : 'Correct'}>
+      {row && (
+        <div className="space-y-4">
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            Recorded as <strong>{formatCurrency(row.amount ?? 0)}</strong>, of which <strong>{formatCurrency(paid)}</strong> has been paid.
+            If the true amount is less than what was paid, the extra becomes the flat&apos;s <strong>advance</strong>; if it is more, the flat owes the rest.
+            The old and new amounts and your reason are kept in the audit log.
+          </p>
+          <label className="block text-sm">
+            <span className="text-xs font-medium text-slate-500">What the flat really owed (₹)</span>
+            <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400" />
+          </label>
+          <label className="block text-sm">
+            <span className="text-xs font-medium text-slate-500">Reason</span>
+            <input value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} placeholder="Ledger page 14 was misread" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400" />
+          </label>
+          {problem && <p className="text-xs text-red-600">{problem}</p>}
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button onClick={() => correct.mutate()} loading={correct.isPending} disabled={!!problem}>Correct balance</Button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 /* ─── Page ────────────────────────────────────────────────────────────────── */
 
 interface Edit { amount?: string; note?: string }
 
 export default function OpeningBalancesPage() {
   const qc = useQueryClient();
+  const { activeMembership } = useAuth();
+  const isAdmin = activeMembership?.role === 'SOCIETY_ADMIN';
+  const [correcting, setCorrecting] = useState<OpeningRow | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: ['opening-balances'],
     queryFn: () => billingApi.getOpeningBalances().then((r: any) => (r.data ?? r) as OpeningBalances),
@@ -354,7 +414,7 @@ export default function OpeningBalancesPage() {
                 before any new month, and it shows as <strong>arrears</strong> on the Maintenance Sheet and in the resident&apos;s bills.
                 No fine is added to it.
               </p>
-              <p>A balance can be changed or removed until a payment is made against it. After that it is locked.</p>
+              <p>A balance can be changed or removed until a payment is made against it. After that it is locked, and only the admin can correct it, with a reason.</p>
               {data.startedBilling && (
                 <p className="rounded-lg bg-amber-50 px-3 py-2 text-amber-800">
                   A month has already been billed. Balances entered now are added to what residents see as arrears on those bills.
@@ -433,6 +493,11 @@ export default function OpeningBalancesPage() {
                       {r.locked ? (
                         <span className="inline-flex items-center gap-1.5 font-medium" title={r.locked}>
                           <Lock size={13} className="text-slate-400" /> {formatCurrency(r.amount ?? 0)}
+                          {isAdmin && (
+                            <button onClick={() => setCorrecting(r)} className="ml-1 text-xs font-medium text-primary-600 hover:underline" aria-label={`Correct the opening balance of ${r.flatCode}`}>
+                              Correct
+                            </button>
+                          )}
                         </span>
                       ) : (
                         <input
@@ -473,10 +538,11 @@ export default function OpeningBalancesPage() {
           </Table>
         </Card>
         <p className="text-xs text-slate-500">
-          Clear an amount (or enter 0) to remove a balance. A padlock means a payment has been made against it, so it can no longer be changed.
+          Clear an amount (or enter 0) to remove a balance. A padlock means a payment has been made against it, so it can no longer be edited here; the admin can use Correct to fix it with a reason.
         </p>
       </PageContainer>
 
+      <CorrectModal row={correcting} onClose={() => setCorrecting(null)} />
       {showImport && <ImportModal data={data} asOfDate={asOfDate} onClose={() => setShowImport(false)} />}
     </>
   );

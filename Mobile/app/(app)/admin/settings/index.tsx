@@ -76,6 +76,18 @@ export default function SettingsScreen() {
       onPress: () => router.push('/(app)/admin/opening-balances' as any),
     },
     {
+      icon: 'pricetag-outline',
+      label: 'Flat Discounts',
+      sublabel: 'A standing discount for a particular flat',
+      onPress: () => router.push('/(app)/admin/flat-discounts' as any),
+    },
+    {
+      icon: 'wallet-outline',
+      label: 'Advance Credit',
+      sublabel: 'Paid ahead by flats, and refunds',
+      onPress: () => router.push('/(app)/admin/advance-credit' as any),
+    },
+    {
       icon: 'bar-chart-outline',
       label: 'Reports',
       sublabel: 'Dues, collection, expenses, balances',

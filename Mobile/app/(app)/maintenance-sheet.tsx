@@ -30,7 +30,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import apiClient from '@/api/client';
 import { billingApi } from '@/api/endpoints/billing.api';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth, useIsSocietyAdmin } from '@/hooks/useAuth';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -220,6 +220,21 @@ function BillDetailModal({
 
   const canAdjust = canManage && !!periodStatus && ADJUSTABLE_STATUSES.includes(periodStatus);
 
+  // Waiving a fine is the admin's alone, and needs a reason that goes to the audit trail.
+  const isAdmin = useIsSocietyAdmin();
+  const [showWaive, setShowWaive] = React.useState(false);
+  const [waiveReason, setWaiveReason] = React.useState('');
+  const waive = useMutation({
+    mutationFn: () => billingApi.waiveLateFee(flat.billId, waiveReason.trim()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['maintenance-sheet'] });
+      qc.invalidateQueries({ queryKey: ['bill-detail', flat.billId] });
+      Alert.alert('Fine waived', `The late fine on Flat ${flat.flatCode} has been taken off.`);
+      onClose();
+    },
+    onError: (e: any) => Alert.alert('Could not waive the fine', e?.response?.data?.message ?? 'Please try again.'),
+  });
+
   const mutation = useMutation({
     mutationFn: () => {
       const amount = parseFloat(amountText);
@@ -313,6 +328,45 @@ function BillDetailModal({
                     <Text style={styles.noteText}>{bill?.notes ?? flat.notes}</Text>
                   </View>
                 ) : null}
+
+                {/* Waive the late fine (admin) */}
+                {isAdmin && lateFee > 0 && periodStatus !== 'CLOSED' && !showWaive && (
+                  <TouchableOpacity style={styles.adjustToggleBtn} onPress={() => setShowWaive(true)} activeOpacity={0.8} accessibilityLabel="Waive the late fine">
+                    <Ionicons name="shield-checkmark-outline" size={16} color={colors.primary} />
+                    <Text style={styles.adjustToggleText}>Waive late fine</Text>
+                  </TouchableOpacity>
+                )}
+                {showWaive && (
+                  <View style={styles.adjustForm}>
+                    <Text style={styles.fieldLabel}>
+                      Reason <Text style={{ color: colors.textTertiary }}>— kept in the audit log</Text>
+                    </Text>
+                    <TextInput
+                      style={styles.reasonInput}
+                      value={waiveReason}
+                      onChangeText={setWaiveReason}
+                      placeholder="e.g. Payment was delayed by the bank"
+                      placeholderTextColor={colors.textTertiary}
+                      multiline
+                      numberOfLines={3}
+                      textAlignVertical="top"
+                      accessibilityLabel="Reason for waiving the fine"
+                    />
+                    <View style={styles.adjustActions}>
+                      <TouchableOpacity style={styles.adjustCancelBtn} onPress={() => { setShowWaive(false); setWaiveReason(''); }}>
+                        <Text style={styles.adjustCancelText}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.adjustSubmitBtn, (waiveReason.trim().length < 3 || waive.isPending) && { opacity: 0.6 }]}
+                        onPress={() => waive.mutate()}
+                        disabled={waiveReason.trim().length < 3 || waive.isPending}
+                        accessibilityLabel="Confirm waiving the fine"
+                      >
+                        <Text style={styles.adjustSubmitText}>{waive.isPending ? 'Waiving…' : `Waive ${inr(lateFee)}`}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
 
                 {/* Discount / surcharge action */}
                 {canAdjust && !showAdjustForm && (

@@ -11,13 +11,21 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const mockGet = jest.fn();
 const mockSave = jest.fn();
+const mockCorrect = jest.fn();
+const mockPick = jest.fn();
+const mockRead = jest.fn();
+let mockIsAdmin = true;
 
 jest.mock('@/api/endpoints/billing.api', () => ({
   billingApi: {
     getOpeningBalances: (...a: unknown[]) => mockGet(...a),
     saveOpeningBalances: (...a: unknown[]) => mockSave(...a),
+    correctOpeningBalance: (...a: unknown[]) => mockCorrect(...a),
   },
 }));
+jest.mock('@/hooks/useAuth', () => ({ useIsSocietyAdmin: () => mockIsAdmin }));
+jest.mock('expo-document-picker', () => ({ getDocumentAsync: (...a: unknown[]) => mockPick(...a) }));
+jest.mock('expo-file-system/legacy', () => ({ readAsStringAsync: (...a: unknown[]) => mockRead(...a) }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
 jest.mock('@/components/layout/ScreenHeader', () => ({ ScreenHeader: () => null }));
 jest.mock('@react-native-community/datetimepicker', () => () => null);
@@ -75,6 +83,10 @@ async function mount() {
 beforeEach(() => {
   mockGet.mockReset().mockResolvedValue(data());
   mockSave.mockReset().mockResolvedValue(saved({ created: 1 }));
+  mockCorrect.mockReset().mockResolvedValue({ flatCode: 'A-103', previous: '3000', amount: '2000', movedToAdvance: '1000' });
+  mockPick.mockReset().mockResolvedValue({ canceled: true });
+  mockRead.mockReset().mockResolvedValue('');
+  mockIsAdmin = true;
   jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   (Alert.alert as jest.Mock).mockClear();
 });
@@ -152,6 +164,76 @@ describe('Opening Balances screen', () => {
     await until(() => textOf(tree.root).includes('can no longer be changed'));
     expect(inputByLabel(tree, 'Opening balance')).toBeUndefined();
     expect(byText(tree, 'Save')).toHaveLength(0);
+  });
+
+  it('lets the admin correct a locked balance, with a reason, and says what became the advance', async () => {
+    const tree = await mount();
+    await act(async () => { byLabel(tree, 'Opening balance for A-103')[0].props.onPress(); });
+    await until(() => byText(tree, 'Correct the amount').length > 0);
+    await act(async () => { byText(tree, 'Correct the amount')[0].props.onPress(); });
+    await until(() => !!inputByLabel(tree, 'Corrected amount'));
+
+    expect(byText(tree, 'Correct balance')[0].props.disabled).toBe(true); // nothing entered yet
+    await act(async () => { inputByLabel(tree, 'Corrected amount').props.onChangeText('2000'); });
+    await act(async () => { inputByLabel(tree, 'Correction reason').props.onChangeText('Ledger page 14 was misread'); });
+    expect(byText(tree, 'Correct balance')[0].props.disabled).toBe(false);
+    await act(async () => { byText(tree, 'Correct balance')[0].props.onPress(); });
+
+    await until(() => mockCorrect.mock.calls.length === 1);
+    expect(mockCorrect).toHaveBeenCalledWith('f3', { amount: 2000, reason: 'Ledger page 14 was misread' });
+    await until(() => (Alert.alert as jest.Mock).mock.calls.some((c) => c[0] === 'Corrected'));
+    expect((Alert.alert as jest.Mock).mock.calls.find((c) => c[0] === 'Corrected')[1]).toContain('₹1,000');
+  });
+
+  it('does not offer the correction to anyone but the admin', async () => {
+    mockIsAdmin = false;
+    const tree = await mount();
+    await act(async () => { byLabel(tree, 'Opening balance for A-103')[0].props.onPress(); });
+    await until(() => textOf(tree.root).includes('can no longer be changed'));
+    expect(byText(tree, 'Correct the amount')).toHaveLength(0);
+  });
+
+  it("loads balances from a CSV file: checks it first, shows problems with the file's own row numbers, then saves", async () => {
+    mockPick.mockResolvedValue({ canceled: false, assets: [{ uri: 'file:///cache/dues.csv', name: 'dues.csv' }] });
+    mockRead.mockResolvedValue('Flat,Amount,Note\nA-102,"8,500",Ledger p.14\nZ-9,100,\nA-101,xyz,\nA-103,,\n');
+    mockSave.mockImplementation(async (body: any) =>
+      body.dryRun
+        ? { dryRun: true, asOfDate: '2026-03-31', summary: { created: 1, updated: 0, removed: 0, unchanged: 0, rejected: 1 }, results: [
+            { row: 1, flatCode: 'A-102', flatId: 'f2', action: 'CREATE', amount: '8500', previous: null, note: 'Ledger p.14', message: null },
+            { row: 2, flatCode: 'Z-9', flatId: null, action: 'REJECTED', amount: '0', previous: null, note: null, message: 'No flat "Z-9" in this society.' },
+          ] }
+        : saved({ created: 1 }),
+    );
+    const tree = await mount();
+    await act(async () => { byLabel(tree, 'Load balances from a file')[0].props.onPress(); });
+    await until(() => textOf(tree.root).includes('1 to save'));
+
+    // The server was asked to check the two rows that could be read, without saving.
+    expect(mockSave.mock.calls[0][0]).toEqual({
+      asOfDate: '2026-03-31', dryRun: true,
+      rows: [{ flatCode: 'A-102', amount: 8500, note: 'Ledger p.14' }, { flatCode: 'Z-9', amount: 100 }],
+    });
+    const text = textOf(tree.root);
+    expect(text).toContain('2 with a problem');
+    expect(text).toContain('Row 3 — Z-9: No flat "Z-9"'); // the file's line 3, not the second row sent
+    expect(text).toContain('Row 4 — A-101: "xyz" is not an amount.');
+
+    await act(async () => { byText(tree, 'Save 1 balance')[0].props.onPress(); });
+    await until(() => mockSave.mock.calls.length === 2);
+    expect(mockSave.mock.calls[1][0]).toEqual({
+      asOfDate: '2026-03-31',
+      rows: [{ flatCode: 'A-102', amount: 8500, note: 'Ledger p.14' }, { flatCode: 'Z-9', amount: 100 }],
+    });
+  });
+
+  it('says so when the file is not one it can read', async () => {
+    mockPick.mockResolvedValue({ canceled: false, assets: [{ uri: 'file:///cache/x.csv', name: 'x.csv' }] });
+    mockRead.mockResolvedValue('Name,Phone\nArjun,9000000000\n');
+    const tree = await mount();
+    await act(async () => { byLabel(tree, 'Load balances from a file')[0].props.onPress(); });
+    await until(() => (Alert.alert as jest.Mock).mock.calls.some((c) => c[0] === 'Cannot read this file'));
+    expect((Alert.alert as jest.Mock).mock.calls.find((c) => c[0] === 'Cannot read this file')[1]).toContain('Flat column');
+    expect(mockSave).not.toHaveBeenCalled();
   });
 
   it('tells the person when the server refuses a flat', async () => {
