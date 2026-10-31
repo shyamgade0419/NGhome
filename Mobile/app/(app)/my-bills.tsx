@@ -40,9 +40,11 @@ export default function ResidentMaintenanceScreen() {
     >
       <View style={styles.cardTop}>
         <View>
-          <Text style={styles.invoiceNum}>{item.invoiceNumber ?? '—'}</Text>
+          <Text style={styles.invoiceNum}>
+            {item.billingPeriod?.kind === 'OPENING' ? 'Opening balance' : item.invoiceNumber ?? '—'}
+          </Text>
           <Text style={styles.dueDate}>
-            Due: {new Date(item.dueDate).toLocaleDateString('en-IN')}
+            {item.billingPeriod?.kind === 'OPENING' ? 'Brought forward, up to' : 'Due:'} {new Date(item.dueDate).toLocaleDateString('en-IN')}
           </Text>
         </View>
         <StatusBadge

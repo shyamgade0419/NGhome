@@ -1,6 +1,7 @@
 import apiClient from '@/api/client';
 import { ApiResponse, PaginatedResponse, PaginationQuery } from '@/api/types';
 import { BillingPeriod, MaintenanceBill } from '@/types/billing.types';
+import { OpeningBalances, OpeningSaveResult } from '@/utils/openingBalances';
 
 export const billingApi = {
   // ─── Admin: billing periods ────────────────────────────────────────────────
@@ -97,6 +98,23 @@ export const billingApi = {
       `/billing/bills/${billId}/adjust`,
       { adjustment: amount, note },
     );
+    return data.data;
+  },
+
+  // ─── Admin: opening balances (dues carried over from paper or Excel) ───────
+
+  getOpeningBalances: async (): Promise<OpeningBalances> => {
+    const { data } = await apiClient.get<ApiResponse<OpeningBalances>>('/billing/opening-balances');
+    return data.data;
+  },
+
+  /** Save opening balances, or with dryRun only check them. An amount of 0 removes one nobody has paid against. */
+  saveOpeningBalances: async (body: {
+    asOfDate: string;
+    rows: { flatCode: string; amount: number; note?: string }[];
+    dryRun?: boolean;
+  }): Promise<OpeningSaveResult> => {
+    const { data } = await apiClient.post<ApiResponse<OpeningSaveResult>>('/billing/opening-balances', body);
     return data.data;
   },
 

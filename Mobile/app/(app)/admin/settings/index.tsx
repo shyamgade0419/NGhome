@@ -70,6 +70,12 @@ export default function SettingsScreen() {
       onPress: () => router.push('/(app)/admin/billing-rules' as any),
     },
     {
+      icon: 'book-outline',
+      label: 'Opening Balances',
+      sublabel: 'Dues carried over from paper or Excel',
+      onPress: () => router.push('/(app)/admin/opening-balances' as any),
+    },
+    {
       icon: 'bar-chart-outline',
       label: 'Reports',
       sublabel: 'Dues, collection, expenses, balances',

@@ -59,7 +59,9 @@ export default function ResidentDashboard() {
   const outstanding = myBill ? toNum(myBill.pendingAmount) : 0;
   const isPaid = myBill?.isPaid ?? false;
 
-  const periodLabel = myBill
+  const periodLabel = myBill?.billingPeriod?.kind === 'OPENING'
+    ? 'Opening balance (earlier dues)'
+    : myBill
     ? `${new Date(myBill.dueDate).toLocaleString('en-IN', { month: 'short', year: 'numeric' })} Maintenance`
     : preview
       ? `${new Date(preview.dueDate).toLocaleString('en-IN', { month: 'short', year: 'numeric' })} Maintenance (Upcoming)`

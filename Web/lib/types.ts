@@ -80,11 +80,14 @@ export interface BillingPeriod {
   publishedAt: string | null;
   closedAt: string | null;
   createdAt: string;
+  /** OPENING is the dues carried over from before NG Home (never listed as a month). */
+  kind?: 'REGULAR' | 'OPENING';
   /** Set by the period list: true only while the period holds no bills, payments, readings or statement. */
   canDelete?: boolean;
 }
 
-export function billingPeriodLabel(p: BillingPeriod): string {
+export function billingPeriodLabel(p: Pick<BillingPeriod, 'periodYear' | 'periodMonth' | 'kind'>): string {
+  if (p.kind === 'OPENING') return 'Opening balance';
   return new Date(p.periodYear, p.periodMonth - 1).toLocaleString('default', {
     month: 'long',
     year: 'numeric',

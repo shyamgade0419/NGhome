@@ -73,24 +73,19 @@ export default function SubmitPaymentScreen() {
     setProofFile({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType });
   };
 
-  const { data: activePeriod } = useQuery({
-    queryKey: ['active-period'],
-    queryFn: billingApi.getCurrentPeriod,
-  });
-
-  const { data: myBill } = useQuery({
-    queryKey: ['my-bill', activePeriod?.id],
-    queryFn: () => billingApi.getMyBill(activePeriod!.id),
-    enabled: !!activePeriod?.id,
-  });
-
   // Payments clear the oldest month first, so what to pay is everything owed — this month's bill and any
   // earlier month still unpaid — not this month alone.
   const { data: allBills } = useQuery({
     queryKey: ['my-bills-all'],
     queryFn: () => billingApi.getMyBills({ limit: 100 }),
   });
-  const owed = totalDue(allBills?.data ?? []);
+  // The bill the payment is recorded against: the latest one still unpaid (or the latest of all). It comes from the
+  // resident's own bills — the periods list is for admins only, so a resident was never given a bill here and
+  // the payment settled nothing. Settlement itself is oldest-first whichever bill this names.
+  const myBills = allBills?.data ?? [];
+  const myBill = myBills.find((b) => b.isPublished && !b.isPaid && toNum(b.pendingAmount) > 0) ?? myBills[0];
+  const activePeriod = myBill?.billingPeriod;
+  const owed = totalDue(myBills);
   const owedStr = owed > 0 ? owed.toFixed(2) : (myBill?.pendingAmount ?? '');
   const arrears = owed > 0 ? earlierDue(owed, myBill?.pendingAmount) : 0;
 
@@ -106,6 +101,8 @@ export default function SubmitPaymentScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-payments'] });
       queryClient.invalidateQueries({ queryKey: ['my-bill'] });
+      queryClient.invalidateQueries({ queryKey: ['my-bills-all'] });
+      queryClient.invalidateQueries({ queryKey: ['my-bills'] });
       Alert.alert(
         'Payment Submitted',
         'Your payment has been submitted for verification. The admin will review and approve it shortly.',

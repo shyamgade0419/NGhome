@@ -15,6 +15,7 @@ import type { ParcelLogEntry, ParcelStatus } from '@/lib/parcels';
 import type { HelperRow, HelperStatus, HelperVisitRow } from '@/lib/helpers';
 import type { SlotFor, SlotRow, SlotStatus, VehicleRow } from '@/lib/vehicles';
 import type { AttendanceStatus, DayRow, MonthDay, RosterRow, Shift, SummaryRow } from '@/lib/attendance';
+import type { OpeningBalances, OpeningInputRow, OpeningSaveResult } from '@/lib/openingBalances';
 
 // Dashboard — composites several report endpoints
 export const dashboardApi = {
@@ -110,6 +111,15 @@ export const billingApi = {
   // Admin: update per-flat note on a bill (visible to all members on the statement)
   updateBillNotes: (billId: string, notes: string) =>
     api.patch(`/billing/bills/${billId}/notes`, { notes }),
+
+  /** Every flat with the dues it carried over from before NG Home. */
+  getOpeningBalances: (): Promise<{ data: OpeningBalances }> => api.get('/billing/opening-balances'),
+  /** Save opening balances, or with dryRun check them and say what would happen. An amount of 0 removes one. */
+  saveOpeningBalances: (body: {
+    asOfDate: string;
+    rows: OpeningInputRow[];
+    dryRun?: boolean;
+  }): Promise<{ data: OpeningSaveResult }> => api.post('/billing/opening-balances', body),
 };
 
 // Billing rules

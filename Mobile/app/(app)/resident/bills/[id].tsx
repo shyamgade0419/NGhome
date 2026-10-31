@@ -109,7 +109,7 @@ export default function ResidentBillDetailScreen() {
         {/* Hero card */}
         <View style={[styles.heroCard, bill.isPaid ? styles.heroPaid : styles.heroPending]}>
           <View style={styles.heroTop}>
-            <Text style={styles.heroInvoice}>{bill.invoiceNumber}</Text>
+            <Text style={styles.heroInvoice}>{bill.billingPeriod?.kind === 'OPENING' ? 'Opening balance' : bill.invoiceNumber}</Text>
             <StatusBadge
               label={bill.isPaid ? 'PAID' : 'PENDING'}
               variant={bill.isPaid ? 'success' : 'warning'}
@@ -120,7 +120,7 @@ export default function ResidentBillDetailScreen() {
             <Text style={styles.heroSub}>
               ₹{pending.toLocaleString('en-IN')} outstanding
               {bill.dueDate
-                ? ` · Due ${new Date(bill.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+                ? ` · ${bill.billingPeriod?.kind === 'OPENING' ? 'brought forward to' : 'Due'} ${new Date(bill.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
                 : ''}
             </Text>
           )}

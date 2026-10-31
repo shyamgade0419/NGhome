@@ -20,6 +20,8 @@ export interface BillingPeriod {
   societyId: string;
   periodYear: number;
   periodMonth: number;
+  /** OPENING is the dues carried over from before NG Home — a bill in it is labelled "Opening balance". */
+  kind?: 'REGULAR' | 'OPENING';
   startDate: string;
   endDate: string;
   dueDate: string;
@@ -33,7 +35,8 @@ export interface BillingPeriod {
 }
 
 // Derived helper — not from API
-export function billingPeriodName(p: BillingPeriod): string {
+export function billingPeriodName(p: Pick<BillingPeriod, 'periodYear' | 'periodMonth' | 'kind'>): string {
+  if (p.kind === 'OPENING') return 'Opening balance';
   const monthName = new Date(p.periodYear, p.periodMonth - 1).toLocaleString('default', {
     month: 'long',
   });
@@ -67,6 +70,8 @@ export interface MaintenanceBill {
   isPaid: boolean;
   isPublished: boolean;
   dueDate: string;
+  /** The month this bill belongs to — present on the resident's own bill list. */
+  billingPeriod?: { id: string; periodYear: number; periodMonth: number; kind?: 'REGULAR' | 'OPENING' };
   calculationSnapshot: Record<string, unknown>;
   lineItems?: BillLineItem[];
   createdAt: string;

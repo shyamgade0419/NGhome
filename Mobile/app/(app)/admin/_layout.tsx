@@ -110,6 +110,7 @@ export default function AdminLayout() {
       <Tabs.Screen name="salaries/index" options={{ href: null }} />
       <Tabs.Screen name="audit-logs/index" options={{ href: null }} />
       <Tabs.Screen name="billing-rules/index" options={{ href: null }} />
+      <Tabs.Screen name="opening-balances/index" options={{ href: null }} />
       <Tabs.Screen name="amenities/index" options={{ href: null }} />
       <Tabs.Screen name="visitors/index" options={{ href: null }} />
       <Tabs.Screen name="amenities/bookings" options={{ href: null }} />

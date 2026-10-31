@@ -247,10 +247,14 @@ function BillCard({ bill, owed, upiId, societyName, verificationRequired, onPaid
           </div>
           <div>
             <p className="font-semibold text-slate-900">
-              {period ? `${MONTH_NAMES[period.periodMonth]} ${period.periodYear}` : 'Maintenance Bill'}
+              {period?.kind === 'OPENING'
+                ? 'Opening balance'
+                : period ? `${MONTH_NAMES[period.periodMonth]} ${period.periodYear}` : 'Maintenance Bill'}
             </p>
             <p className="text-xs text-slate-500">
-              Invoice {bill.invoiceNumber} · Due {formatDate(bill.dueDate)}
+              {period?.kind === 'OPENING'
+                ? `Dues brought forward from the earlier records, up to ${formatDate(bill.dueDate)}`
+                : `Invoice ${bill.invoiceNumber} · Due ${formatDate(bill.dueDate)}`}
             </p>
           </div>
         </div>

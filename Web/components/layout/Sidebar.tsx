@@ -33,6 +33,7 @@ import {
   UserCheck,
   Car,
   ClipboardCheck,
+  BookOpen,
 } from 'lucide-react';
 import { cn, initials } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -44,6 +45,7 @@ const ADMIN_NAV = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/billing', icon: Receipt, label: 'Billing' },
   { href: '/billing/statement', icon: LayoutList, label: 'Maintenance Sheet' },
+  { href: '/billing/opening', icon: BookOpen, label: 'Opening Balances' },
   { href: '/billing/my', icon: FileText, label: 'My Bills' },
   { href: '/payments', icon: CreditCard, label: 'Payments' },
   { href: '/expenses', icon: Wallet, label: 'Expenses' },
