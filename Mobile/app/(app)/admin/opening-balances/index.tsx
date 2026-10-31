@@ -162,7 +162,7 @@ export default function OpeningBalancesScreen() {
       <View style={styles.notice}>
         <Ionicons name="information-circle-outline" size={15} color={colors.info} />
         <Text style={styles.noticeText}>
-          Enter what each flat owed on your paper or Excel records. It becomes the flat's oldest due: a payment clears it before
+          Enter what each flat owed on your paper or Excel records. It becomes the flat&apos;s oldest due: a payment clears it before
           any new month, and it shows as arrears. No fine is added. It can be changed or removed until a payment is made against it.
         </Text>
       </View>
