@@ -67,7 +67,7 @@ export const GUIDE: GuidePart[] = [
         summary: 'Put NG Home on an iPhone home screen or a computer, with its own icon and no browser bar.',
         blocks: [
           { type: 'p', text: 'There is no App Store version yet, but the website installs like an app. It gets its own icon, opens in its own window without the browser bar, and keeps you signed in. Nothing to download from a store.' },
-          { type: 'p', text: '**iPhone or iPad.** Open the NG Home website in **Safari**, tap the **Share** button (the square with an arrow), scroll down and tap **Add to Home Screen**, then **Add**. The icon appears with your other apps.' },
+          { type: 'p', text: '**iPhone or iPad.** Open the NG Home website in **Safari**, tap the **Share** button (the square with an arrow), scroll down and tap **Add to Home Screen**, then **Add**. The icon appears with your other apps. In **Chrome or Edge on the iPhone**, the Share button is next to the address bar instead; the steps after it are the same.' },
           { type: 'p', text: '**Computer (Chrome or Edge).** Open the website and click the **Install** button NG Home shows at the top, or the install icon at the right end of the address bar. NG Home then opens in its own window and can be pinned to the taskbar.' },
           { type: 'p', text: '**Android.** Use the Android app from Google Play. You can also install the website the same way as on a computer.' },
           { type: 'list', items: [

@@ -8,7 +8,7 @@
 
 import { useEffect, useState } from 'react';
 import { Download, Share, X } from 'lucide-react';
-import { dismissInstall, isInstallDismissed, isIosDevice, isStandalone } from '@/lib/pwa';
+import { dismissInstall, isInstallDismissed, isIosDevice, isIosThirdPartyBrowser, isStandalone } from '@/lib/pwa';
 
 interface InstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -19,10 +19,15 @@ export function InstallPrompt() {
   const [hidden, setHidden] = useState(true); // hidden until we've read storage — no flash
   const [deferred, setDeferred] = useState<InstallPromptEvent | null>(null);
   const [ios, setIos] = useState(false);
+  const [device, setDevice] = useState('iPhone');
+  const [shareHint, setShareHint] = useState('in Safari');
 
   useEffect(() => {
     if (isStandalone() || isInstallDismissed()) return;
-    setIos(isIosDevice(navigator.userAgent, navigator.maxTouchPoints ?? 0));
+    const ua = navigator.userAgent;
+    setIos(isIosDevice(ua, navigator.maxTouchPoints ?? 0));
+    setDevice(/iPad|Macintosh/.test(ua) ? 'iPad' : 'iPhone');
+    setShareHint(isIosThirdPartyBrowser(ua) ? 'next to the address bar' : 'in Safari');
     setHidden(false);
 
     const onPrompt = (e: Event) => {
@@ -67,8 +72,8 @@ export function InstallPrompt() {
         <Download size={16} className="shrink-0 text-primary-600" />
         {ios ? (
           <p className="min-w-0 flex-1">
-            Install NG Home on your {/iPad/.test(navigator.userAgent) ? 'iPad' : 'iPhone'}: tap{' '}
-            <Share size={14} className="mx-0.5 inline align-text-bottom" aria-label="Share" /> in Safari, then <strong>Add to Home Screen</strong>.
+            Install NG Home on your {device}: tap{' '}
+            <Share size={14} className="mx-0.5 inline align-text-bottom" aria-label="Share" /> {shareHint}, then <strong>Add to Home Screen</strong>.
           </p>
         ) : (
           <p className="min-w-0 flex-1">Install NG Home as an app for one-tap access, without the browser bar.</p>

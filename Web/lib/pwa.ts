@@ -24,6 +24,15 @@ export function isIosDevice(userAgent: string, maxTouchPoints: number): boolean 
   return /Macintosh/.test(userAgent) && maxTouchPoints > 1;
 }
 
+/**
+ * Chrome, Edge and Firefox on iOS all run on Safari's engine and report themselves with their own
+ * token. Their Share button sits next to the address bar rather than on Safari's toolbar, which is
+ * what the install hint has to point at.
+ */
+export function isIosThirdPartyBrowser(userAgent: string): boolean {
+  return /CriOS|EdgiOS|FxiOS|OPiOS/.test(userAgent);
+}
+
 export function isInstallDismissed(now = Date.now()): boolean {
   try {
     const until = Number(window.localStorage.getItem(DISMISS_KEY));
