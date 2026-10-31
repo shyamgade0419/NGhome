@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { BillingPeriodKind, BillingPeriodStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { applyCreditToPeriod } from './advance-credit';
 import { refreshPeriodTotals } from './period-totals';
-import { SaveOpeningBalancesDto } from './dto/opening-balances.dto';
+import { CorrectOpeningBalanceDto, SaveOpeningBalancesDto } from './dto/opening-balances.dto';
 import {
   ExistingOpening,
   OPENING_PERIOD_MONTH,
@@ -254,6 +254,73 @@ export class OpeningBalancesService {
     }
 
     return this.result(plan, asOf, false);
+  }
+
+  /**
+   * Correct an opening balance that a payment has already touched (an unpaid one is simply edited).
+   *
+   * The new amount replaces the old. If it is less than what was already paid against it, the difference
+   * is money the flat has paid that it did not owe, so it becomes the flat's advance credit; if it is more,
+   * the flat owes the rest. Either way the old and new amounts and the reason are written to the audit trail.
+   */
+  async correct(societyId: string, actorId: string, flatId: string, dto: CorrectOpeningBalanceDto) {
+    const amount = new Prisma.Decimal(dto.amount).toDecimalPlaces(2);
+    return this.prisma.$transaction(
+      async (tx) => {
+        // The flat first, then its bills: the order a payment's settlement uses.
+        await tx.$queryRaw`SELECT id FROM flats WHERE id = ${flatId} AND "societyId" = ${societyId} FOR NO KEY UPDATE`;
+        await tx.$queryRaw`
+          SELECT b.id FROM maintenance_bills b
+          JOIN billing_periods p ON p.id = b."billingPeriodId"
+          WHERE b."societyId" = ${societyId} AND p.kind = 'OPENING' AND b."flatId" = ${flatId}
+          ORDER BY b.id FOR UPDATE`;
+
+        const bill = await tx.maintenanceBill.findFirst({
+          where: { societyId, flatId, billingPeriod: { kind: BillingPeriodKind.OPENING } },
+          include: { flat: { select: { flatCode: true } } },
+        });
+        if (!bill) throw new NotFoundException('This flat has no opening balance to correct.');
+        if (bill.totalAmount.equals(amount)) throw new BadRequestException('The opening balance is already that amount.');
+
+        const paidOnBill = bill.paidAmount.lessThan(amount) ? bill.paidAmount : amount;
+        const excess = bill.paidAmount.minus(paidOnBill);
+        const pending = amount.minus(paidOnBill);
+
+        await tx.maintenanceBill.update({
+          where: { id: bill.id },
+          data: { baseAmount: amount, totalAmount: amount, paidAmount: paidOnBill, pendingAmount: pending, isPaid: pending.lessThanOrEqualTo(0) },
+        });
+        await tx.billLineItem.updateMany({ where: { maintenanceBillId: bill.id }, data: { amount } });
+
+        if (excess.greaterThan(0)) {
+          await tx.flat.update({ where: { id: flatId }, data: { creditBalance: { increment: excess } } });
+          await tx.flatCreditEntry.create({ data: { societyId, flatId, amount: excess, kind: 'CORRECTION', billId: bill.id } });
+        }
+        // An advance the flat holds goes against what it now owes.
+        if (pending.greaterThan(0)) await applyCreditToPeriod(tx, societyId, bill.billingPeriodId, [flatId]);
+        await refreshPeriodTotals(tx, societyId, bill.billingPeriodId);
+
+        await tx.auditLog.create({
+          data: {
+            societyId,
+            actorId,
+            action: 'BILL_MODIFIED',
+            entityType: 'MaintenanceBill',
+            entityId: bill.id,
+            oldValues: { openingBalance: bill.totalAmount.toString(), paid: bill.paidAmount.toString() } as Prisma.InputJsonValue,
+            newValues: {
+              openingBalanceCorrected: true,
+              flat: bill.flat.flatCode,
+              openingBalance: amount.toString(),
+              reason: dto.reason.trim(),
+              movedToAdvance: excess.toString(),
+            } as Prisma.InputJsonValue,
+          },
+        });
+        return { flatCode: bill.flat.flatCode, previous: bill.totalAmount.toString(), amount: amount.toString(), movedToAdvance: excess.toString() };
+      },
+      { timeout: 30_000, maxWait: 10_000 },
+    );
   }
 
   private result(items: OpeningPlanItem[], asOf: Date, dryRun: boolean) {

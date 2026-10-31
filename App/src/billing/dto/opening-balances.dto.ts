@@ -1,4 +1,4 @@
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsDateString, IsNumber, IsOptional, IsString, Max, MaxLength, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsDateString, IsNumber, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MAX_OPENING_AMOUNT } from '../opening-balances';
@@ -44,4 +44,20 @@ export class SaveOpeningBalancesDto {
   @IsOptional()
   @IsBoolean()
   dryRun?: boolean;
+}
+
+export class CorrectOpeningBalanceDto {
+  /** What the flat really owed at the as-of date. */
+  @ApiProperty({ example: 11000 })
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(MAX_OPENING_AMOUNT)
+  amount: number;
+
+  /** Why it is being corrected — kept in the audit trail. */
+  @ApiProperty({ example: 'Ledger page 14 was misread' })
+  @IsString()
+  @MinLength(3, { message: 'Give a short reason for the correction' })
+  @MaxLength(200)
+  reason: string;
 }

@@ -521,6 +521,7 @@ model Flat {
   vehicles             Vehicle[]
   parkingSlotsHeld     ParkingSlot[]
   creditEntries        FlatCreditEntry[]
+  discounts            FlatDiscount[]
 
   @@unique([societyId, flatCode])
   @@index([societyId])
@@ -1952,7 +1953,7 @@ model FlatCreditEntry {
   flatId    String
   // + paid ahead   - used against a bill
   amount    Decimal  @db.Decimal(12, 2)
-  kind      String   // ADVANCE_PAYMENT | APPLIED_TO_BILL
+  kind      String   // ADVANCE_PAYMENT | APPLIED_TO_BILL | CORRECTION | REFUND
   paymentId String?
   billId    String?
   createdAt DateTime @default(now())
@@ -1963,4 +1964,33 @@ model FlatCreditEntry {
   @@index([billId])
   @@index([societyId])
   @@map("flat_credit_entries")
+}
+
+// A standing discount for one flat: a fixed amount or a percentage off its maintenance, taken off every bill
+// generated while it is in force (the period starts between effectiveFrom and effectiveTo), and so kept when
+// bills are regenerated. Several can apply to one flat; together they never take a bill below zero.
+enum FlatDiscountType {
+  FIXED
+  PERCENT
+}
+
+model FlatDiscount {
+  id            String           @id @default(uuid())
+  societyId     String
+  flatId        String
+  type          FlatDiscountType
+  value         Decimal          @db.Decimal(12, 2)
+  reason        String
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  isActive      Boolean          @default(true)
+  createdById   String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  flat Flat @relation(fields: [flatId], references: [id], onDelete: Cascade)
+
+  @@index([societyId])
+  @@index([flatId])
+  @@map("flat_discounts")
 }

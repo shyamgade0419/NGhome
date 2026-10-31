@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { NO_USAGE, PeriodUsage, deleteBlocker } from './billing-period-delete';
 import { applyCreditToPeriod } from './advance-credit';
+import { DiscountRule, discountFor } from './flat-discounts';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { BillingCalculatorService } from './billing-calculator.service';
@@ -66,6 +67,22 @@ export class BillingService {
       },
     });
 
+    // Standing discounts in force for this period, by flat: they are taken off every bill generated, so a
+    // regenerate keeps them (unlike a one-off adjustment on a single bill, which a regenerate wipes).
+    const discountRows = await this.prisma.flatDiscount.findMany({
+      where: {
+        societyId,
+        isActive: true,
+        effectiveFrom: { lte: period.startDate },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: period.startDate } }],
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    const discountsByFlat = new Map<string, DiscountRule[]>();
+    for (const row of discountRows) {
+      discountsByFlat.set(row.flatId, [...(discountsByFlat.get(row.flatId) ?? []), row]);
+    }
+
     const result = await this.prisma.$transaction(async (tx) => {
       // Delete existing draft bills for this period
       await tx.billLineItem.deleteMany({
@@ -103,6 +120,8 @@ export class BillingService {
         const billResult = this.calculator.calculateFlatBill(flatCtx, rules);
         const waterCharge = waterChargesMap.get(flat.id) ?? 0;
         const grandTotal = billResult.baseAmount + waterCharge;
+        const discount = discountFor(discountsByFlat.get(flat.id) ?? [], new Prisma.Decimal(billResult.baseAmount), period.startDate);
+        const payable = new Prisma.Decimal(grandTotal).minus(discount.total);
         const invNumber = generateInvoiceNumber(config.invoicePrefix, invoiceNumber++);
 
         const calculationSnapshot = {
@@ -132,6 +151,8 @@ export class BillingService {
           flatArea: flat.area?.toNumber(),
           residentCount: flatCtx.residentCount,
           waterCharge,
+          discount: discount.total.toString(),
+          discountReasons: discount.reasons,
           generatedAt: new Date().toISOString(),
           generatedBy: generatedById,
         };
@@ -143,6 +164,16 @@ export class BillingService {
               description: 'Water meter reading charge for billing period',
               amount: new Prisma.Decimal(waterCharge),
               calculationNote: `Water usage: ₹${waterCharge.toFixed(2)}`,
+            }]
+          : [];
+
+        const discountLineItem = discount.total.greaterThan(0)
+          ? [{
+              componentName: 'Discount',
+              componentType: 'DISCOUNT',
+              description: discount.reasons.join(', '),
+              amount: discount.total.negated(),
+              calculationNote: 'Standing discount for this flat',
             }]
           : [];
 
@@ -158,8 +189,9 @@ export class BillingService {
             residentCount: flatCtx.residentCount,
             baseAmount: new Prisma.Decimal(billResult.baseAmount),
             waterCharges: new Prisma.Decimal(waterCharge),
-            totalAmount: new Prisma.Decimal(grandTotal),
-            pendingAmount: new Prisma.Decimal(grandTotal),
+            adjustments: discount.total.negated(),
+            totalAmount: payable,
+            pendingAmount: payable,
             dueDate: period.dueDate,
             calculationSnapshot: calculationSnapshot as Prisma.InputJsonValue,
             lineItems: {
@@ -175,6 +207,7 @@ export class BillingService {
                   calculationNote: li.calculationNote,
                 })),
                 ...waterLineItem,
+                ...discountLineItem,
               ],
             },
           },
