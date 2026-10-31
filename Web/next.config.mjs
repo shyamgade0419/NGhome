@@ -51,7 +51,12 @@ const SECURITY_HEADERS = [
 const nextConfig = {
   output: 'standalone',
   async headers() {
-    return [{ source: '/:path*', headers: SECURITY_HEADERS }];
+    return [
+      { source: '/:path*', headers: SECURITY_HEADERS },
+      // The browser re-checks the worker on every visit, so a fixed worker reaches everyone at
+      // once; if it were cached, an installed app could keep a broken one for a day.
+      { source: '/sw.js', headers: [{ key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' }] },
+    ];
   },
   // /Admin is the address the NovaGade team uses for the platform console;
   // the page itself lives at /platform. Route paths are case-sensitive, so

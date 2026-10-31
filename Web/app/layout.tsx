@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Providers } from '@/components/Providers';
+import { PwaRegister } from '@/components/PwaRegister';
 
 export const metadata: Metadata = {
   title: { default: 'NG Home', template: '%s | NG Home' },
@@ -43,6 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <Providers>{children}</Providers>
+        <PwaRegister />
       </body>
     </html>
   );

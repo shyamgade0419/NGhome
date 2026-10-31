@@ -50,13 +50,31 @@ export const GUIDE: GuidePart[] = [
         summary: 'One app for maintenance billing, money, the gate and day-to-day community life.',
         blocks: [
           { type: 'p', text: 'NG Home runs an apartment society: it raises the monthly maintenance bill, collects payments, keeps the society\'s accounts, and handles the gate (visitors, parcels, household help, vehicles, staff), plus complaints, notices and documents. It is free to use.' },
-          { type: 'p', text: 'It works on the **web** (for the committee, who do most of the setup and accounts) and on the **mobile app** for Android (for residents, and for the security guard at the gate). Both talk to the same data, so what a resident does on their phone appears for the admin on the web at once.' },
+          { type: 'p', text: 'It works on the **web** (for the committee, who do most of the setup and accounts) and on the **mobile app** for Android (for residents, and for the security guard at the gate). On an iPhone, iPad or computer, the web version can be installed like an app (see **Install NG Home on your phone or computer**). All of them talk to the same data, so what a resident does on their phone appears for the admin on the web at once.' },
           { type: 'table', head: ['Who', 'Typically uses', 'For'], rows: [
             ['Society admin', 'Web and mobile', 'Everything: settings, billing, payments, accounts, residents.'],
             ['Accountant', 'Web and mobile', 'Billing, payments, expenses, accounts and reports. Cannot change roles or waive fines.'],
             ['Committee member', 'Mobile and web', 'The gate log and approvals, household help, vehicles and parking, staff attendance.'],
             ['Security guard', 'Mobile only', 'The gate: visitors, parcels, household help, vehicles and staff check-in.'],
             ['Resident (owner or tenant)', 'Mobile, sometimes web', 'Their own bills and payments, visitors, deliveries, helpers, vehicles, complaints, notices.'],
+          ] },
+        ],
+      },
+      {
+        id: 'install-app',
+        title: 'Install NG Home on your phone or computer',
+        audience: 'everyone',
+        summary: 'Put NG Home on an iPhone home screen or a computer, with its own icon and no browser bar.',
+        blocks: [
+          { type: 'p', text: 'There is no App Store version yet, but the website installs like an app. It gets its own icon, opens in its own window without the browser bar, and keeps you signed in. Nothing to download from a store.' },
+          { type: 'p', text: '**iPhone or iPad.** Open the NG Home website in **Safari**, tap the **Share** button (the square with an arrow), scroll down and tap **Add to Home Screen**, then **Add**. The icon appears with your other apps.' },
+          { type: 'p', text: '**Computer (Chrome or Edge).** Open the website and click the **Install** button NG Home shows at the top, or the install icon at the right end of the address bar. NG Home then opens in its own window and can be pinned to the taskbar.' },
+          { type: 'p', text: '**Android.** Use the Android app from Google Play. You can also install the website the same way as on a computer.' },
+          { type: 'list', items: [
+            'The first time you open the installed app you may need to sign in once more. It then keeps you signed in for a week, like the website.',
+            'It needs the internet. Without it you see a "You are offline" page, and your bills are never shown from an old copy.',
+            'Pop-up notifications on the phone are not sent to the installed website yet; they are in the Android app. Notices still appear under Notifications inside NG Home.',
+            'To remove it, delete the icon like any other app.',
           ] },
         ],
       },

@@ -43,7 +43,11 @@ export const config = {
   // which carries the ng_session cookie a page navigation would) got
   // redirected to /login same as any other page, breaking the PWA
   // metadata for anyone who hadn't already logged in with a live session.
+  //
+  // The service worker (sw.js) and its offline page are excluded for the same
+  // reason, and offline.html above all: it is shown precisely when there is no
+  // network and no session to check, so it must never be redirected.
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|favicon-32.png|icon-192.png|icon-512.png|apple-touch-icon.png|manifest.webmanifest).*)',
+    '/((?!_next/static|_next/image|favicon.ico|favicon-32.png|icon-192.png|icon-512.png|icon-maskable-192.png|icon-maskable-512.png|apple-touch-icon.png|manifest.webmanifest|sw.js|offline.html).*)',
   ],
 };
