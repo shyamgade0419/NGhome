@@ -16,9 +16,18 @@ export async function applyCreditToPeriod(
   tx: Prisma.TransactionClient,
   societyId: string,
   periodId: string,
+  /** Only these flats: for a caller that holds the locks on just those flats. */
+  onlyFlatIds?: string[],
 ): Promise<{ billsCovered: number; applied: Prisma.Decimal }> {
   const bills = await tx.maintenanceBill.findMany({
-    where: { societyId, billingPeriodId: periodId, isPaid: false, pendingAmount: { gt: 0 }, flat: { creditBalance: { gt: 0 } } },
+    where: {
+      societyId,
+      billingPeriodId: periodId,
+      isPaid: false,
+      pendingAmount: { gt: 0 },
+      flat: { creditBalance: { gt: 0 } },
+      ...(onlyFlatIds ? { flatId: { in: onlyFlatIds } } : {}),
+    },
     select: { id: true, flatId: true, pendingAmount: true },
     orderBy: { flatCode: 'asc' },
   });

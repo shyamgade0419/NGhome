@@ -4,6 +4,9 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 export class CreateBillingPeriodDto {
   @ApiProperty({ example: 2025 })
   @IsInt()
+  // Below this is reserved for the opening-balances period (see opening-balances.ts).
+  @Min(2000)
+  @Max(2200)
   periodYear: number;
 
   @ApiProperty({ example: 1, minimum: 1, maximum: 12 })

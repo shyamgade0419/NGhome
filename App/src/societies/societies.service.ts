@@ -497,7 +497,7 @@ export class SocietiesService {
       this.prisma.flat.count({ where: { societyId, isActive: true } }),
       this.prisma.societyMembership.count({ where: { societyId, status: 'ACTIVE' } }),
       this.prisma.billingPeriod.findFirst({
-        where: { societyId, status: { not: 'CLOSED' } },
+        where: { societyId, kind: 'REGULAR', status: { not: 'CLOSED' } },
         orderBy: { createdAt: 'desc' },
       }),
     ]);

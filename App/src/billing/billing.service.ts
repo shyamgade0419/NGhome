@@ -12,7 +12,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { BillingCalculatorService } from './billing-calculator.service';
 import { BillingRulesService } from '../billing-rules/billing-rules.service';
 import { CreateBillingPeriodDto } from './dto/create-billing-period.dto';
-import { Prisma, BillingPeriodStatus } from '@prisma/client';
+import { Prisma, BillingPeriodStatus, BillingPeriodKind } from '@prisma/client';
 import { generateInvoiceNumber } from '../common/utils/invoice-number';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
 
@@ -296,6 +296,8 @@ export class BillingService {
     return this.prisma.billingPeriod.findMany({
       where: {
         societyId,
+        // Not the opening period: it is dues carried over, not a month with a statement of its own.
+        kind: BillingPeriodKind.REGULAR,
         status: { in: ['PUBLISHED', 'PARTIALLY_PAID', 'PAID', 'CLOSED'] },
       },
       select: {
@@ -319,10 +321,10 @@ export class BillingService {
       this.prisma.billingPeriod.findMany({
         skip,
         take,
-        where: { societyId },
+        where: { societyId, kind: BillingPeriodKind.REGULAR },
         orderBy: [{ periodYear: 'desc' }, { periodMonth: 'desc' }],
       }),
-      this.prisma.billingPeriod.count({ where: { societyId } }),
+      this.prisma.billingPeriod.count({ where: { societyId, kind: BillingPeriodKind.REGULAR } }),
     ]);
 
     // Each period says whether it can be deleted, so the screen shows the option only where it works.
@@ -449,7 +451,7 @@ export class BillingService {
         where: { societyId, flatId, isPublished: true },
         include: {
           lineItems: true,
-          billingPeriod: { select: { id: true, periodYear: true, periodMonth: true } },
+          billingPeriod: { select: { id: true, periodYear: true, periodMonth: true, kind: true } },
         },
         orderBy: [{ billingPeriod: { periodYear: 'desc' } }, { billingPeriod: { periodMonth: 'desc' } }],
       }),

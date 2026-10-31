@@ -60,6 +60,13 @@ enum BillingPeriodStatus {
   CLOSED
 }
 
+// REGULAR is a month's billing. OPENING holds the dues a flat carried over from before it moved to NG Home
+// (paper or Excel): one per society, its bills settle and show as arrears like any other.
+enum BillingPeriodKind {
+  REGULAR
+  OPENING
+}
+
 enum PaymentStatus {
   PENDING
   UNDER_REVIEW
@@ -598,6 +605,7 @@ model BillingPeriod {
   societyId      String
   periodYear     Int
   periodMonth    Int
+  kind           BillingPeriodKind   @default(REGULAR)
   startDate      DateTime
   endDate        DateTime
   dueDate        DateTime
