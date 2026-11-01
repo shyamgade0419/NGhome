@@ -37,7 +37,7 @@ export class SalariesService {
     if (!employee) throw new NotFoundException('Employee not found');
 
     if (dto.accountId) {
-      const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId } });
+      const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId, isActive: true } });
       if (!account) throw new NotFoundException('Account not found in this society');
     }
 
@@ -139,7 +139,7 @@ export class SalariesService {
         throw new BadRequestException('Salary must be in DRAFT or PROCESSED state');
       }
 
-      const account = await tx.account.findFirst({ where: { id: record.accountId!, societyId } });
+      const account = await tx.account.findFirst({ where: { id: record.accountId!, societyId, isActive: true } });
       if (!account) throw new NotFoundException('Account not found');
 
       /**

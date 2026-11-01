@@ -23,6 +23,7 @@ jest.mock('@/api/endpoints/accounts.api', () => ({
     contribute: jest.fn(),
   },
 }));
+jest.mock('@/hooks/useAuth', () => ({ useIsSocietyAdmin: () => true }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
 jest.mock('@/components/layout/ScreenHeader', () => ({ ScreenHeader: () => null }));
 jest.mock('react-native-safe-area-context', () => {

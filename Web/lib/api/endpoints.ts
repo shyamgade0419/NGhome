@@ -537,6 +537,8 @@ export const accountsApi = {
    *  can be approved, since approval asks which account it landed in. */
   createAccount: (data: unknown) => api.post('/accounts', data),
   getAccount: (id: string) => api.get(`/accounts/${id}`),
+  /** Deletes an account made by mistake; one that has already been used is only taken off the lists and out of the totals. */
+  deleteAccount: (id: string) => api.delete(`/accounts/${id}`),
   listFunds: (params?: Record<string, unknown>) => api.get('/funds', { params }),
   createFund: (data: unknown) => api.post('/funds', data),
   /** Where the money is: the bank, the corpus, every other fund and what is left, with a check that they add up. */

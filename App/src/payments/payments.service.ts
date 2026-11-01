@@ -569,7 +569,7 @@ export class PaymentsService {
       }
 
       // 2. Verify account belongs to society
-      const account = await tx.account.findFirst({ where: { id: accountId, societyId } });
+      const account = await tx.account.findFirst({ where: { id: accountId, societyId, isActive: true } });
       if (!account) throw new NotFoundException('Account not found');
 
       // 3. Atomic balance increment — avoids read-modify-write race across concurrent approvals

@@ -29,6 +29,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { accountsApi, fundsApi, SocietyAccount, SocietyFund, AccountType, FundKind, FundSummary } from '@/api/endpoints/accounts.api';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
+import { useIsSocietyAdmin } from '@/hooks/useAuth';
 import { inr as inrExact } from '@/utils/format';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -52,6 +53,33 @@ const TYPE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
 // ── Transactions sheet ───────────────────────────────────────────────────────
 
 function LedgerModal({ account, onClose }: { account: SocietyAccount; onClose: () => void }) {
+  const qc = useQueryClient();
+  const isAdmin = useIsSocietyAdmin();
+  const remove = useMutation({
+    mutationFn: () => accountsApi.remove(account.id),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['accounts'] });
+      qc.invalidateQueries({ queryKey: ['funds'] });
+      qc.invalidateQueries({ queryKey: ['fund-summary'] });
+      Alert.alert(
+        res.removedFromLists ? 'Account removed' : 'Account deleted',
+        res.removedFromLists
+          ? `${res.name} is off your accounts and totals. Its history is kept.`
+          : `${res.name} is deleted.`,
+      );
+      onClose();
+    },
+    onError: (e: any) => Alert.alert('Error', e?.response?.data?.message ?? 'Could not delete the account.'),
+  });
+  const askDelete = () =>
+    Alert.alert(
+      `Delete ${account.name}?`,
+      'If nothing has been recorded against it, it is deleted. If payments or expenses have already used it, it is taken off your accounts and totals instead and its history is kept. You can add the account again with the right balance.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => remove.mutate() },
+      ],
+    );
   const { data, isLoading } = useQuery({
     queryKey: ['account-transactions', account.id],
     queryFn: () => accountsApi.transactions(account.id, { limit: 50 }),
@@ -100,7 +128,22 @@ function LedgerModal({ account, onClose }: { account: SocietyAccount; onClose: (
             ListEmptyComponent={
               <EmptyState icon="receipt-outline" title="No transactions" description="This account has no recorded movement yet." />
             }
-            ListFooterComponent={<View style={{ height: spacing['3xl'] }} />}
+            ListFooterComponent={
+              <View style={{ paddingBottom: spacing['3xl'] }}>
+                {isAdmin ? (
+                  <TouchableOpacity
+                    style={styles.deleteBtn}
+                    onPress={askDelete}
+                    disabled={remove.isPending}
+                    activeOpacity={0.8}
+                    accessibilityLabel="Delete account"
+                  >
+                    <Ionicons name="trash-outline" size={16} color={colors.error} />
+                    <Text style={styles.deleteText}>{remove.isPending ? 'Deleting…' : 'Delete this account'}</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            }
           />
         )}
       </SafeAreaView>
@@ -885,6 +928,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryLight,
   },
   addMoneyText: { ...typography.labelMedium, color: colors.primary },
+  deleteBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    marginTop: spacing.xl, paddingVertical: 10,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.error,
+  },
+  deleteText: { ...typography.labelMedium, color: colors.error },
 
   noteBox: {
     flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,

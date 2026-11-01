@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { AlertTriangle, CheckCircle2, Landmark, Plus } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Landmark, Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { accountsApi } from '@/lib/api/endpoints';
 import { Header } from '@/components/layout/Header';
@@ -20,6 +20,7 @@ import { Select } from '@/components/ui/Select';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatCurrency } from '@/lib/utils';
+import { useAuth } from '@/lib/auth/AuthContext';
 
 const createAccountSchema = z.object({
   name: z.string().min(1, 'Required'),
@@ -50,6 +51,8 @@ type ContributeForm = z.infer<typeof contributeSchema>;
 
 export default function AccountsPage() {
   const qc = useQueryClient();
+  const { activeMembership } = useAuth();
+  const isAdmin = activeMembership?.role === 'SOCIETY_ADMIN';
   const [showNewFund, setShowNewFund] = useState(false);
   const [contributeTo, setContributeTo] = useState<any | null>(null);
 
@@ -94,6 +97,34 @@ export default function AccountsPage() {
     },
     onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to create account'),
   });
+
+  const deleteAccount = useMutation({
+    mutationFn: (id: string) => accountsApi.deleteAccount(id).then((r: any) => r.data),
+    onSuccess: (res: any) => {
+      qc.invalidateQueries({ queryKey: ['accounts'] });
+      qc.invalidateQueries({ queryKey: ['funds'] });
+      qc.invalidateQueries({ queryKey: ['fund-summary'] });
+      toast.success(
+        res?.removedFromLists
+          ? `${res.name} is removed from your accounts and totals. Its history is kept.`
+          : `${res?.name ?? 'Account'} deleted`,
+      );
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Could not delete the account'),
+  });
+  const askDeleteAccount = (a: any) => {
+    if (
+      window.confirm(
+        `Delete "${a.name}"?
+
+If nothing has been recorded against it, it is deleted. If payments or expenses have already used it, it is taken off your accounts and totals instead and its history is kept.
+
+You can add the account again with the right balance.`,
+      )
+    ) {
+      deleteAccount.mutate(a.id);
+    }
+  };
 
   const createFundForm = useForm<CreateFundForm>({ resolver: zodResolver(createFundSchema), defaultValues: { kind: 'OTHER' } });
   const fundKind = createFundForm.watch('kind');
@@ -203,6 +234,7 @@ export default function AccountsPage() {
                   <Th className="text-right">Opening Balance</Th>
                   <Th className="text-right">Current Balance</Th>
                   <Th>Status</Th>
+                  {isAdmin && <Th className="text-right">Actions</Th>}
                 </Tr>
               </Thead>
               <Tbody>
@@ -219,6 +251,19 @@ export default function AccountsPage() {
                         {a.isActive ? 'Active' : 'Inactive'}
                       </Badge>
                     </Td>
+                    {isAdmin && (
+                      <Td className="text-right">
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          aria-label={`Delete ${a.name}`}
+                          loading={deleteAccount.isPending && deleteAccount.variables === a.id}
+                          onClick={() => askDeleteAccount(a)}
+                        >
+                          <Trash2 size={14} /> Delete
+                        </Button>
+                      </Td>
+                    )}
                   </Tr>
                 ))}
               </Tbody>

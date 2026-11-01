@@ -56,6 +56,16 @@ export const accountsApi = {
     return data.data ?? (data as unknown as SocietyAccount[]);
   },
 
+  /**
+   * Deletes an account made by mistake. One that has already been used (a payment, an expense or a salary went
+   * through it) cannot be erased without breaking those records, so it is taken off the lists and out of the
+   * totals instead and its history is kept; `removedFromLists` tells the two apart.
+   */
+  remove: async (id: string) => {
+    const { data } = await apiClient.delete(`/accounts/${id}`);
+    return ((data as any)?.data ?? data) as { id: string; name: string; deleted: boolean; removedFromLists: boolean };
+  },
+
   get: async (id: string) => {
     const { data } = await apiClient.get<ApiResponse<SocietyAccount>>(`/accounts/${id}`);
     return data.data ?? (data as unknown as SocietyAccount);

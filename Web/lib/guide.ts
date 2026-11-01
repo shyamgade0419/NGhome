@@ -531,9 +531,10 @@ export const GUIDE: GuidePart[] = [
           { type: 'shot', src: '/help/accounts.jpg', alt: 'Accounts and Funds with two bank accounts and two reserve funds', caption: 'Accounts & Funds: your accounts with their balances, and the reserve funds, each with a "Visible to residents" setting.' },
           { type: 'steps', items: [
             '**Accounts → New Account:** name, type (Savings, Current, Cash), optional bank details and the opening balance.',
-            '**Corpus Fund** (until you have one) or **Other Fund:** name it, enter what it holds today, and decide whether **residents can see it**. This is off by default.',
+            '**Add a fund:** on the same page, scroll down to **Reserve Funds** and press **Corpus Fund** (shown until you have one) or **Other Fund** (for a Ganesh fund, a sinking fund or anything else). On the phone, open **Accounts & Funds**, go to the **Funds** tab and press **Add another fund**. Name it, enter what it holds today, and decide whether **residents can see it**. This is off by default.',
             '**Add Money** on a fund records a contribution. Leave "Also credit a bank account" off when the money already arrived as resident payments.',
           ] },
+          { type: 'tip', text: '**Entered an account wrongly?** The admin can delete it: press **Delete** beside the account (on the phone, open the account and press **Delete this account**), then add it again with the right balance. An account nothing has used yet is deleted outright. One that payments, expenses or salaries have already gone through is taken off your lists and totals instead, and its history is kept. An accountant cannot delete accounts.' },
           { type: 'warn', text: 'If a red note says the funds are more than the bank holds, money was added to a fund that never reached the bank, or money left the bank without being taken from a fund. Look at the recent Add Money entries and expenses.' },
           { type: 'warn', text: 'Tenants never see funds or the bank balance, whatever you set. Owners see only the funds you made visible, and the bank total only if you switched that on.' },
         ],

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
 import { AccountsService, CreateAccountDto } from './accounts.service';
@@ -8,6 +8,8 @@ import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { SocietyId } from '../common/decorators/society-id.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 
 @ApiTags('Accounts')
 @ApiBearerAuth()
@@ -41,6 +43,13 @@ export class AccountsController {
   @ApiOperation({ summary: 'Update account details' })
   update(@SocietyId() societyId: string, @Param('id') id: string, @Body() dto: UpdateAccountDto) {
     return this.accountsService.update(societyId, id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @ApiOperation({ summary: 'Delete an account made by mistake (or hide it, if it has already been used)' })
+  remove(@SocietyId() societyId: string, @Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.accountsService.remove(societyId, id, user.id);
   }
 
   @Get(':id/transactions')

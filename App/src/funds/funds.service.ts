@@ -26,7 +26,7 @@ export class FundsService {
 
   async create(societyId: string, dto: CreateFundDto) {
     if (dto.accountId) {
-      const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId } });
+      const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId, isActive: true } });
       if (!account) throw new NotFoundException('Account not found in this society');
     }
     const kind = dto.kind ?? FundKind.OTHER;
@@ -109,7 +109,7 @@ export class FundsService {
         // Checked against the society rather than trusted from the body —
         // otherwise this is a cross-tenant write primitive.
         const account = await tx.account.findFirst({
-          where: { id: dto.accountId, societyId },
+          where: { id: dto.accountId, societyId, isActive: true },
         });
         if (!account) throw new NotFoundException('Account not found');
 
@@ -183,7 +183,7 @@ export class FundsService {
   async update(societyId: string, id: string, dto: Partial<CreateFundDto>) {
     await this.findOne(societyId, id);
     if (dto.accountId) {
-      const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId } });
+      const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId, isActive: true } });
       if (!account) throw new NotFoundException('Account not found in this society');
     }
     if (dto.kind === FundKind.CORPUS) await this.assertNoOtherCorpus(societyId, id);

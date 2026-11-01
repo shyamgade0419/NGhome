@@ -67,7 +67,7 @@ export class ExpensesService {
     const categoryId = await this.resolveCategoryId(societyId, dto);
 
     if (dto.accountId) {
-      const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId } });
+      const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId, isActive: true } });
       if (!account) throw new NotFoundException('Account not found in this society');
     }
 
@@ -334,7 +334,7 @@ export class ExpensesService {
       const { amount } = await tx.expense.findUniqueOrThrow({ where: { id: expenseId }, select: { amount: true } });
 
       // 2. Verify account belongs to society
-      const account = await tx.account.findFirst({ where: { id: accountId, societyId } });
+      const account = await tx.account.findFirst({ where: { id: accountId, societyId, isActive: true } });
       if (!account) throw new NotFoundException('Account not found');
 
       // 3. Take it out of the fund, if one is named, never below zero
@@ -412,7 +412,7 @@ export class ExpensesService {
         throw new BadRequestException('The account this was paid from cannot be changed. Correct the amount or date instead.');
       }
       if (dto.accountId) {
-        const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId } });
+        const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId, isActive: true } });
         if (!account) throw new NotFoundException('Account not found in this society');
       }
     }
