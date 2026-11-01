@@ -5,15 +5,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building2, Shield, Bell, IndianRupee, ChevronRight,
   Save, Plus, X, ExternalLink, UserCog, Trash2,
-  Sparkles, Lock, CheckCircle2, Key, Copy, RefreshCw, Share2,
+  Sparkles, Lock, CheckCircle2, Key, Copy, RefreshCw, Share2, MessageSquare,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
-import { societyApi, billingApi, billingRulesApi, usersApi, whatsappApi } from '@/lib/api/endpoints';
-import { WHATSAPP_KIND_LABEL, parseReminderDays, previewReminder } from '@/lib/reminders';
-import type { WhatsappMessageRow, WhatsappStatus } from '@/lib/reminders';
-import type { ReminderTemplate } from '@/lib/reminders';
-import { Textarea } from '@/components/ui/Textarea';
+import { societyApi, billingRulesApi, usersApi } from '@/lib/api/endpoints';
+import { WhatsappSection } from '@/components/settings/WhatsappSection';
 import { BASIS_LABEL, KIND_LABEL, buildRulePayload, describeRule } from '@/lib/billingRules';
 import { ruleDetailRows } from '@/lib/billingRuleDetails';
 import type { Basis, ChargeKind, RuleForm } from '@/lib/billingRules';
@@ -138,38 +135,6 @@ function BillingConfigSection({ admin }: { admin: boolean }) {
   const [form, setForm] = useState<Record<string, any>>({});
   const [dirty, setDirty] = useState(false);
 
-  // The WhatsApp reminder wording lives apart from `form`, which is rebuilt from the server on every refetch and
-  // would throw away a half-written template. null = not edited yet: show what the server has.
-  const { data: tplData } = useQuery({
-    queryKey: ['reminder-template'],
-    queryFn: () => billingApi.getReminderTemplate().then((r: any) => (r.data ?? r) as ReminderTemplate),
-  });
-  // WhatsApp automation: is the server connected to WhatsApp, and what has been sent
-  const { data: waStatus } = useQuery({
-    queryKey: ['whatsapp-status'],
-    queryFn: () => whatsappApi.status().then((r: any) => (r.data ?? r) as WhatsappStatus),
-    refetchInterval: 20_000,
-  });
-  const { data: waMessages } = useQuery({
-    queryKey: ['whatsapp-messages'],
-    queryFn: () => whatsappApi.messages(12).then((r: any) => (r.data ?? r) as WhatsappMessageRow[]),
-    refetchInterval: 20_000,
-  });
-  const [testPhone, setTestPhone] = useState('');
-  const testMutation = useMutation({
-    mutationFn: () => whatsappApi.test(testPhone).then((r: any) => r.data ?? r),
-    onSuccess: (r: { sent: boolean; error?: string }) => {
-      if (r.sent) toast.success('Test message sent. Check that phone.');
-      else toast.error(r.error ?? 'The test message could not be sent');
-      qc.invalidateQueries({ queryKey: ['whatsapp-messages'] });
-      qc.invalidateQueries({ queryKey: ['whatsapp-status'] });
-    },
-    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'The test message could not be sent'),
-  });
-
-  const [tpl, setTpl] = useState<string | null>(null);
-  const tplValue = tpl ?? tplData?.template ?? '';
-  const editTpl = (v: string) => { setTpl(v); setDirty(true); };
 
   useEffect(() => {
     if (data) {
@@ -190,8 +155,6 @@ function BillingConfigSection({ admin }: { admin: boolean }) {
         publishStatementToResidents: data.publishStatementToResidents ?? false,
         publishMeetingMinutes: data.publishMeetingMinutes ?? false,
         upiId: (data.additionalConfig as any)?.upiId ?? '',
-        whatsappEnabled: (data.additionalConfig as any)?.whatsapp?.enabled === true,
-        whatsappDays: ((data.additionalConfig as any)?.whatsapp?.reminderDays ?? [5, 10]).join(', '),
       });
     }
   }, [data]);
@@ -215,17 +178,10 @@ function BillingConfigSection({ admin }: { admin: boolean }) {
         publishStatementToResidents: form.publishStatementToResidents,
         publishMeetingMinutes: form.publishMeetingMinutes,
         upiId: form.upiId || undefined,
-        whatsappEnabled: !!form.whatsappEnabled,
-        whatsappReminderDays: parseReminderDays(String(form.whatsappDays ?? '')),
-        // Wording the same as the default is stored as "unset", so the society follows the default if it improves.
-        ...(tpl !== null ? { reminderTemplate: tpl.trim() === tplData?.defaultTemplate.trim() ? '' : tpl.trim() } : {}),
       }),
     onSuccess: () => {
       toast.success('Configuration saved');
       qc.invalidateQueries({ queryKey: ['society-config'] });
-      qc.invalidateQueries({ queryKey: ['reminder-template'] });
-      qc.invalidateQueries({ queryKey: ['billing-period-reminders'] });
-      setTpl(null);
       setDirty(false);
     },
     onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to save'),
@@ -355,158 +311,8 @@ function BillingConfigSection({ admin }: { admin: boolean }) {
           </p>
         )}
       </div>
-
-      <SectionDivider title="WhatsApp Reminder" icon={<Bell size={14} />} />
-      <div className="rounded-lg border border-green-100 bg-green-50 p-4 space-y-3">
-        <p className="text-xs text-green-800">
-          The message sent to a flat that has not paid. Each flat gets its own details filled in. It goes to the
-          tenant when the flat has one, otherwise to the owner. WhatsApp shows <code>*text*</code> in bold and{' '}
-          <code>_text_</code> in italics.
-        </p>
-        <div className="flex flex-wrap gap-1.5" aria-label="Details you can put in the message">
-          {(tplData?.placeholders ?? []).map((p) => (
-            <button
-              key={p.token}
-              type="button"
-              disabled={!admin}
-              title={`${p.token}: ${p.meaning}. Click to add it at the end.`}
-              onClick={() => editTpl(`${tplValue}${tplValue && !/\s$/.test(tplValue) ? ' ' : ''}${p.token}`)}
-              className="rounded-full border border-green-200 bg-white px-2.5 py-1 font-mono text-[11px] text-green-800 hover:bg-green-100 disabled:opacity-50"
-            >
-              {p.token}
-            </button>
-          ))}
-        </div>
-        <Textarea
-          label="Message"
-          rows={9}
-          maxLength={1500}
-          value={tplValue}
-          disabled={!admin}
-          onChange={(e) => editTpl(e.target.value)}
-        />
-        <div>
-          <p className="mb-1 text-xs font-medium text-slate-600">How it looks for one flat</p>
-          <pre className="whitespace-pre-wrap rounded-lg border border-green-100 bg-white p-3 font-sans text-xs text-slate-800">
-            {previewReminder(tplValue) || 'Nothing yet: the standard wording will be used.'}
-          </pre>
-        </div>
-        {admin && tplData && tplValue.trim() !== tplData.defaultTemplate.trim() && (
-          <button
-            type="button"
-            onClick={() => editTpl(tplData.defaultTemplate)}
-            className="text-xs font-medium text-green-800 underline hover:text-green-900"
-          >
-            Go back to the standard wording
-          </button>
-        )}
-      </div>
-
-      <SectionDivider title="WhatsApp Automation" icon={<Bell size={14} />} />
-      <div className="space-y-3 rounded-lg border border-green-100 bg-green-50 p-4">
-        <p className="text-xs text-green-800">
-          Sends WhatsApp messages by itself: when the bills are published, as a reminder on the days below if a flat has
-          not paid, when a late fine is added, and when a payment is received. They go to the tenant when the flat has
-          one, otherwise the owner. Messages are sent one at a time, between 9 am and 8 pm only.
-        </p>
-
-        {/* Is WhatsApp connected? */}
-        <div className="rounded-lg border border-green-100 bg-white px-3 py-2 text-xs text-slate-700">
-          {!waStatus ? (
-            'Checking the WhatsApp connection…'
-          ) : !waStatus.configured ? (
-            <span className="text-amber-700">
-              WhatsApp is not connected to this server yet. The platform owner sets it up once (see the setup notes); until
-              then nothing is sent.
-            </span>
-          ) : waStatus.session === 'ready' ? (
-            <span className="text-green-700">
-              Connected{waStatus.sendingFrom ? ` — sending from +${waStatus.sendingFrom}` : ''}. {waStatus.sentToday} sent today,{' '}
-              {waStatus.queued} waiting{waStatus.failedThisWeek > 0 ? `, ${waStatus.failedThisWeek} failed this week` : ''}.
-            </span>
-          ) : (
-            <span className="text-amber-700">
-              WhatsApp is not ready ({waStatus.session ?? waStatus.problem ?? 'unknown'}). Messages wait in the queue and go
-              out once it reconnects.
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-start justify-between rounded-lg border border-green-100 bg-white px-4 py-3">
-          <div>
-            <p className="text-sm font-medium text-slate-800">Send WhatsApp messages automatically</p>
-            <p className="text-xs text-slate-500">Off until you switch it on. Turning it off stops anything still waiting.</p>
-          </div>
-          <Toggle
-            checked={!!form.whatsappEnabled}
-            onChange={(v) => setVal('whatsappEnabled', v)}
-            disabled={!admin || (waStatus ? !waStatus.configured : false)}
-          />
-        </div>
-
-        <div>
-          <Input
-            label="Send reminders on these days of the month"
-            value={form.whatsappDays ?? ''}
-            onChange={inp('whatsappDays')}
-            disabled={!admin}
-            placeholder="5, 10"
-            hint="Days 1 to 28, separated by commas. Only flats that have not paid are reminded, once a day."
-          />
-          <p className="mt-1 text-[11px] text-green-800">
-            The late-fine message goes out when the fine is actually added. That is the day after the due date plus the grace
-            days in Billing above. Set grace days to 0 if you want it on the 11th for a due date of the 10th.
-          </p>
-        </div>
-
-        {admin && (
-          <div className="flex items-end gap-2">
-            <div className="flex-1">
-              <Input
-                label="Send a test message to"
-                value={testPhone}
-                onChange={(e) => setTestPhone(e.target.value)}
-                placeholder="98765 43210"
-                inputMode="tel"
-              />
-            </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => testMutation.mutate()}
-              loading={testMutation.isPending}
-              disabled={testPhone.replace(/\D/g, '').length < 8 || !waStatus?.configured}
-            >
-              Send test
-            </Button>
-          </div>
-        )}
-
-        {(waMessages ?? []).length > 0 && (
-          <div>
-            <p className="mb-1 text-xs font-medium text-slate-600">Latest messages</p>
-            <ul className="divide-y divide-green-100 rounded-lg border border-green-100 bg-white text-xs">
-              {(waMessages ?? []).map((m) => (
-                <li key={m.id} className="flex items-center justify-between gap-3 px-3 py-1.5">
-                  <span className="min-w-0 truncate text-slate-700">
-                    {WHATSAPP_KIND_LABEL[m.kind] ?? m.kind} · +{m.toPhone}
-                  </span>
-                  <span
-                    title={m.lastError ?? undefined}
-                    className={
-                      m.status === 'SENT' ? 'text-green-700' : m.status === 'FAILED' ? 'text-red-600' : 'text-amber-700'
-                    }
-                  >
-                    {m.status === 'SENT' ? 'Sent' : m.status === 'FAILED' ? 'Failed' : 'Waiting'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-
       {admin && (
+
         <div className="flex justify-end pt-1">
           <Button onClick={() => mutation.mutate()} loading={mutation.isPending} disabled={!dirty} size="sm">
             <Save size={14} className="mr-1.5" /> Save Configuration
@@ -1193,6 +999,18 @@ export default function SettingsPage() {
             Define how maintenance charges are calculated for each billing period.
           </p>
           <BillingRulesSection admin={admin} />
+
+          {/* WhatsApp: the reminder wording, the automatic messages, and (platform owner) linking the phone */}
+          <div className="mt-8 border-t border-slate-200 pt-6">
+            <div className="mb-1 flex items-center gap-2">
+              <MessageSquare size={16} className="text-green-600" />
+              <h3 className="text-base font-semibold text-slate-900">WhatsApp</h3>
+            </div>
+            <p className="mb-4 text-sm text-slate-500">
+              Payment reminders and automatic messages: bill published, reminders, late fine and payment received.
+            </p>
+            <WhatsappSection admin={admin} />
+          </div>
         </Card>
 
         {/* Roles & Permissions */}

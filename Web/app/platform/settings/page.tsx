@@ -17,6 +17,7 @@ import { PricingSupportCard } from '@/components/platform/PricingSupportCard';
 import { Card, DButton, DModal, DTable, Empty, Loading, PageHeader, Pill, TableWrap, Td } from '@/components/platform/ui';
 import { EmailCheckCard } from '@/components/platform/EmailCheckCard';
 import { MailSettingsCard } from '@/components/platform/MailSettingsCard';
+import { WhatsappConnectionCard } from '@/components/platform/WhatsappConnectionCard';
 import { formatDate, formatDateTime } from '@/lib/utils';
 
 const inputClass =
@@ -203,6 +204,8 @@ export default function PlatformSettingsPage() {
         <MailSettingsCard />
 
         <EmailCheckCard />
+
+        <WhatsappConnectionCard />
 
         <Card title="Adding a platform admin from the server" icon={Terminal}>
           <p className="text-sm text-gray-300">

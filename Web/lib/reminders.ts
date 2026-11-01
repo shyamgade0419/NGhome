@@ -77,3 +77,25 @@ export function parseReminderDays(text: string): number[] {
   const days = text.split(/[\s,;]+/).filter(Boolean).map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 28);
   return Array.from(new Set(days)).sort((a, b) => a - b).slice(0, 6);
 }
+
+/** The gateway connection saved from the console (never the key) and where messages are sent from now. */
+export interface WhatsappGatewayView {
+  source: 'console' | 'environment' | 'none';
+  url: string | null;
+  hasKey: boolean;
+  keyUnreadable: boolean;
+  sessionId: string | null;
+  environment: { url: string | null; hasKey: boolean; sessionId: string | null };
+  updatedAt: string | null;
+}
+
+/** Whether a phone is linked, and the QR code to scan while one is being linked. */
+export interface WhatsappConnection {
+  hasGateway: boolean;
+  sessionId: string | null;
+  /** `ready` means a phone is linked and messages can go out. */
+  status: string | null;
+  phone: string | null;
+  qrCode: string | null;
+  problem: string | null;
+}

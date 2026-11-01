@@ -17,7 +17,7 @@ import type { SlotFor, SlotRow, SlotStatus, VehicleRow } from '@/lib/vehicles';
 import type { AttendanceStatus, DayRow, MonthDay, RosterRow, Shift, SummaryRow } from '@/lib/attendance';
 import type { OpeningBalances, OpeningInputRow, OpeningSaveResult } from '@/lib/openingBalances';
 import type { AdvanceCredits, FlatDiscount, FlatDiscountInput } from '@/lib/flatDiscounts';
-import type { BillReminder, ReminderTemplate, WhatsappMessageRow, WhatsappStatus } from '@/lib/reminders';
+import type { BillReminder, ReminderTemplate, WhatsappConnection, WhatsappGatewayView, WhatsappMessageRow, WhatsappStatus } from '@/lib/reminders';
 
 // Dashboard — composites several report endpoints
 export const dashboardApi = {
@@ -689,6 +689,16 @@ export const platformApi = {
     api.post('/platform/admins', body),
   /** Logs in to the mail server and sends a real test message to the admin asking. */
   checkMail: (): Promise<{ data: MailCheckResult }> => api.post('/platform/mail/check'),
+  // The WhatsApp gateway (OpenWA) connection: saved here instead of in the server's environment.
+  whatsappGateway: (): Promise<{ data: WhatsappGatewayView }> => api.get('/platform/whatsapp/settings'),
+  saveWhatsappGateway: (body: { url: string; apiKey?: string | null; sessionId?: string | null }): Promise<{ data: WhatsappGatewayView }> =>
+    api.put('/platform/whatsapp/settings', body),
+  clearWhatsappGateway: (): Promise<{ data: WhatsappGatewayView }> => api.delete('/platform/whatsapp/settings'),
+  whatsappConnection: (): Promise<{ data: WhatsappConnection }> => api.get('/platform/whatsapp/connection'),
+  /** Starts linking a phone: finds or creates the session and starts it, so a QR code appears. */
+  connectWhatsapp: (): Promise<{ data: WhatsappConnection }> => api.post('/platform/whatsapp/connect'),
+  disconnectWhatsapp: (): Promise<{ data: WhatsappConnection }> => api.post('/platform/whatsapp/disconnect'),
+
   /** The mail login saved in the console (never the password) and where mail is sent from now. */
   mailSettings: (): Promise<{ data: MailSettingsView }> => api.get('/platform/mail/settings'),
   /** A blank password keeps the saved one. */
