@@ -106,6 +106,13 @@ enum ExpenseStatus {
   PAID
 }
 
+// The corpus is the one fund every society keeps; everything else (sinking fund, festival fund, legal
+// reserve) is OTHER. The kind only groups the totals: the money in a fund is earmarked inside the bank accounts.
+enum FundKind {
+  CORPUS
+  OTHER
+}
+
 enum SalaryStatus {
   DRAFT
   PROCESSED
@@ -480,29 +487,29 @@ model Floor {
 }
 
 model Flat {
-  id             String     @id @default(uuid())
-  societyId      String
-  buildingId     String
-  floorId        String?
-  unitNumber     String
-  flatCode       String
-  area           Decimal?   @db.Decimal(10, 2)
-  bedrooms       Int?
-  bathrooms      Int?
-  category       String?
-  status         FlatStatus @default(ACTIVE)
-  ownershipType  String?
-  parkingSlots   Int        @default(0)
+  id                 String     @id @default(uuid())
+  societyId          String
+  buildingId         String
+  floorId            String?
+  unitNumber         String
+  flatCode           String
+  area               Decimal?   @db.Decimal(10, 2)
+  bedrooms           Int?
+  bathrooms          Int?
+  category           String?
+  status             FlatStatus @default(ACTIVE)
+  ownershipType      String?
+  parkingSlots       Int        @default(0)
   // The water meter counts down (a fault in the meter): consumption is earlier minus later.
-  waterMeterReversed Boolean @default(false)
+  waterMeterReversed Boolean    @default(false)
   // Money the flat has paid ahead of what it owed. Applied to its next bill when that is published.
   // Never below zero (a CHECK in the migration); FlatCreditEntry is its ledger.
-  creditBalance Decimal @default(0) @db.Decimal(12, 2)
-  additionalInfo Json       @default("{}")
-  isActive       Boolean    @default(true)
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-  deletedAt      DateTime?
+  creditBalance      Decimal    @default(0) @db.Decimal(12, 2)
+  additionalInfo     Json       @default("{}")
+  isActive           Boolean    @default(true)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  deletedAt          DateTime?
 
   building             Building              @relation(fields: [buildingId], references: [id])
   floor                Floor?                @relation(fields: [floorId], references: [id])
@@ -632,33 +639,33 @@ model BillingPeriod {
 }
 
 model MaintenanceBill {
-  id                  String   @id @default(uuid())
+  id                  String    @id @default(uuid())
   societyId           String
   billingPeriodId     String
   flatId              String
   invoiceNumber       String
   flatCode            String
-  flatArea            Decimal? @db.Decimal(10, 2)
+  flatArea            Decimal?  @db.Decimal(10, 2)
   flatCategory        String?
-  residentCount       Int      @default(0)
-  baseAmount          Decimal  @default(0) @db.Decimal(12, 2)
-  adjustments         Decimal  @default(0) @db.Decimal(12, 2)
-  waterCharges        Decimal  @default(0) @db.Decimal(12, 2)
-  lateFee             Decimal  @default(0) @db.Decimal(12, 2)
-  otherCharges        Decimal  @default(0) @db.Decimal(12, 2)
-  totalAmount         Decimal  @default(0) @db.Decimal(12, 2)
-  paidAmount          Decimal  @default(0) @db.Decimal(12, 2)
-  pendingAmount       Decimal  @default(0) @db.Decimal(12, 2)
-  calculationSnapshot Json     @default("{}")
+  residentCount       Int       @default(0)
+  baseAmount          Decimal   @default(0) @db.Decimal(12, 2)
+  adjustments         Decimal   @default(0) @db.Decimal(12, 2)
+  waterCharges        Decimal   @default(0) @db.Decimal(12, 2)
+  lateFee             Decimal   @default(0) @db.Decimal(12, 2)
+  otherCharges        Decimal   @default(0) @db.Decimal(12, 2)
+  totalAmount         Decimal   @default(0) @db.Decimal(12, 2)
+  paidAmount          Decimal   @default(0) @db.Decimal(12, 2)
+  pendingAmount       Decimal   @default(0) @db.Decimal(12, 2)
+  calculationSnapshot Json      @default("{}")
   notes               String?
   dueDate             DateTime
-  isPaid              Boolean  @default(false)
-  isPublished         Boolean  @default(false)
+  isPaid              Boolean   @default(false)
+  isPublished         Boolean   @default(false)
   // When the late fine was put on this bill — set once, even when the fine is later waived, so a
   // bill is fined at most one time.
   lateFeeAppliedAt    DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   billingPeriod      BillingPeriod       @relation(fields: [billingPeriodId], references: [id])
   flat               Flat                @relation(fields: [flatId], references: [id])
@@ -773,6 +780,7 @@ model Fund {
   name                 String
   description          String?
   accountId            String?
+  kind                 FundKind @default(OTHER)
   openingBalance       Decimal  @default(0) @db.Decimal(15, 2)
   currentBalance       Decimal  @default(0) @db.Decimal(15, 2)
   isVisibleToResidents Boolean  @default(false)
@@ -784,6 +792,7 @@ model Fund {
   account      Account?      @relation(fields: [accountId], references: [id])
   transactions Transaction[]
   events       Event[]
+  expenses     Expense[]
 
   @@index([societyId])
   @@map("funds")
@@ -863,10 +872,18 @@ model Expense {
   // without needing a bespoke Event.expenseId column.
   linkedEntityType String?
   linkedEntityId   String?
+  // The fund this was paid out of, if any: set when it is marked paid, so the fund and the bank account
+  // fall together and the funds never add up to more than the bank holds.
+  fundId           String?
+  // The last time an admin corrected a posted expense, and the comment they gave. Every correction (old
+  // and new values, who, why) is in the audit log; these two put the latest on the row.
+  correctedAt      DateTime?
+  correctionNote   String?
 
   society    Society          @relation(fields: [societyId], references: [id], onDelete: Cascade)
   category   ExpenseCategory? @relation(fields: [categoryId], references: [id])
   account    Account?         @relation(fields: [accountId], references: [id])
+  fund       Fund?            @relation(fields: [fundId], references: [id])
   createdBy  User             @relation("ExpenseCreator", fields: [createdById], references: [id])
   approvedBy User?            @relation("ExpenseApprover", fields: [approvedById], references: [id])
   documents  Document[]       @relation("ExpenseDocuments")
@@ -874,6 +891,7 @@ model Expense {
   @@index([societyId])
   @@index([linkedEntityType, linkedEntityId])
   @@index([expenseDate])
+  @@index([fundId])
   @@map("expenses")
 }
 
@@ -960,10 +978,10 @@ model PaymentSubmission {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  flat            Flat             @relation(fields: [flatId], references: [id])
-  user            User             @relation(fields: [userId], references: [id])
-  maintenanceBill MaintenanceBill? @relation(fields: [maintenanceBillId], references: [id])
-  documents       Document[]       @relation("PaymentDocuments")
+  flat            Flat                @relation(fields: [flatId], references: [id])
+  user            User                @relation(fields: [userId], references: [id])
+  maintenanceBill MaintenanceBill?    @relation(fields: [maintenanceBillId], references: [id])
+  documents       Document[]          @relation("PaymentDocuments")
   allocations     PaymentAllocation[]
 
   // A UTR is a real bank-assigned reference for one specific transaction —
@@ -1953,7 +1971,7 @@ model FlatCreditEntry {
   flatId    String
   // + paid ahead   - used against a bill
   amount    Decimal  @db.Decimal(12, 2)
-  kind      String   // ADVANCE_PAYMENT | APPLIED_TO_BILL | CORRECTION | REFUND
+  kind      String // ADVANCE_PAYMENT | APPLIED_TO_BILL | CORRECTION | REFUND
   paymentId String?
   billId    String?
   createdAt DateTime @default(now())

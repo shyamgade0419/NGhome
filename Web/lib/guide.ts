@@ -123,6 +123,7 @@ export const GUIDE: GuidePart[] = [
         summary: 'Invite codes, approvals, and marking someone as an owner or a tenant.',
         blocks: [
           { type: 'p', text: 'A resident joins from the app or the web with the society\'s **invite code** (shown in Settings → Resident Invite Code; **Regenerate code** replaces it if it leaks). They enter their details, pick their flat, and say whether they are the **owner** or a **tenant**.' },
+          { type: 'warn', text: 'Add your flats before you share the code. A resident chooses their flat from the list you add under **Flats**; if there are none, they see "has not added its flats yet" and cannot finish joining. The invite code card in Settings tells you when there are no flats.' },
           { type: 'list', items: [
             'The first person to join a flat is let in straight away.',
             'Anyone joining a flat that already has a resident (a spouse, a tenant, a co-owner) waits in **Pending Approvals** at the top of Residents. The request says whether they claim to be an owner or a tenant. Approve or reject it.',
@@ -499,7 +500,13 @@ export const GUIDE: GuidePart[] = [
           { type: 'steps', items: [
             '**Log Expense:** the description, amount, category, vendor and date.',
             '**Approve** records that the committee agreed to the spend. No money moves yet.',
-            '**Mark Paid** and choose the account it came out of. This reduces the balance and writes the ledger entry.',
+            '**Mark Paid** and choose the account it came out of. This reduces the balance and writes the ledger entry. If it is spent from a fund (the corpus, a festival fund), also choose the fund under **Paid out of**; the fund goes down by the same amount.',
+          ] },
+          { type: 'p', text: '**Correcting an expense.** A wrong amount or date can be fixed after it is posted. Click **Edit** on the row (on the phone, **Correct**), change what is wrong and write a **comment** saying why. Until it is approved anyone who handles expenses can edit it without a comment; once it is approved or paid, only the **admin** can, and the comment is required.' },
+          { type: 'list', items: [
+            'On a **paid** expense, changing the amount also moves the account it was paid from (and the fund, if it came out of one) by the difference, and adds a correcting entry to the account\'s ledger. The form tells you the effect before you save.',
+            'The row then shows **Corrected** with your comment. Click it to see every correction: what changed, who changed it, when and why. The old values stay in the Audit Logs.',
+            'The account a paid expense came out of cannot be changed, and an expense recorded from an event keeps the amount set there (undo and record the event again to change it).',
           ] },
           { type: 'p', text: '**Receipts.** On the mobile app, **Add Expense** has a **Receipt** section: **Take photo** opens the camera to photograph the bill, and **Photo or PDF** attaches one from the phone. You can attach up to six. On any expense card, **Add receipt** adds one later, tap a receipt to open it, and the cross removes it. Receipts can be added to any expense that is not rejected, and cannot be removed once the expense is paid.' },
           { type: 'tip', text: 'The camera asks for permission the first time. If you said no, the app tells you how to turn it on in your phone\'s settings.' },
@@ -511,13 +518,15 @@ export const GUIDE: GuidePart[] = [
         audience: 'admin',
         summary: 'Where the money is tracked, and who can see it.',
         blocks: [
-          { type: 'p', text: '**Accounts** are where money is tracked: a bank account or a cash box. An account is a record, not a connection to your bank; its balance moves as you approve payments and mark expenses paid. **Funds** (the corpus, a sinking fund) are earmarks inside your accounts, not separate bank accounts, which is why the page shows Total Bank Balance and Total Fund Balance as two figures.' },
+          { type: 'p', text: '**Accounts** are where money is tracked: a bank account or a cash box. An account is a record, not a connection to your bank; its balance moves as you approve payments and mark expenses paid. **Funds** are earmarks inside your accounts, not separate bank accounts. There are two kinds: the **Corpus Fund** (one per society) and **Other Funds** for anything else you keep apart, such as a sinking fund, a festival fund or a legal reserve. Add as many Other Funds as you need.' },
+          { type: 'p', text: '**Where the money is.** At the top of the page, the bank total is split into the corpus, each other fund, and **maintenance and general money**, which is what the bank holds that no fund has set aside. They always add up to the bank: corpus + other funds + maintenance and general money = what is in the bank. Adding money to a fund, or paying an expense from one, moves it between the fund and the general money; the bank total only changes when money really comes in or goes out.' },
           { type: 'shot', src: '/help/accounts.jpg', alt: 'Accounts and Funds with two bank accounts and two reserve funds', caption: 'Accounts & Funds: your accounts with their balances, and the reserve funds, each with a "Visible to residents" setting.' },
           { type: 'steps', items: [
             '**Accounts → New Account:** name, type (Savings, Current, Cash), optional bank details and the opening balance.',
-            '**New Fund:** name it, enter what it holds today, and decide whether **residents can see it**. This is off by default.',
+            '**Corpus Fund** (until you have one) or **Other Fund:** name it, enter what it holds today, and decide whether **residents can see it**. This is off by default.',
             '**Add Money** on a fund records a contribution. Leave "Also credit a bank account" off when the money already arrived as resident payments.',
           ] },
+          { type: 'warn', text: 'If a red note says the funds are more than the bank holds, money was added to a fund that never reached the bank, or money left the bank without being taken from a fund. Look at the recent Add Money entries and expenses.' },
           { type: 'warn', text: 'Tenants never see funds or the bank balance, whatever you set. Owners see only the funds you made visible, and the bank total only if you switched that on.' },
         ],
       },
@@ -711,6 +720,9 @@ export const GUIDE: GuidePart[] = [
             ['A flat has an advance but its bill is not paid', 'The advance is applied when the period is published. If the bill was published before the payment was approved, it was cleared by that payment instead.'],
             ['A flat owes money from before we started using the app', 'Enter it under Billing → Opening Balances. It becomes the flat\'s oldest due, shows as arrears, and is cleared first by the next payment.'],
             ['I cannot change or remove an opening balance', 'A payment has been made against it, so it is locked. The admin can fix it with Correct, giving a reason.'],
+            ['A resident cannot find their flat when joining', 'Their society has no flats added yet, or not that one. Add it under Flats, then they can pick it with the same invite code.'],
+            ['An expense has the wrong amount or date', 'Click Edit (Correct on the phone) on the expense, change it and write a comment. For an approved or paid expense only the admin can, and the account moves by the difference.'],
+            ['The funds do not match the bank', 'Open Accounts. Where the money is shows the bank split into the corpus, other funds and maintenance and general money, and tells you if the funds are more than the bank holds.'],
             ['A flat should pay less every month', 'Add a Flat Discount under Billing → Flat Discounts. It is taken off every bill generated and kept when bills are regenerated.'],
             ['A discount I added did not change a bill', 'The bill was generated before the discount. Generate that period\'s bills again (before publishing) and it will be applied.'],
             ['A flat wants its advance back', 'The admin can refund it under Billing → Advance Credit, from an account that holds the money.'],

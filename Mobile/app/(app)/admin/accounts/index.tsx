@@ -27,8 +27,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { accountsApi, fundsApi, SocietyAccount, SocietyFund, AccountType } from '@/api/endpoints/accounts.api';
+import { accountsApi, fundsApi, SocietyAccount, SocietyFund, AccountType, FundKind, FundSummary } from '@/api/endpoints/accounts.api';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
+import { inr as inrExact } from '@/utils/format';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
@@ -151,6 +152,7 @@ function NewAccountModal({ onClose }: { onClose: () => void }) {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['accounts'] });
+      qc.invalidateQueries({ queryKey: ['fund-summary'] });
       onClose();
     },
     onError: (e: any) =>
@@ -270,8 +272,9 @@ function NewAccountModal({ onClose }: { onClose: () => void }) {
 
 // ── Fund create / contribute ─────────────────────────────────────────────────
 
-function NewFundModal({ onClose }: { onClose: () => void }) {
+function NewFundModal({ onClose, initialKind, hasCorpus }: { onClose: () => void; initialKind: FundKind; hasCorpus: boolean }) {
   const qc = useQueryClient();
+  const [kind, setKind] = useState<FundKind>(initialKind);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [openingBalance, setOpeningBalance] = useState('');
@@ -283,6 +286,7 @@ function NewFundModal({ onClose }: { onClose: () => void }) {
   const mutation = useMutation({
     mutationFn: () =>
       fundsApi.create({
+        kind,
         name: name.trim(),
         description: description.trim() || undefined,
         openingBalance: openingBalance ? parseFloat(openingBalance) : undefined,
@@ -290,6 +294,7 @@ function NewFundModal({ onClose }: { onClose: () => void }) {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['funds'] });
+      qc.invalidateQueries({ queryKey: ['fund-summary'] });
       onClose();
     },
     onError: (e: any) =>
@@ -300,19 +305,40 @@ function NewFundModal({ onClose }: { onClose: () => void }) {
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.modalHeader}>
-          <Text style={[styles.modalTitle, { flex: 1 }]}>New Fund</Text>
+          <Text style={[styles.modalTitle, { flex: 1 }]}>{kind === 'CORPUS' ? 'New Corpus Fund' : 'New Fund'}</Text>
           <TouchableOpacity onPress={onClose} hitSlop={12}>
             <Ionicons name="close" size={22} color={colors.text} />
           </TouchableOpacity>
         </View>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
-            <Text style={styles.label}>Fund Name *</Text>
+            <Text style={styles.label}>Kind of fund</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+              {([
+                { value: 'OTHER' as FundKind, label: 'Other fund' },
+                ...(hasCorpus ? [] : [{ value: 'CORPUS' as FundKind, label: 'Corpus fund' }]),
+              ]).map((k) => (
+                <TouchableOpacity
+                  key={k.value}
+                  style={[styles.chip, kind === k.value && styles.chipActive]}
+                  onPress={() => setKind(k.value)}
+                  accessibilityLabel={`Kind ${k.label}`}
+                >
+                  <Text style={[styles.chipText, kind === k.value && styles.chipTextActive]}>{k.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <Text style={styles.hint}>
+              A fund is money set aside inside your accounts, not extra money: it comes out of the maintenance and
+              general money shown on the Funds tab.
+            </Text>
+
+            <Text style={[styles.label, { marginTop: spacing.base }]}>Fund Name *</Text>
             <TextInput
               style={styles.input}
               value={name}
               onChangeText={setName}
-              placeholder="e.g. Corpus Fund, Sinking Fund"
+              placeholder={kind === 'CORPUS' ? 'Corpus Fund' : 'e.g. Festival Fund, Sinking Fund'}
               placeholderTextColor={colors.textTertiary}
             />
 
@@ -398,6 +424,7 @@ function ContributeModal({ fund, onClose }: { fund: SocietyFund; onClose: () => 
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['funds'] });
       qc.invalidateQueries({ queryKey: ['accounts'] });
+      qc.invalidateQueries({ queryKey: ['fund-summary'] });
       onClose();
     },
     onError: (e: any) =>
@@ -499,6 +526,53 @@ function ContributeModal({ fund, onClose }: { fund: SocietyFund; onClose: () => 
 
 // ── Screen ───────────────────────────────────────────────────────────────────
 
+/**
+ * The bank total, split into the corpus, every other fund and what is left, so the parts visibly add up to it.
+ * A fund is set aside inside the accounts, so what is left is the bank minus the funds; if that goes negative
+ * the funds claim more than the bank holds and something needs checking.
+ */
+function MoneyPicture({ money }: { money: FundSummary }) {
+  const Line = ({ label, sub, value, strong }: { label: string; sub?: string; value: string; strong?: boolean }) => (
+    <View style={styles.pictureRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={strong ? styles.pictureStrong : styles.pictureLabel}>{label}</Text>
+        {sub ? <Text style={styles.rowMeta}>{sub}</Text> : null}
+      </View>
+      <Text style={strong ? styles.pictureStrong : styles.pictureValue}>{inrExact(value, { decimals: true })}</Text>
+    </View>
+  );
+
+  return (
+    <View style={styles.picture} accessibilityLabel="Where the money is">
+      <View style={styles.pictureHead}>
+        <Text style={styles.pictureTitle}>Where the money is</Text>
+        <Text style={[styles.pictureBadge, { color: money.fundsExceedBank ? colors.error : colors.success }]}>
+          {money.fundsExceedBank ? 'Funds are more than the bank' : 'Adds up to the bank'}
+        </Text>
+      </View>
+      <Line label="In the bank accounts" sub={`${money.accounts.length} active account${money.accounts.length === 1 ? '' : 's'}`} value={money.bankTotal} strong />
+      <View style={styles.pictureIndent}>
+        <Line
+          label="Corpus fund"
+          sub={money.corpus.funds.length === 0 ? 'No corpus fund yet' : money.corpus.funds.map((f) => f.name).join(', ')}
+          value={money.corpus.total}
+        />
+        {money.other.funds.length === 0 ? (
+          <Line label="Other funds" sub="None yet" value={money.other.total} />
+        ) : (
+          money.other.funds.map((f) => <Line key={f.id} label={f.name} sub="Other fund" value={f.balance} />)
+        )}
+        <Line label="Maintenance and general money" sub="What the bank holds that no fund has set aside" value={money.generalBalance} strong />
+      </View>
+      <Text style={styles.hint}>
+        {money.fundsExceedBank
+          ? 'The funds add up to more than the accounts hold. Either money was added to a fund that never reached the bank, or money left the bank without being taken from a fund.'
+          : 'Corpus + other funds + maintenance and general money = what is in the bank.'}
+      </Text>
+    </View>
+  );
+}
+
 /** Funds are earmarked pools (corpus, sinking fund) held across accounts. */
 function FundsTab({
   onNewFund,
@@ -511,6 +585,10 @@ function FundsTab({
     queryKey: ['funds'],
     queryFn: fundsApi.list,
   });
+  const { data: money, refetch: refetchMoney } = useQuery({
+    queryKey: ['fund-summary'],
+    queryFn: fundsApi.summary,
+  });
 
   if (isLoading) return <LoadingState message="Loading funds…" />;
 
@@ -522,15 +600,22 @@ function FundsTab({
       data={funds}
       keyExtractor={(f) => f.id}
       contentContainerStyle={styles.list}
-      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />}
+      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={() => { refetch(); refetchMoney(); }} tintColor={colors.primary} />}
       ListHeaderComponent={
-        funds.length > 0 ? (
-          <View style={styles.banner}>
-            <Text style={styles.bannerLabel}>Total Across Funds</Text>
-            <Text style={styles.bannerValue}>{inr(total)}</Text>
-            <Text style={styles.bannerSub}>{funds.length} fund{funds.length === 1 ? '' : 's'}</Text>
-          </View>
-        ) : null
+        <>
+          {money ? <MoneyPicture money={money} /> : null}
+          {funds.length > 0 ? (
+            <View style={styles.banner}>
+              <Text style={styles.bannerLabel}>Total Across Funds</Text>
+              <Text style={styles.bannerValue}>{inr(total)}</Text>
+              <Text style={styles.bannerSub}>{funds.length} fund{funds.length === 1 ? '' : 's'}</Text>
+            </View>
+          ) : null}
+          <TouchableOpacity style={styles.addFundBtn} onPress={onNewFund} activeOpacity={0.8} accessibilityLabel="Add another fund">
+            <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
+            <Text style={styles.addMoneyText}>Add another fund</Text>
+          </TouchableOpacity>
+        </>
       }
       ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
       renderItem={({ item }) => {
@@ -540,6 +625,7 @@ function FundsTab({
             <View style={styles.cardTopRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowTitle}>{item.name}</Text>
+                <Text style={styles.rowMeta}>{item.kind === 'CORPUS' ? 'Corpus fund' : 'Other fund'}</Text>
                 {item.description ? (
                   <Text style={styles.rowMeta} numberOfLines={1}>{item.description}</Text>
                 ) : null}
@@ -579,6 +665,8 @@ export default function AccountsScreen() {
   const [tab, setTab] = useState<'Accounts' | 'Funds'>('Accounts');
   const [showNewFund, setShowNewFund] = useState(false);
   const [showNewAccount, setShowNewAccount] = useState(false);
+  const { data: fundList } = useQuery({ queryKey: ['funds'], queryFn: fundsApi.list });
+  const hasCorpus = (fundList ?? []).some((fnd) => fnd.kind === 'CORPUS');
   const [contributeTo, setContributeTo] = useState<SocietyFund | null>(null);
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
@@ -673,7 +761,7 @@ export default function AccountsScreen() {
       )}
 
       {selected && <LedgerModal account={selected} onClose={() => setSelected(null)} />}
-      {showNewFund && <NewFundModal onClose={() => setShowNewFund(false)} />}
+      {showNewFund && <NewFundModal onClose={() => setShowNewFund(false)} initialKind="OTHER" hasCorpus={hasCorpus} />}
       {showNewAccount && <NewAccountModal onClose={() => setShowNewAccount(false)} />}
       {contributeTo && (
         <ContributeModal fund={contributeTo} onClose={() => setContributeTo(null)} />
@@ -760,6 +848,23 @@ const styles = StyleSheet.create({
     marginTop: spacing.base,
   },
   chipScroll: { marginTop: 6, marginBottom: spacing.sm },
+
+  picture: {
+    backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.base, marginBottom: spacing.md, gap: 4,
+  },
+  pictureHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  pictureTitle: { ...typography.labelLarge, color: colors.text, fontWeight: '700' },
+  pictureBadge: { ...typography.labelSmall, fontWeight: '600' },
+  pictureRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, paddingVertical: 5 },
+  pictureIndent: { paddingLeft: spacing.base },
+  pictureLabel: { ...typography.bodyMedium, color: colors.text },
+  pictureValue: { ...typography.bodyMedium, color: colors.text },
+  pictureStrong: { ...typography.bodyMedium, color: colors.text, fontWeight: '700' },
+  addFundBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 10, borderRadius: radius.md, borderWidth: 1, borderColor: colors.primary, marginBottom: spacing.md,
+  },
   chip: {
     paddingHorizontal: 12, paddingVertical: 6,
     borderRadius: radius.full,

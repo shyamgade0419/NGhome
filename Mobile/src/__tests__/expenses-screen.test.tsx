@@ -37,7 +37,10 @@ jest.mock('@/api/endpoints/accounts.api', () => ({
       { id: 'acc-1', name: 'Main Account', currentBalance: '100000' },
     ]),
   },
+  fundsApi: { list: jest.fn().mockResolvedValue([]) },
 }));
+
+jest.mock('@/hooks/useAuth', () => ({ useIsSocietyAdmin: () => true }));
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
 jest.mock('@/components/layout/ScreenHeader', () => ({ ScreenHeader: () => null }));

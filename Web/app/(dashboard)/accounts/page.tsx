@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Landmark, Plus } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Landmark, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { accountsApi } from '@/lib/api/endpoints';
 import { Header } from '@/components/layout/Header';
@@ -32,6 +32,7 @@ const createAccountSchema = z.object({
 type CreateAccountForm = z.infer<typeof createAccountSchema>;
 
 const createFundSchema = z.object({
+  kind: z.enum(['CORPUS', 'OTHER']),
   name: z.string().min(1, 'Required'),
   description: z.string().optional(),
   openingBalance: z.coerce.number().min(0).optional(),
@@ -67,6 +68,14 @@ export default function AccountsPage() {
   const accounts: any[] = Array.isArray(accountsData) ? accountsData : (accountsData?.data ?? []);
   const funds: any[] = Array.isArray(fundsData) ? fundsData : (fundsData?.data ?? []);
 
+  // Where the money is, worked out on the server so the web and the app always agree: the bank total split into
+  // the corpus, every other fund, and what is left (maintenance and general money).
+  const { data: money } = useQuery({
+    queryKey: ['fund-summary'],
+    queryFn: () => accountsApi.fundSummary().then((r: any) => r.data as FundSummary),
+  });
+  const hasCorpus = funds.some((f: any) => f.kind === 'CORPUS');
+
   const [showNewAccount, setShowNewAccount] = useState(false);
 
   const createAccountForm = useForm<CreateAccountForm>({
@@ -78,6 +87,7 @@ export default function AccountsPage() {
     mutationFn: (d: CreateAccountForm) => accountsApi.createAccount(d),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['accounts'] });
+      qc.invalidateQueries({ queryKey: ['fund-summary'] });
       toast.success('Account created');
       setShowNewAccount(false);
       createAccountForm.reset({ accountType: 'CURRENT' });
@@ -85,16 +95,22 @@ export default function AccountsPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to create account'),
   });
 
-  const createFundForm = useForm<CreateFundForm>({ resolver: zodResolver(createFundSchema) });
+  const createFundForm = useForm<CreateFundForm>({ resolver: zodResolver(createFundSchema), defaultValues: { kind: 'OTHER' } });
+  const fundKind = createFundForm.watch('kind');
+  const openNewFund = (kind: 'CORPUS' | 'OTHER') => {
+    createFundForm.reset({ kind });
+    setShowNewFund(true);
+  };
   const contributeForm = useForm<ContributeForm>({ resolver: zodResolver(contributeSchema) });
 
   const createFund = useMutation({
     mutationFn: (d: CreateFundForm) => accountsApi.createFund(d),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['funds'] });
+      qc.invalidateQueries({ queryKey: ['fund-summary'] });
       toast.success('Fund created');
       setShowNewFund(false);
-      createFundForm.reset();
+      createFundForm.reset({ kind: 'OTHER' });
     },
     onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to create fund'),
   });
@@ -109,6 +125,7 @@ export default function AccountsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['funds'] });
       qc.invalidateQueries({ queryKey: ['accounts'] });
+      qc.invalidateQueries({ queryKey: ['fund-summary'] });
       toast.success('Added to fund');
       setContributeTo(null);
       contributeForm.reset();
@@ -150,6 +167,9 @@ export default function AccountsPage() {
             </p>
           </Card>
         </div>
+
+        {/* Where the money is: the bank, split so the parts add up to it */}
+        {money && <MoneyPicture money={money} />}
 
         {/* Accounts table */}
         <div className="mb-3 flex items-center justify-between">
@@ -211,18 +231,26 @@ export default function AccountsPage() {
           <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">
             Reserve Funds
           </h2>
-          <Button size="sm" onClick={() => setShowNewFund(true)}>
-            <Plus size={14} /> New Fund
-          </Button>
+          <div className="flex gap-2">
+            {!hasCorpus && (
+              <Button size="sm" variant="outline" onClick={() => openNewFund('CORPUS')}>
+                <Plus size={14} /> Corpus Fund
+              </Button>
+            )}
+            <Button size="sm" onClick={() => openNewFund('OTHER')}>
+              <Plus size={14} /> Other Fund
+            </Button>
+          </div>
         </div>
         {funds.length === 0 ? (
-          <p className="text-sm text-slate-500">No reserve funds configured.</p>
+          <p className="text-sm text-slate-500">No funds yet. Add a Corpus Fund, or an Other Fund for a sinking fund, a festival fund or any money you keep apart.</p>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
             <Table>
               <Thead>
                 <Tr>
                   <Th>Name</Th>
+                  <Th>Kind</Th>
                   <Th>Description</Th>
                   <Th className="text-right">Opening Balance</Th>
                   <Th className="text-right">Current Balance</Th>
@@ -234,6 +262,9 @@ export default function AccountsPage() {
                 {funds.map((f: any) => (
                   <Tr key={f.id}>
                     <Td className="font-medium text-slate-900">{f.name}</Td>
+                    <Td>
+                      <Badge variant={f.kind === 'CORPUS' ? 'info' : 'default'}>{f.kind === 'CORPUS' ? 'Corpus' : 'Other'}</Badge>
+                    </Td>
                     <Td className="text-slate-600">{f.description ?? '—'}</Td>
                     <Td className="text-right text-slate-600">{formatCurrency(f.openingBalance)}</Td>
                     <Td className="text-right font-semibold text-slate-900">{formatCurrency(f.currentBalance)}</Td>
@@ -324,16 +355,24 @@ export default function AccountsPage() {
       {/* Create fund */}
       <Modal
         open={showNewFund}
-        onClose={() => { setShowNewFund(false); createFundForm.reset(); }}
-        title="Create Fund"
+        onClose={() => { setShowNewFund(false); createFundForm.reset({ kind: 'OTHER' }); }}
+        title={fundKind === 'CORPUS' ? 'Create Corpus Fund' : 'Create Other Fund'}
       >
         <form
           onSubmit={createFundForm.handleSubmit((d) => createFund.mutate(d))}
           className="space-y-4"
         >
+          <Select
+            label="Kind of fund"
+            options={[
+              { value: 'OTHER', label: 'Other fund (sinking, festival, legal, …)' },
+              ...(hasCorpus ? [] : [{ value: 'CORPUS', label: 'Corpus fund' }]),
+            ]}
+            {...createFundForm.register('kind')}
+          />
           <Input
             label="Fund Name"
-            placeholder="Corpus Fund"
+            placeholder={fundKind === 'CORPUS' ? 'Corpus Fund' : 'e.g. Festival Fund, Sinking Fund'}
             error={createFundForm.formState.errors.name?.message}
             {...createFundForm.register('name')}
           />
@@ -352,7 +391,8 @@ export default function AccountsPage() {
           />
           <p className="-mt-2 text-xs text-slate-500">
             What the fund already holds today. Later additions go through Add Money, so they
-            leave a ledger entry.
+            leave a ledger entry. A fund is money set aside inside your bank accounts, not extra
+            money: it is taken out of the maintenance and general money shown above.
           </p>
           {/* Unchecked by default: this is the only control over whether
               residents see this fund, so exposure should be a deliberate act
@@ -366,7 +406,7 @@ export default function AccountsPage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => { setShowNewFund(false); createFundForm.reset(); }}
+              onClick={() => { setShowNewFund(false); createFundForm.reset({ kind: 'OTHER' }); }}
             >
               Cancel
             </Button>
@@ -426,5 +466,78 @@ export default function AccountsPage() {
         </form>
       </Modal>
     </>
+  );
+}
+
+interface FundSummary {
+  bankTotal: string;
+  accounts: { id: string; name: string; balance: string }[];
+  corpus: { total: string; funds: { id: string; name: string; balance: string }[] };
+  other: { total: string; funds: { id: string; name: string; balance: string }[] };
+  fundsTotal: string;
+  generalBalance: string;
+  fundsExceedBank: boolean;
+  adds: boolean;
+}
+
+/**
+ * The bank total, split into what each fund holds and what is left, so the parts visibly add up to the bank.
+ * A fund is money set aside inside the accounts, so what is left is simply the bank minus the funds; if that
+ * goes negative the funds claim more than the bank holds and something needs checking.
+ */
+function MoneyPicture({ money }: { money: FundSummary }) {
+  const Row = ({ label, sub, value, strong }: { label: string; sub?: string; value: string; strong?: boolean }) => (
+    <div className="flex items-baseline justify-between gap-4 py-1.5">
+      <div className="min-w-0">
+        <p className={strong ? 'text-sm font-semibold text-slate-900' : 'text-sm text-slate-700'}>{label}</p>
+        {sub && <p className="text-xs text-slate-400">{sub}</p>}
+      </div>
+      <p className={strong ? 'text-base font-bold text-slate-900' : 'text-sm font-medium text-slate-900'}>{formatCurrency(value)}</p>
+    </div>
+  );
+
+  return (
+    <Card className="mb-8 p-5">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Where the money is</h2>
+        {money.fundsExceedBank ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700">
+            <AlertTriangle size={12} /> Funds are more than the bank holds
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
+            <CheckCircle2 size={12} /> Adds up to the bank
+          </span>
+        )}
+      </div>
+
+      <div className="divide-y divide-slate-100">
+        <Row label="In the bank accounts" sub={`${money.accounts.length} active account${money.accounts.length === 1 ? '' : 's'}`} value={money.bankTotal} strong />
+        <div className="pl-4">
+          <Row
+            label="Corpus fund"
+            sub={money.corpus.funds.length === 0 ? 'No corpus fund yet' : money.corpus.funds.map((f) => f.name).join(', ')}
+            value={money.corpus.total}
+          />
+          {money.other.funds.length === 0 ? (
+            <Row label="Other funds" sub="None yet" value={money.other.total} />
+          ) : (
+            money.other.funds.map((f) => <Row key={f.id} label={f.name} sub="Other fund" value={f.balance} />)
+          )}
+          <Row
+            label="Maintenance and general money"
+            sub="What the bank holds that no fund has set aside"
+            value={money.generalBalance}
+            strong
+          />
+        </div>
+      </div>
+
+      <p className="mt-3 text-xs text-slate-500">
+        {money.fundsExceedBank
+          ? 'The funds add up to more than the accounts hold. Either money was added to a fund that never arrived in the bank, or money left the bank without being taken from a fund. Check Add Money entries and expenses paid.'
+          : 'Corpus fund + other funds + maintenance and general money = what is in the bank. A fund is set aside inside the accounts, so adding to one lowers the general money, not the bank.'}
+      </p>
+    </Card>
   );
 }

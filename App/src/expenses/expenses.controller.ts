@@ -74,13 +74,22 @@ export class ExpensesController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update a pending expense' })
+  @ApiOperation({
+    summary: 'Edit an expense; an approved or paid one needs the admin and a comment (reason)',
+  })
   update(
     @SocietyId() societyId: string,
     @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateExpenseDto,
   ) {
-    return this.expensesService.update(societyId, id, dto);
+    return this.expensesService.update(societyId, id, dto, { id: user.id, role: user.currentRole });
+  }
+
+  @Get(':id/history')
+  @ApiOperation({ summary: 'The corrections made to an expense: what changed, who, and why' })
+  history(@SocietyId() societyId: string, @Param('id') id: string) {
+    return this.expensesService.history(societyId, id);
   }
 
   @Delete(':id')
@@ -169,6 +178,6 @@ export class ExpensesController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: MarkExpensePaidDto,
   ) {
-    return this.expensesService.markPaid(societyId, id, body.accountId, user.id);
+    return this.expensesService.markPaid(societyId, id, body.accountId, user.id, body.fundId);
   }
 }

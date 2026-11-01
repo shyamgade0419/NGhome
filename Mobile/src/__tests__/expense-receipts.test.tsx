@@ -30,7 +30,11 @@ jest.mock('@/api/endpoints/expenses.api', () => ({
     removeReceipt: (...a: unknown[]) => mockRemove(...a),
   },
 }));
-jest.mock('@/api/endpoints/accounts.api', () => ({ accountsApi: { list: jest.fn().mockResolvedValue([]) } }));
+jest.mock('@/api/endpoints/accounts.api', () => ({
+  accountsApi: { list: jest.fn().mockResolvedValue([]) },
+  fundsApi: { list: jest.fn().mockResolvedValue([]) },
+}));
+jest.mock('@/hooks/useAuth', () => ({ useIsSocietyAdmin: () => true }));
 
 const mockCamera = jest.fn();
 const mockPermission = jest.fn();

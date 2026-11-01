@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma, TransactionType, AuditAction } from '@prisma/client';
+import { Prisma, TransactionType, AuditAction, FundKind } from '@prisma/client';
+import { buildFundSummary } from './fund-summary';
 import { ContributeFundDto } from './dto/contribute-fund.dto';
 
 import { CreateFundDto } from './dto/create-fund.dto';
@@ -10,15 +11,31 @@ export { CreateFundDto } from './dto/create-fund.dto';
 export class FundsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** A society keeps one corpus: more money for it goes in with Add Money, not in a second fund. */
+  private async assertNoOtherCorpus(societyId: string, exceptId?: string) {
+    const existing = await this.prisma.fund.findFirst({
+      where: { societyId, kind: FundKind.CORPUS, isActive: true, ...(exceptId ? { id: { not: exceptId } } : {}) },
+      select: { name: true },
+    });
+    if (existing) {
+      throw new ConflictException(
+        `This society already has a corpus fund (${existing.name}). Add money to it, or create this one as an Other fund.`,
+      );
+    }
+  }
+
   async create(societyId: string, dto: CreateFundDto) {
     if (dto.accountId) {
       const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId } });
       if (!account) throw new NotFoundException('Account not found in this society');
     }
+    const kind = dto.kind ?? FundKind.OTHER;
+    if (kind === FundKind.CORPUS) await this.assertNoOtherCorpus(societyId);
 
     return this.prisma.fund.create({
       data: {
         societyId,
+        kind,
         name: dto.name,
         description: dto.description,
         accountId: dto.accountId,
@@ -143,15 +160,37 @@ export class FundsService {
     });
   }
 
+  /**
+   * Where the money is: the bank accounts, the corpus, every other fund and what is left over, with a check
+   * that they add up. See fund-summary.ts for why the parts always sum to the bank.
+   */
+  async summary(societyId: string) {
+    const [accounts, funds] = await Promise.all([
+      this.prisma.account.findMany({
+        where: { societyId, isActive: true },
+        select: { id: true, name: true, currentBalance: true },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.fund.findMany({
+        where: { societyId, isActive: true },
+        select: { id: true, name: true, kind: true, currentBalance: true, isVisibleToResidents: true },
+        orderBy: { name: 'asc' },
+      }),
+    ]);
+    return buildFundSummary(accounts, funds);
+  }
+
   async update(societyId: string, id: string, dto: Partial<CreateFundDto>) {
     await this.findOne(societyId, id);
     if (dto.accountId) {
       const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId } });
       if (!account) throw new NotFoundException('Account not found in this society');
     }
+    if (dto.kind === FundKind.CORPUS) await this.assertNoOtherCorpus(societyId, id);
     return this.prisma.fund.update({
       where: { id },
       data: {
+        kind: dto.kind,
         name: dto.name,
         description: dto.description,
         accountId: dto.accountId,

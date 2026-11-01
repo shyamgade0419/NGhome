@@ -71,16 +71,41 @@ export const accountsApi = {
 };
 
 /** Matches the real Fund model — fundType and targetAmount never existed. */
+export type FundKind = 'CORPUS' | 'OTHER';
+
 export interface SocietyFund {
   id: string;
   name: string;
+  /** The corpus, or any other fund (sinking, festival, legal). Only groups the totals. */
+  kind: FundKind;
   currentBalance: string;
   openingBalance: string;
   description: string | null;
   isVisibleToResidents: boolean;
 }
 
+/**
+ * Where the money is: the bank total split into the corpus, every other fund and what is left (maintenance and
+ * general money). A fund is set aside inside the accounts, so the parts always add up to the bank; if what is left
+ * is negative, the funds claim more than the bank holds.
+ */
+export interface FundSummary {
+  bankTotal: string;
+  accounts: { id: string; name: string; balance: string }[];
+  corpus: { total: string; funds: { id: string; name: string; balance: string }[] };
+  other: { total: string; funds: { id: string; name: string; balance: string }[] };
+  fundsTotal: string;
+  generalBalance: string;
+  fundsExceedBank: boolean;
+  adds: boolean;
+}
+
 export const fundsApi = {
+  summary: async () => {
+    const { data } = await apiClient.get('/funds/summary');
+    return ((data as any)?.data ?? data) as FundSummary;
+  },
+
   list: async () => {
     const { data } = await apiClient.get('/funds');
     return ((data as any)?.data ?? data) as SocietyFund[];
@@ -88,6 +113,7 @@ export const fundsApi = {
 
   create: async (payload: {
     name: string;
+    kind?: FundKind;
     description?: string;
     accountId?: string;
     openingBalance?: number;

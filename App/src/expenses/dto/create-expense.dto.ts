@@ -1,5 +1,5 @@
 import {
-  IsString, IsOptional, IsNumber, IsBoolean, IsDateString, IsPositive,
+  IsString, IsOptional, IsNumber, IsBoolean, IsDateString, IsPositive, MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 
@@ -84,4 +84,15 @@ export class CreateExpenseDto {
 /** Same fields, all optional, same validators — so PATCH is validated too.
  *  `Partial<CreateXDto>` would not be: a mapped type erases to Object at
  *  runtime and Nest skips validation entirely. */
-export class UpdateExpenseDto extends PartialType(CreateExpenseDto) {}
+export class UpdateExpenseDto extends PartialType(CreateExpenseDto) {
+  /**
+   * Why the change is being made. Optional while an expense is still pending; required to change one
+   * that has been approved or paid (the service enforces that), since by then it is part of the books.
+   * It is kept in the audit log with what changed, and the latest one is shown on the expense.
+   */
+  @ApiPropertyOptional({ description: 'The comment explaining the correction' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}

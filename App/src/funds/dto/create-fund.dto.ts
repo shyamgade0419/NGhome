@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsNumber, IsBoolean, Min } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsBoolean, IsEnum, Min } from 'class-validator';
+import { FundKind } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 
 /**
@@ -18,6 +19,12 @@ export class CreateFundDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  /** CORPUS for the society's corpus, OTHER (the default) for any other fund. */
+  @ApiPropertyOptional({ enum: FundKind })
+  @IsOptional()
+  @IsEnum(FundKind)
+  kind?: FundKind;
 
   /** The bank account this fund's money sits inside, if known. */
   @ApiPropertyOptional()

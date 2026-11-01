@@ -5,8 +5,30 @@ import apiClient, { API_BASE_URL } from '@/api/client';
 import { tokenService } from '@/auth/token.service';
 import { ApiResponse } from '@/api/types';
 import { Receipt, StoredReceipt } from '@/utils/receipts';
+import type { HistoryEntry } from '@/utils/expenseCorrections';
 
 export const expensesApi = {
+  /**
+   * Edits an expense. While it is pending anyone may fix it; once approved or paid only the admin may, and
+   * the body must carry a `reason`. Changing a paid expense's amount moves the account (and fund) by the difference.
+   */
+  update: async (id: string, body: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/expenses/${id}`, body);
+    return ((data as any)?.data ?? data) as Record<string, unknown>;
+  },
+
+  /** The corrections made to an expense: what changed, who, when and why. Newest first. */
+  history: async (id: string): Promise<HistoryEntry[]> => {
+    const { data } = await apiClient.get(`/expenses/${id}/history`);
+    return ((data as any)?.data ?? data) as HistoryEntry[];
+  },
+
+  /** Pays an approved expense from an account — and out of a fund too, when `fundId` is given. */
+  markPaid: async (id: string, accountId: string, fundId?: string) => {
+    const { data } = await apiClient.post(`/expenses/${id}/mark-paid`, { accountId, ...(fundId ? { fundId } : {}) });
+    return data;
+  },
+
   /**
    * One receipt for one expense, sent as multipart under "file". RN needs the file as a plain
    * {uri, name, type} object and the bare multipart Content-Type — it adds the boundary itself.

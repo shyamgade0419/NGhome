@@ -19,7 +19,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/api/client';
-import { accountsApi } from '@/api/endpoints/accounts.api';
+import { accountsApi, fundsApi } from '@/api/endpoints/accounts.api';
+import { useIsSocietyAdmin } from '@/hooks/useAuth';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -32,25 +33,35 @@ import { expensesApi } from '@/api/endpoints/expenses.api';
 import { ReceiptPicker } from '@/components/expenses/ReceiptPicker';
 import { ExpenseReceipts } from '@/components/expenses/ExpenseReceipts';
 import { Receipt, StoredReceipt } from '@/utils/receipts';
+import { EXPENSE_CATEGORIES } from '@/utils/expenseCorrections';
+import { EditExpenseSheet, ExpenseHistorySheet } from '@/components/expenses/ExpenseCorrectionSheets';
 
 interface Expense {
   id: string;
-  categoryName: string;
+  /** The API sends `category: { name }` and `vendorPayee`; the older names are kept as fallbacks. */
+  category?: { name: string } | null;
+  categoryName?: string;
   description: string;
   amount: string;
   expenseDate: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'PAID';
-  payeeName: string | null;
+  vendorPayee?: string | null;
+  payeeName?: string | null;
+  invoiceNumber?: string | null;
   notes: string | null;
   createdAt: string;
+  account?: { id: string; name: string } | null;
+  /** The fund it was paid out of, if any. */
+  fund?: { id: string; name: string } | null;
+  /** Set when an admin corrected it after it was approved, with the comment they gave. */
+  correctedAt?: string | null;
+  correctionNote?: string | null;
+  linkedEntityType?: string | null;
   /** The receipts on file (photos or PDFs of the bill). */
   documents?: StoredReceipt[];
 }
 
-const CATEGORIES = [
-  'MAINTENANCE', 'UTILITIES', 'SECURITY', 'HOUSEKEEPING', 'REPAIRS',
-  'ADMINISTRATIVE', 'EVENTS', 'EQUIPMENT', 'LANDSCAPING', 'INSURANCE', 'OTHER',
-];
+const CATEGORIES = EXPENSE_CATEGORIES;
 
 function expenseStatusVariant(status: string) {
   switch (status) {
@@ -291,6 +302,10 @@ export default function ExpensesScreen() {
   const [rejectReason, setRejectReason] = useState('');
   const [payingExpense, setPayingExpense] = useState<Expense | null>(null);
   const [payAccountId, setPayAccountId] = useState<string | null>(null);
+  const [payFundId, setPayFundId] = useState<string | null>(null);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [historyExpense, setHistoryExpense] = useState<Expense | null>(null);
+  const isAdmin = useIsSocietyAdmin();
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['expenses', filter],
@@ -324,15 +339,20 @@ export default function ExpensesScreen() {
   });
 
   const { data: accounts } = useQuery({ queryKey: ['accounts'], queryFn: accountsApi.list });
+  // Funds the expense can be paid out of (the corpus, a festival fund). Optional: most are paid from general money.
+  const { data: funds } = useQuery({ queryKey: ['funds'], queryFn: fundsApi.list });
 
   const markPaidMutation = useMutation({
-    mutationFn: ({ id, accountId }: { id: string; accountId: string }) =>
-      apiClient.post(`/expenses/${id}/mark-paid`, { accountId }),
+    mutationFn: ({ id, accountId, fundId }: { id: string; accountId: string; fundId?: string }) =>
+      expensesApi.markPaid(id, accountId, fundId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['expenses'] });
       qc.invalidateQueries({ queryKey: ['accounts'] });
+      qc.invalidateQueries({ queryKey: ['funds'] });
+      qc.invalidateQueries({ queryKey: ['fund-summary'] });
       setPayingExpense(null);
       setPayAccountId(null);
+      setPayFundId(null);
       Alert.alert('Marked Paid', 'The account balance has been updated.');
     },
     onError: (e: any) =>
@@ -345,6 +365,7 @@ export default function ExpensesScreen() {
   // with several, the admin has to pick, and the sheet says so.
   const openPayModal = (item: Expense) => {
     setPayAccountId(accounts && accounts.length === 1 ? accounts[0].id : null);
+    setPayFundId(null);
     setPayingExpense(item);
   };
 
@@ -364,7 +385,7 @@ export default function ExpensesScreen() {
       Alert.alert('Choose an account', 'Tap the account this expense was paid from, then confirm.');
       return;
     }
-    markPaidMutation.mutate({ id: payingExpense.id, accountId: payAccountId });
+    markPaidMutation.mutate({ id: payingExpense.id, accountId: payAccountId, fundId: payFundId ?? undefined });
   };
 
   const handleApprove = (item: Expense) => {
@@ -400,9 +421,17 @@ export default function ExpensesScreen() {
     <Card style={styles.card}>
       <View style={styles.cardTop}>
         <View style={styles.cardLeft}>
-          <Text style={styles.category}>{item.categoryName?.replace(/_/g, ' ')}</Text>
+          <Text style={styles.category}>{(item.category?.name ?? item.categoryName)?.replace(/_/g, ' ')}</Text>
           <Text style={styles.description} numberOfLines={1}>{item.description}</Text>
-          {item.payeeName ? <Text style={styles.payee}>{item.payeeName}</Text> : null}
+          {(item.vendorPayee ?? item.payeeName) ? <Text style={styles.payee}>{item.vendorPayee ?? item.payeeName}</Text> : null}
+          {item.fund ? <Text style={styles.notes} numberOfLines={1}>From {item.fund.name}</Text> : null}
+          {item.correctedAt ? (
+            <TouchableOpacity onPress={() => setHistoryExpense(item)} accessibilityLabel={`Corrections to ${item.description}`}>
+              <Text style={styles.corrected} numberOfLines={2}>
+                Corrected{item.correctionNote ? `: ${item.correctionNote}` : ''}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
           {item.notes ? (
             <Text style={styles.notes} numberOfLines={1}>{item.notes}</Text>
           ) : null}
@@ -436,6 +465,14 @@ export default function ExpensesScreen() {
             <Ionicons name="close-circle-outline" size={15} color={colors.error} />
             <Text style={[styles.actionText, { color: colors.error }]}>Reject</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.editBtn]}
+            onPress={() => setEditingExpense(item)}
+            accessibilityLabel={`Edit ${item.description}`}
+          >
+            <Ionicons name="create-outline" size={15} color={colors.primary} />
+            <Text style={[styles.actionText, { color: colors.primary }]}>Edit</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -450,6 +487,31 @@ export default function ExpensesScreen() {
           >
             <Ionicons name="cash-outline" size={15} color={colors.success} />
             <Text style={[styles.actionText, { color: colors.success }]}>Mark Paid</Text>
+          </TouchableOpacity>
+          {isAdmin && (
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.editBtn]}
+              onPress={() => setEditingExpense(item)}
+              accessibilityLabel={`Correct ${item.description}`}
+            >
+              <Ionicons name="create-outline" size={15} color={colors.primary} />
+              <Text style={[styles.actionText, { color: colors.primary }]}>Correct</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* A paid expense is in the books. The admin can still correct a wrong amount or date, with a comment;
+          the account (and fund) move by the difference. */}
+      {item.status === 'PAID' && isAdmin && (
+        <View style={styles.actions}>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.editBtn]}
+            onPress={() => setEditingExpense(item)}
+            accessibilityLabel={`Correct ${item.description}`}
+          >
+            <Ionicons name="create-outline" size={15} color={colors.primary} />
+            <Text style={[styles.actionText, { color: colors.primary }]}>Correct</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -514,6 +576,9 @@ export default function ExpensesScreen() {
       )}
 
       <AddExpenseModal visible={showAdd} onClose={() => setShowAdd(false)} />
+
+      {editingExpense && <EditExpenseSheet expense={editingExpense} onClose={() => setEditingExpense(null)} />}
+      {historyExpense && <ExpenseHistorySheet expense={historyExpense} onClose={() => setHistoryExpense(null)} />}
 
       {/* Cross-platform rejection reason modal (replaces Alert.prompt) */}
       <InlineSheet visible={!!rejectingExpense} onRequestClose={() => setRejectingExpense(null)}>
@@ -605,6 +670,34 @@ export default function ExpensesScreen() {
             <Text style={payModal.hint}>
               Deducts this amount from the account and records it in that account&apos;s ledger.
             </Text>
+            {(funds ?? []).length > 0 && payingExpense?.linkedEntityType !== 'EVENT' && (
+              <>
+                <Text style={payModal.label}>Paid out of</Text>
+                <ScrollView style={payModal.accountList}>
+                  {[{ id: null as string | null, name: 'Maintenance and general money', currentBalance: null as string | null }, ...(funds ?? [])].map((fnd) => (
+                    <TouchableOpacity
+                      key={fnd.id ?? 'general'}
+                      style={[payModal.accountRow, payFundId === fnd.id && payModal.accountRowActive]}
+                      onPress={() => setPayFundId(fnd.id)}
+                      accessibilityLabel={fnd.id ? `Pay out of ${fnd.name}` : 'Pay out of general money'}
+                    >
+                      <Ionicons
+                        name={payFundId === fnd.id ? 'radio-button-on' : 'radio-button-off'}
+                        size={18}
+                        color={payFundId === fnd.id ? colors.primary : colors.textTertiary}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={payModal.accountName}>{fnd.name}</Text>
+                        {fnd.currentBalance != null ? <Text style={payModal.accountBal}>{inr(fnd.currentBalance)}</Text> : null}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <Text style={payModal.hint}>
+                  Pick a fund if this is spent from one. It goes down by the same amount, so the funds and the bank still add up.
+                </Text>
+              </>
+            )}
             <View style={rejectModal.actions}>
               <TouchableOpacity style={rejectModal.cancelBtn} onPress={() => setPayingExpense(null)}>
                 <Text style={rejectModal.cancelText}>Cancel</Text>
@@ -673,6 +766,7 @@ const styles = StyleSheet.create({
   description: { ...typography.bodyMedium, color: colors.text, fontWeight: '500' },
   payee: { ...typography.bodySmall, color: colors.textSecondary },
   notes: { ...typography.bodySmall, color: colors.textTertiary, fontStyle: 'italic' },
+  corrected: { ...typography.bodySmall, color: colors.warning, marginTop: 2 },
   amount: { ...typography.headingSmall, color: colors.text },
   date: { ...typography.bodySmall, color: colors.textSecondary },
 
@@ -689,6 +783,7 @@ const styles = StyleSheet.create({
   },
   approveBtn: { borderColor: colors.success, backgroundColor: colors.successLight ?? colors.background },
   rejectBtn:  { borderColor: colors.error,   backgroundColor: colors.errorLight },
+  editBtn:    { borderColor: colors.primary, backgroundColor: colors.background },
   actionText: { ...typography.labelMedium, fontWeight: '600' },
 });
 

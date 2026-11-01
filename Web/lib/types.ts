@@ -173,6 +173,16 @@ export interface Expense {
   paidAt: string | null;
   createdAt: string;
   category?: { name: string } | null;
+  /** The account it was paid from and the fund (if any) it came out of. */
+  accountId?: string | null;
+  account?: { id: string; name: string } | null;
+  fundId?: string | null;
+  fund?: { id: string; name: string } | null;
+  /** Set when an admin has corrected it after it was approved: when, and the comment they gave. */
+  correctedAt?: string | null;
+  correctionNote?: string | null;
+  /** 'EVENT' for one recorded from an event, whose amount is fixed by the event. */
+  linkedEntityType?: string | null;
 }
 
 // Matches backend Announcement Prisma model

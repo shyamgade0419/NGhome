@@ -183,8 +183,11 @@ export const expensesApi = {
   /** Settles an approved expense from a bank account. This is the only thing
    *  that debits Account.currentBalance for an expense — until it runs, the
    *  money is committed but the balance still shows it as available. */
-  markPaid: (id: string, accountId: string) =>
-    api.post(`/expenses/${id}/mark-paid`, { accountId }),
+  markPaid: (id: string, accountId: string, fundId?: string) =>
+    api.post(`/expenses/${id}/mark-paid`, { accountId, ...(fundId ? { fundId } : {}) }),
+
+  /** Every correction made to an expense: what changed, who, when and the comment. Newest first. */
+  history: (id: string) => api.get(`/expenses/${id}/history`),
 };
 
 // Reports
@@ -534,6 +537,8 @@ export const accountsApi = {
   getAccount: (id: string) => api.get(`/accounts/${id}`),
   listFunds: (params?: Record<string, unknown>) => api.get('/funds', { params }),
   createFund: (data: unknown) => api.post('/funds', data),
+  /** Where the money is: the bank, the corpus, every other fund and what is left, with a check that they add up. */
+  fundSummary: () => api.get('/funds/summary'),
   /** Adds money to a fund. Passing `accountId` also credits that bank
    *  account — correct for money arriving now, but double-counts anything
    *  already recorded through the payments flow. */

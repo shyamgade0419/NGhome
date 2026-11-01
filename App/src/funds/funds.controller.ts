@@ -31,6 +31,14 @@ export class FundsController {
     return this.fundsService.create(societyId, dto);
   }
 
+  @Get('summary')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
+  @ApiOperation({ summary: 'Bank total, corpus, other funds and the rest, with a check that they add up' })
+  summary(@SocietyId() societyId: string) {
+    return this.fundsService.summary(societyId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'List funds (residents see only visible ones)' })
   async findAll(@SocietyId() societyId: string, @CurrentUser() user: AuthenticatedUser) {

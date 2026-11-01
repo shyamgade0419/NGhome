@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { DocumentAccessLevel, Prisma, ExpenseStatus } from '@prisma/client';
+import { AuditAction, DocumentAccessLevel, Prisma, ExpenseStatus, SystemRole, TransactionType } from '@prisma/client';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
 import { SftpStorageService } from '../documents/sftp-storage.service';
 import { StoragePathService } from '../documents/storage-path.service';
@@ -10,7 +10,10 @@ import {
   MAX_RECEIPTS_PER_EXPENSE, RECEIPT_SELECT, canAddReceipt, canRemoveReceipt, isReceiptType,
 } from './expense-receipts';
 
-import { CreateExpenseDto } from './dto/create-expense.dto';
+import { CreateExpenseDto, UpdateExpenseDto } from './dto/create-expense.dto';
+import {
+  MAX_EXPENSE_AMOUNT, amountDelta, correctionLedgerText, correctionRefusal, planExpenseChanges,
+} from './expense-corrections';
 export { CreateExpenseDto } from './dto/create-expense.dto';
 
 /** Only receipts that are still there — a removed one is kept as a row, hidden. */
@@ -34,7 +37,7 @@ export class ExpensesService {
    */
   private async resolveCategoryId(
     societyId: string,
-    dto: CreateExpenseDto,
+    dto: Pick<CreateExpenseDto, 'categoryId' | 'category'>,
   ): Promise<string | undefined> {
     if (dto.categoryId) {
       // A normal foreign key only guarantees the category row exists
@@ -102,6 +105,7 @@ export class ExpensesService {
         include: {
           category: { select: { id: true, name: true } },
           account: { select: { id: true, name: true } },
+          fund: { select: { id: true, name: true } },
           createdBy: { select: { id: true, firstName: true, lastName: true } },
           documents: LIVE_RECEIPTS,
         },
@@ -119,6 +123,7 @@ export class ExpensesService {
       include: {
         category: true,
         account: { select: { id: true, name: true } },
+        fund: { select: { id: true, name: true } },
         createdBy: { select: { id: true, firstName: true, lastName: true } },
         approvedBy: { select: { id: true, firstName: true, lastName: true } },
         documents: LIVE_RECEIPTS,
@@ -303,36 +308,62 @@ export class ExpensesService {
     });
   }
 
-  async markPaid(societyId: string, expenseId: string, accountId: string, actorId: string) {
-    // Fetch expense data for amount; status gate is inside the transaction
+  /**
+   * Pays an approved expense out of an account — and, when `fundId` is given, out of that fund too. A
+   * fund is money earmarked inside the bank accounts, so paying from it must lower both together;
+   * otherwise the funds would add up to more than the bank holds.
+   */
+  async markPaid(societyId: string, expenseId: string, accountId: string, actorId: string, fundId?: string) {
+    // Fetch for scope verification; the status gate and the amount are taken again inside the transaction
     const expense = await this.findOne(societyId, expenseId);
+    if (fundId && expense.linkedEntityType === 'EVENT') {
+      throw new BadRequestException("This expense came from an event and has already been taken from the event's fund.");
+    }
 
     return this.prisma.$transaction(async (tx) => {
       // 1. Atomic status check-and-update
       const { count } = await tx.expense.updateMany({
-        where: { id: expenseId, status: ExpenseStatus.APPROVED },
+        where: { id: expenseId, societyId, status: ExpenseStatus.APPROVED },
         data: { status: ExpenseStatus.PAID, paidAt: new Date(), accountId },
       });
       if (count === 0) {
         throw new ForbiddenException('Only approved expenses can be marked as paid');
       }
+      // The row is now locked to this transaction, so this is the amount as it stands: an admin correcting
+      // the expense a moment ago cannot leave us debiting the old figure.
+      const { amount } = await tx.expense.findUniqueOrThrow({ where: { id: expenseId }, select: { amount: true } });
 
       // 2. Verify account belongs to society
       const account = await tx.account.findFirst({ where: { id: accountId, societyId } });
       if (!account) throw new NotFoundException('Account not found');
 
-      // 3. Atomic balance decrement — avoids read-modify-write race
+      // 3. Take it out of the fund, if one is named, never below zero
+      if (fundId) {
+        const fund = await tx.fund.findFirst({ where: { id: fundId, societyId, isActive: true } });
+        if (!fund) throw new NotFoundException('Fund not found');
+        const taken = await tx.fund.updateMany({
+          where: { id: fundId, currentBalance: { gte: amount } },
+          data: { currentBalance: { decrement: amount } },
+        });
+        if (taken.count === 0) {
+          throw new BadRequestException(`${fund.name} holds only ₹${fund.currentBalance.toFixed(2)}, which is less than this expense.`);
+        }
+        await tx.expense.update({ where: { id: expenseId }, data: { fundId } });
+      }
+
+      // 4. Atomic balance decrement — avoids read-modify-write race
       const updatedAccount = await tx.account.update({
         where: { id: accountId },
-        data: { currentBalance: { decrement: expense.amount } },
+        data: { currentBalance: { decrement: amount } },
       });
 
       await tx.transaction.create({
         data: {
           societyId,
           accountId,
+          fundId: fundId ?? null,
           transactionType: 'DEBIT',
-          amount: expense.amount,
+          amount,
           transactionDate: new Date(),
           description: `Expense: ${expense.description}`,
           linkedEntityType: 'EXPENSE',
@@ -346,27 +377,205 @@ export class ExpensesService {
     });
   }
 
-  async update(societyId: string, expenseId: string, dto: Partial<CreateExpenseDto>) {
-    const expense = await this.findOne(societyId, expenseId);
-    if (expense.status !== ExpenseStatus.PENDING) {
-      throw new ForbiddenException('Only pending expenses can be edited');
+  /**
+   * Edits an expense. While it is PENDING anyone who can see expenses may fix it. Once it is APPROVED or
+   * PAID it is part of the books, so only the admin may change it, and only with a comment: the old and new
+   * values, who changed them and why go to the audit log, and the latest comment is shown on the expense.
+   *
+   * Changing the amount of a PAID expense moves the account it was paid from (and the fund, if it came out
+   * of one) by the difference, with a correcting entry on the account's ledger, so the bank balance never
+   * disagrees with the expenses. Dates and wording change nothing but the expense.
+   */
+  async update(societyId: string, expenseId: string, dto: UpdateExpenseDto, actor: { id: string; role?: string }) {
+    const current = await this.findOne(societyId, expenseId);
+
+    let wantedAmount: Prisma.Decimal | undefined;
+    if (dto.amount !== undefined) {
+      wantedAmount = new Prisma.Decimal(dto.amount);
+      if (wantedAmount.decimalPlaces() > 2) throw new BadRequestException('An amount can have at most two decimal places.');
+      if (wantedAmount.gt(MAX_EXPENSE_AMOUNT)) throw new BadRequestException('That amount is too large.');
     }
-    return this.prisma.expense.update({
-      where: { id: expenseId },
-      data: {
-        ...(dto.description   !== undefined && { description:   dto.description }),
-        ...(dto.amount        !== undefined && { amount:        new Prisma.Decimal(dto.amount) }),
-        ...(dto.expenseDate   !== undefined && { expenseDate:   new Date(dto.expenseDate) }),
-        ...(dto.categoryId    !== undefined && { categoryId:    dto.categoryId }),
-        ...(dto.vendorPayee   !== undefined && { vendorPayee:   dto.vendorPayee }),
-        ...(dto.notes         !== undefined && { notes:         dto.notes }),
-        ...(dto.invoiceNumber !== undefined && { invoiceNumber: dto.invoiceNumber }),
-      },
-      include: {
-        category: { select: { id: true, name: true } },
-        account:  { select: { id: true, name: true } },
-      },
+    let wantedDate: Date | undefined;
+    if (dto.expenseDate !== undefined) {
+      wantedDate = new Date(dto.expenseDate);
+      if (Number.isNaN(wantedDate.getTime())) throw new BadRequestException('That is not a valid date.');
+    }
+
+    const categoryWanted = dto.categoryId !== undefined || !!dto.category?.trim();
+    const categoryId = categoryWanted ? ((await this.resolveCategoryId(societyId, dto)) ?? null) : undefined;
+
+    // The account a paid expense came out of is not editable: moving it would mean moving money between
+    // accounts, which is its own entry. Before it is paid there is nothing to move, so it may still be set.
+    const accountWanted = dto.accountId !== undefined && dto.accountId !== current.accountId;
+    if (accountWanted) {
+      if (current.status === ExpenseStatus.PAID) {
+        throw new BadRequestException('The account this was paid from cannot be changed. Correct the amount or date instead.');
+      }
+      if (dto.accountId) {
+        const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId } });
+        if (!account) throw new NotFoundException('Account not found in this society');
+      }
+    }
+
+    const wanted = {
+      amount: wantedAmount,
+      expenseDate: wantedDate,
+      description: dto.description,
+      vendorPayee: dto.vendorPayee,
+      invoiceNumber: dto.invoiceNumber,
+      referenceNumber: dto.referenceNumber,
+      notes: dto.notes,
+      categoryId,
+    };
+    const reason = dto.reason?.trim() || undefined;
+    const refusal = correctionRefusal({
+      status: current.status,
+      isAdmin: actor.role === SystemRole.SOCIETY_ADMIN,
+      reason,
+      amountChanges: planExpenseChanges(current, { amount: wantedAmount }).amount !== undefined,
+      eventLinked: current.linkedEntityType === 'EVENT',
     });
+    if (refusal) {
+      throw refusal.kind === 'forbidden' ? new ForbiddenException(refusal.message) : new BadRequestException(refusal.message);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // The row lock for everything below: a payment, another correction or a rejection that lands at the
+      // same moment waits, then is judged against what is true after this one.
+      const touched = await tx.expense.updateMany({
+        where: { id: expenseId, societyId, status: { not: ExpenseStatus.REJECTED } },
+        data: { updatedAt: new Date() },
+      });
+      if (touched.count === 0) throw new ForbiddenException('A rejected expense cannot be edited.');
+
+      const fresh = await tx.expense.findUniqueOrThrow({ where: { id: expenseId } });
+      const posted = fresh.status !== ExpenseStatus.PENDING;
+      // Approved or paid while the form was open: the admin-and-comment rule now applies.
+      const lateRefusal = correctionRefusal({
+        status: fresh.status,
+        isAdmin: actor.role === SystemRole.SOCIETY_ADMIN,
+        reason,
+        amountChanges: planExpenseChanges(fresh, { amount: wantedAmount }).amount !== undefined,
+        eventLinked: fresh.linkedEntityType === 'EVENT',
+      });
+      if (lateRefusal) {
+        throw lateRefusal.kind === 'forbidden' ? new ForbiddenException(lateRefusal.message) : new BadRequestException(lateRefusal.message);
+      }
+
+      const changes = planExpenseChanges(fresh, wanted);
+      const accountChange = dto.accountId !== undefined && dto.accountId !== fresh.accountId && fresh.status !== ExpenseStatus.PAID;
+      if (Object.keys(changes).length === 0 && !accountChange) {
+        throw new BadRequestException('Nothing was changed.');
+      }
+
+      let accountBalanceAfter: string | null = null;
+      let fundBalanceAfter: string | null = null;
+      if (changes.amount && fresh.status === ExpenseStatus.PAID) {
+        if (!fresh.accountId) {
+          throw new BadRequestException('This paid expense has no account on record, so its amount cannot be corrected here.');
+        }
+        const delta = amountDelta(fresh.amount, wantedAmount!);
+        const abs = delta.abs();
+        const more = delta.gt(0);
+
+        if (fresh.fundId) {
+          const moved = await tx.fund.updateMany({
+            where: more ? { id: fresh.fundId, currentBalance: { gte: abs } } : { id: fresh.fundId },
+            data: { currentBalance: more ? { decrement: abs } : { increment: abs } },
+          });
+          if (moved.count === 0) {
+            throw new BadRequestException('The fund this was paid from does not hold enough for the higher amount.');
+          }
+          const fund = await tx.fund.findUniqueOrThrow({ where: { id: fresh.fundId }, select: { currentBalance: true } });
+          fundBalanceAfter = fund.currentBalance.toFixed(2);
+        }
+
+        const account = await tx.account.update({
+          where: { id: fresh.accountId },
+          data: { currentBalance: more ? { decrement: abs } : { increment: abs } },
+        });
+        accountBalanceAfter = account.currentBalance.toFixed(2);
+
+        await tx.transaction.create({
+          data: {
+            societyId,
+            accountId: fresh.accountId,
+            fundId: fresh.fundId,
+            transactionType: more ? TransactionType.DEBIT : TransactionType.CREDIT,
+            amount: abs,
+            transactionDate: new Date(),
+            description: correctionLedgerText(fresh.description, changes.amount.from ?? '', changes.amount.to ?? '', reason ?? ''),
+            linkedEntityType: 'EXPENSE',
+            linkedEntityId: expenseId,
+            balanceAfter: account.currentBalance,
+            createdById: actor.id,
+          },
+        });
+      }
+
+      const updated = await tx.expense.update({
+        where: { id: expenseId },
+        data: {
+          ...(wanted.amount !== undefined && { amount: wanted.amount }),
+          ...(wanted.expenseDate !== undefined && { expenseDate: wanted.expenseDate }),
+          ...(wanted.description !== undefined && { description: wanted.description }),
+          ...(wanted.vendorPayee !== undefined && { vendorPayee: wanted.vendorPayee }),
+          ...(wanted.invoiceNumber !== undefined && { invoiceNumber: wanted.invoiceNumber }),
+          ...(wanted.referenceNumber !== undefined && { referenceNumber: wanted.referenceNumber }),
+          ...(wanted.notes !== undefined && { notes: wanted.notes }),
+          ...(wanted.categoryId !== undefined && { categoryId: wanted.categoryId }),
+          ...(accountChange && { accountId: dto.accountId || null }),
+          ...(posted && { correctedAt: new Date(), correctionNote: reason }),
+        },
+        include: {
+          category: { select: { id: true, name: true } },
+          account: { select: { id: true, name: true } },
+          fund: { select: { id: true, name: true } },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          societyId,
+          actorId: actor.id,
+          action: AuditAction.EXPENSE_MODIFIED,
+          entityType: 'Expense',
+          entityId: expenseId,
+          newValues: {
+            status: fresh.status,
+            reason: reason ?? null,
+            changes,
+            accountBalanceAfter,
+            fundBalanceAfter,
+          } as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  /** Every correction made to an expense, newest first: what changed, who changed it and the comment they gave. */
+  async history(societyId: string, expenseId: string) {
+    await this.findOne(societyId, expenseId);
+    const rows = await this.prisma.auditLog.findMany({
+      where: { societyId, entityType: 'Expense', entityId: expenseId, action: AuditAction.EXPENSE_MODIFIED },
+      orderBy: { createdAt: 'desc' },
+      include: { actor: { select: { id: true, firstName: true, lastName: true } } },
+    });
+    return rows
+      .filter((r) => r.newValues && typeof r.newValues === 'object' && 'changes' in (r.newValues as object))
+      .map((r) => {
+        const v = r.newValues as { reason?: string | null; changes?: unknown; accountBalanceAfter?: string | null };
+        return {
+          id: r.id,
+          at: r.createdAt,
+          by: r.actor ? `${r.actor.firstName} ${r.actor.lastName}`.trim() : null,
+          reason: v.reason ?? null,
+          changes: v.changes ?? {},
+          accountBalanceAfter: v.accountBalanceAfter ?? null,
+        };
+      });
   }
 
   async remove(societyId: string, expenseId: string, actorId: string) {
