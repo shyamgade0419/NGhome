@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { WhatsappModule } from '../whatsapp/whatsapp.module';
 import { BillingService } from './billing.service';
 import { BillingController } from './billing.controller';
 import { LateFeeService } from './late-fee.service';
@@ -13,7 +14,7 @@ import { AdvanceCreditsService } from './advance-credits.service';
 import { AdvanceCreditsController } from './advance-credits.controller';
 
 @Module({
-  imports: [NotificationsModule, BillingRulesModule],
+  imports: [NotificationsModule, BillingRulesModule, WhatsappModule],
   providers: [BillingService, BillingCalculatorService, LateFeeService, OpeningBalancesService, FlatDiscountsService, AdvanceCreditsService],
   controllers: [BillingController, OpeningBalancesController, FlatDiscountsController, AdvanceCreditsController],
   exports: [BillingService, BillingCalculatorService, LateFeeService],

@@ -1,5 +1,7 @@
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 import {
   Injectable,
+  Optional,
   NotFoundException,
   BadRequestException,
   ConflictException,
@@ -28,6 +30,7 @@ export class BillingService {
     private readonly calculator: BillingCalculatorService,
     private readonly billingRulesService: BillingRulesService,
     private readonly notifications: NotificationsService,
+    @Optional() private readonly whatsapp?: WhatsappService,
   ) {}
 
   async createPeriod(societyId: string, dto: CreateBillingPeriodDto) {
@@ -312,6 +315,15 @@ export class BillingService {
           data: { billingPeriodId: periodId },
         }),
       `billing period ${periodId} published`,
+    );
+
+    // The same news on WhatsApp, to the tenant (else the owner) of each flat that owes. Only queued here — it is
+    // sent later, spaced out — so it cannot slow or fail the publish.
+    await this.notifications.notifyQuietly(
+      async () => {
+        await this.whatsapp?.enqueuePublished(societyId, periodId);
+      },
+      `billing period ${periodId} published (WhatsApp)`,
     );
 
     return published;

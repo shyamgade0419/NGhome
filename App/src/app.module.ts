@@ -20,6 +20,7 @@ import { BillingRulesModule } from './billing-rules/billing-rules.module';
 import { BillingModule } from './billing/billing.module';
 import { WaterModule } from './water/water.module';
 import { PaymentsModule } from './payments/payments.module';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { FundsModule } from './funds/funds.module';
 import { TransactionsModule } from './transactions/transactions.module';
@@ -70,6 +71,7 @@ import { ChatModule } from './chat/chat.module';
     BillingModule,
     WaterModule,
     PaymentsModule,
+    WhatsappModule,
     AccountsModule,
     FundsModule,
     TransactionsModule,

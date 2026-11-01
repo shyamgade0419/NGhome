@@ -6,6 +6,7 @@ import { UpdateSocietyConfigDto } from './dto/update-society-config.dto';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
 import { generateUniqueJoinCode } from '../common/utils/join-code.util';
 import { scrubLogo } from './branding';
+import { cleanReminderDays } from '../whatsapp/whatsapp-settings';
 import { Prisma, AuditAction } from '@prisma/client';
 
 @Injectable()
@@ -447,14 +448,19 @@ export class SocietiesService {
 
     // upiId and waterBillingEnabled have no DB column; fold both into the
     // existing additionalConfig JSON field rather than migrate the schema.
-    const { upiId, waterBillingEnabled, reminderTemplate, ...configFields } = dto as UpdateSocietyConfigDto & {
+    const { upiId, waterBillingEnabled, reminderTemplate, whatsappEnabled, whatsappReminderDays, ...configFields } = dto as UpdateSocietyConfigDto & {
       upiId?: string;
       waterBillingEnabled?: boolean;
       reminderTemplate?: string;
+      whatsappEnabled?: boolean;
+      whatsappReminderDays?: number[];
     };
 
     let additionalConfigPatch: Prisma.InputJsonValue | undefined;
-    if (upiId !== undefined || waterBillingEnabled !== undefined || reminderTemplate !== undefined) {
+    if (
+      upiId !== undefined || waterBillingEnabled !== undefined || reminderTemplate !== undefined ||
+      whatsappEnabled !== undefined || whatsappReminderDays !== undefined
+    ) {
       const current = await this.prisma.societyConfiguration.findUnique({
         where: { societyId },
         select: { additionalConfig: true },
@@ -466,6 +472,15 @@ export class SocietiesService {
         ...(waterBillingEnabled !== undefined ? { waterBillingEnabled } : {}),
         // Blank puts the default wording back (readReminderTemplate falls back when nothing is stored).
         ...(reminderTemplate !== undefined ? { reminderTemplate: reminderTemplate.trim() } : {}),
+        ...(whatsappEnabled !== undefined || whatsappReminderDays !== undefined
+          ? {
+              whatsapp: {
+                ...((existing.whatsapp as Record<string, unknown> | undefined) ?? {}),
+                ...(whatsappEnabled !== undefined ? { enabled: whatsappEnabled } : {}),
+                ...(whatsappReminderDays !== undefined ? { reminderDays: cleanReminderDays(whatsappReminderDays) } : {}),
+              },
+            }
+          : {}),
       } as Prisma.InputJsonValue;
     }
 

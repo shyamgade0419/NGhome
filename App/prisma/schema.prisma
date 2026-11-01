@@ -2016,3 +2016,35 @@ model FlatDiscount {
   @@index([flatId])
   @@map("flat_discounts")
 }
+
+// ─── WHATSAPP AUTOMATION ──────────────────────────────────────────────────────
+
+// One WhatsApp message the system means to send: bill published, a payment reminder, a late fine, a payment
+// received. Events only ever add a row here; a worker sends them one at a time, spaced out, inside a daytime window
+// (an unofficial WhatsApp number that sends bursts, or at night, gets banned). `dedupeKey` makes an event produce one
+// message however many times it is seen, and doubles as the Idempotency-Key sent to the gateway so a retry cannot
+// deliver twice. No foreign keys, deliberately: the log must not block deleting a user or a society, and a society's
+// rows go with it through the schema-derived purge.
+model WhatsappMessage {
+  id              String    @id @default(uuid())
+  societyId       String
+  // BILL_PUBLISHED | REMINDER | FINE_IMPOSED | PAYMENT_RECEIVED | TEST
+  kind            String
+  dedupeKey       String
+  recipientUserId String?
+  toPhone         String
+  body            String
+  // PENDING | SENDING | SENT | FAILED
+  status          String    @default("PENDING")
+  attempts        Int       @default(0)
+  lastError       String?
+  sendAfter       DateTime  @default(now())
+  sentAt          DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([societyId, dedupeKey])
+  @@index([status, sendAfter])
+  @@index([societyId, createdAt])
+  @@map("whatsapp_messages")
+}

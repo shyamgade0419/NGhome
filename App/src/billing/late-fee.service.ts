@@ -1,4 +1,5 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LateFeeSettings, lateFeeAmount, lateFeeEnabled, overdueDueDateCutoff } from './late-fee';
@@ -19,7 +20,10 @@ export class LateFeeService implements OnModuleInit, OnModuleDestroy {
   private timer?: NodeJS.Timeout;
   private first?: NodeJS.Timeout;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly whatsapp?: WhatsappService,
+  ) {}
 
   onModuleInit() {
     // Tests drive it directly; a timer would only keep them from exiting.
@@ -116,6 +120,12 @@ export class LateFeeService implements OnModuleInit, OnModuleDestroy {
       if (fee) {
         applied += 1;
         total = total.plus(fee);
+        // Tell the flat's contact the fine was added. Only queued; a failure here must not undo the fine.
+        try {
+          await this.whatsapp?.enqueueFine(societyId, id);
+        } catch (e) {
+          this.logger.error(`WhatsApp fine notice for bill ${id} failed: ${e instanceof Error ? e.message : e}`);
+        }
       }
     }
     return { applied, total: total.toString() };

@@ -1,5 +1,5 @@
 import {
-  IsOptional, IsString, IsInt, IsBoolean, IsNumber, IsEnum, Min, Max, MaxLength,
+  IsOptional, IsString, IsInt, IsBoolean, IsNumber, IsEnum, IsArray, ArrayMaxSize, Min, Max, MaxLength,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { BillingCycleType } from '@prisma/client';
@@ -110,4 +110,23 @@ export class UpdateSocietyConfigDto {
   @IsString()
   @MaxLength(1500)
   reminderTemplate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Send bill, reminder, late-fine and payment-received messages on WhatsApp automatically (stored in additionalConfig). Needs the WhatsApp gateway connected to the server.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  whatsappEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Days of the month (1–28) on which unpaid flats are reminded on WhatsApp. Defaults to the 5th and 10th.',
+    type: [Number],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(6)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Max(28, { each: true })
+  whatsappReminderDays?: number[];
 }

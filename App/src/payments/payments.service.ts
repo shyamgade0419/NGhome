@@ -1,7 +1,8 @@
 import {
-  Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException,
+  Injectable, Optional, NotFoundException, BadRequestException, ForbiddenException, ConflictException,
 } from '@nestjs/common';
 import { pickBillContact } from '../billing/billing-contact';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from '../documents/sftp-storage.service';
@@ -20,6 +21,7 @@ export class PaymentsService {
     private readonly storage: SftpStorageService,
     private readonly notifications: NotificationsService,
     private readonly paths: StoragePathService,
+    @Optional() private readonly whatsapp?: WhatsappService,
   ) {}
 
   async submit(
@@ -541,6 +543,17 @@ export class PaymentsService {
         }),
       `payment ${payment.id} auto-approved`,
     );
+    await this.queueWhatsappReceipt(societyId, payment.id);
+  }
+
+  /** "We received your payment" on WhatsApp. Only queued, and best-effort: it must never undo an approval. */
+  private async queueWhatsappReceipt(societyId: string, paymentId: string) {
+    await this.notifications.notifyQuietly(
+      async () => {
+        await this.whatsapp?.enqueuePaid(societyId, paymentId);
+      },
+      `payment ${paymentId} (WhatsApp receipt)`,
+    );
   }
 
   /**
@@ -709,6 +722,7 @@ export class PaymentsService {
         }),
       `payment ${paymentId} approved`,
     );
+    await this.queueWhatsappReceipt(societyId, paymentId);
 
     return approved;
   }
