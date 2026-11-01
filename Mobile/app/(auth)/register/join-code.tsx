@@ -121,14 +121,26 @@ export default function JoinCodeScreen() {
                   {society.displayName || society.name}
                 </Text>
                 <Text style={styles.societyMeta}>
-                  {society.flats.length} flats · Code verified ✓
+                  {society.flats.length > 0 ? `${society.flats.length} flats · Code verified ✓` : 'Code verified ✓'}
                 </Text>
               </View>
               <Ionicons name="checkmark-circle" size={22} color={colors.success} />
             </View>
           )}
 
-          {society && (
+          {/* A new society has no flats until its admin adds them, and a resident has to pick one — say so
+              here, rather than letting them fill in the whole form and fail at "select your flat". */}
+          {society && society.flats.length === 0 && (
+            <View style={styles.noFlatsCard}>
+              <Ionicons name="information-circle-outline" size={20} color={colors.warning} />
+              <Text style={styles.noFlatsText}>
+                {society.displayName || society.name} has not added its flats yet, so there is nothing to choose from.
+                Ask your society admin to add the flats first (Flats in the app), then try again.
+              </Text>
+            </View>
+          )}
+
+          {society && society.flats.length > 0 && (
             <Button
               label="Continue to Registration"
               onPress={handleContinue}
@@ -198,6 +210,16 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   findBtn: { marginBottom: 2 },
+  noFlatsCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    padding: spacing.base,
+    borderRadius: radius.md,
+    backgroundColor: colors.warningLight,
+    marginBottom: spacing.base,
+  },
+  noFlatsText: { ...typography.bodySmall, color: colors.text, flex: 1 },
 
   societyCard: {
     flexDirection: 'row',

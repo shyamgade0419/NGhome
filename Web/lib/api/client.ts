@@ -26,7 +26,9 @@ api.interceptors.response.use(
     // Skip the redirect if we're already on a public page (login, register, etc.) to
     // avoid an infinite reload loop: AuthContext calls /auth/me on mount, gets 401 while
     // unauthenticated, which would otherwise trigger a reload of the same page forever.
-    const PUBLIC_PAGES = ['/login', '/register', '/forgot-password', '/reset-password', '/select-society'];
+    // /join is public too: a resident opening it is signed out by definition, and without it here the
+    // same check that runs on every page threw them to /login before they could enter the invite code.
+    const PUBLIC_PAGES = ['/login', '/register', '/join', '/forgot-password', '/reset-password', '/select-society'];
     // Every /platform address serves the platform sign-in when signed out
     // (middleware rewrite), so a 401 there must not bounce the address bar
     // to the society login.

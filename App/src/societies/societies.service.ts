@@ -629,8 +629,11 @@ export class SocietiesService {
       throw new NotFoundException('Society not found for this join code');
     }
 
+    // The building is named on each flat so a society with several towers or wings (each with an
+    // "A-101") can be told apart in the picker. A society whose admin has not added any flats yet
+    // gets an empty list, which the clients explain instead of failing later at "select your flat".
     const flats = society.buildings.flatMap((b) =>
-      b.flats.map((f) => ({ id: f.id, flatCode: f.flatCode })),
+      b.flats.map((f) => ({ id: f.id, flatCode: f.flatCode, unitNumber: f.unitNumber, buildingName: b.name })),
     );
 
     return {

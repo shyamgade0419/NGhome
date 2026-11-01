@@ -561,6 +561,14 @@ function InviteCodeSection() {
     queryFn: () => societyApi.getJoinCode().then((r) => r.data),
   });
 
+  // Residents pick their flat from the list the admin has added. With none added, the code is useless, so say so here.
+  const { data: stats } = useQuery({
+    queryKey: ['web-join-flat-count'],
+    queryFn: () => societyApi.stats().then((r) => r.data?.data ?? r.data),
+    retry: false,
+  });
+  const noFlatsYet = stats != null && Number(stats.flats ?? 0) === 0;
+
   const regenMutation = useMutation({
     mutationFn: () => societyApi.regenerateJoinCode(),
     onSuccess: () => {
@@ -613,6 +621,15 @@ function InviteCodeSection() {
           </p>
         </div>
       </div>
+
+      {noFlatsYet && (
+        <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+          <p className="font-semibold">Add your flats before sharing this code.</p>
+          <p className="mt-0.5 text-amber-800">
+            Residents choose their flat from the list you add under <strong>Flats</strong>. With none added, they cannot finish joining.
+          </p>
+        </div>
+      )}
 
       {/* Code display */}
       <div className="flex items-center justify-center rounded-xl border border-slate-200 bg-white py-4">

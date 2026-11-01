@@ -19,7 +19,7 @@ export interface SocietyByCode {
   id: string;
   name: string;
   displayName: string;
-  flats: Array<{ id: string; flatCode: string; floor?: string; block?: string }>;
+  flats: Array<{ id: string; flatCode: string; unitNumber?: string; buildingName?: string; floor?: string; block?: string }>;
 }
 
 export const authApi = {

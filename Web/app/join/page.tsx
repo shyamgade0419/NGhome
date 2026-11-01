@@ -12,7 +12,8 @@ import { Select } from '@/components/ui/Select';
 interface SocietyInfo {
   id: string;
   name: string;
-  flats: { id: string; flatCode: string; unitNumber: string; building?: { name: string } }[];
+  displayName?: string | null;
+  flats: { id: string; flatCode: string; unitNumber?: string; buildingName?: string }[];
 }
 
 export default function JoinPage() {
@@ -26,6 +27,7 @@ export default function JoinPage() {
 
   // Step 2: personal details
   const [flatId, setFlatId] = useState('');
+  const [flatSearch, setFlatSearch] = useState('');
   const [residencyType, setResidencyType] = useState<'OWNER' | 'TENANT'>('OWNER');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -41,10 +43,15 @@ export default function JoinPage() {
     setLoading(true);
     try {
       const res = await fetch(`/api/societies/by-code?code=${encodeURIComponent(code.trim().toUpperCase())}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.message ?? 'Invalid invite code');
-      setSociety(data);
-      setFlatId(data.flats?.[0]?.id ?? '');
+      const body = await res.json();
+      if (!res.ok) throw new Error(Array.isArray(body?.message) ? body.message.join(', ') : (body?.message ?? 'Invalid invite code'));
+      // The API wraps every reply as { success, data }. Reading the wrapper itself as the society left
+      // it with no name and no flats, so the flat picker never appeared.
+      const info: SocietyInfo = body?.data ?? body;
+      setSociety({ ...info, flats: info.flats ?? [] });
+      // Left empty on purpose: pre-selecting the first flat would sign someone up to the wrong one if they missed it.
+      setFlatId('');
+      setFlatSearch('');
       setStep('details');
     } catch (err: any) {
       toast.error(err.message ?? 'Could not find society');
@@ -103,10 +110,17 @@ export default function JoinPage() {
     }
   };
 
-  const flatOptions = (society?.flats ?? []).map((f) => ({
-    value: f.id,
-    label: `${f.flatCode}${f.building ? ' · ' + f.building.name : ''}`,
-  }));
+  const allFlats = society?.flats ?? [];
+  // Past a dozen or so flats a plain dropdown is slow to scan, so a search box narrows it. The chosen flat
+  // is always kept in the list so typing in the box never silently drops the selection.
+  const showFlatSearch = allFlats.length > 12;
+  const q = flatSearch.trim().toLowerCase();
+  const flatOptions = allFlats
+    .filter((f) => !q || f.id === flatId || f.flatCode.toLowerCase().includes(q) || (f.buildingName ?? '').toLowerCase().includes(q))
+    .map((f) => ({
+      value: f.id,
+      label: `${f.flatCode}${f.buildingName ? ' · ' + f.buildingName : ''}`,
+    }));
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -194,13 +208,36 @@ export default function JoinPage() {
               <p className="mt-1 text-sm text-slate-500">Fill in your details to complete registration.</p>
 
               <div className="mt-6 space-y-4">
-                {flatOptions.length > 0 && (
-                  <Select
-                    label="Your Flat *"
-                    value={flatId}
-                    onChange={(e) => setFlatId(e.target.value)}
-                    options={flatOptions}
-                  />
+                {allFlats.length === 0 && (
+                  <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    <p className="font-semibold">{society?.displayName || society?.name} has not added its flats yet.</p>
+                    <p className="mt-1 text-amber-800">
+                      There is nothing to choose from, so you cannot join just now. Ask your society admin to add the flats
+                      (Flats page), then come back with the same code.
+                    </p>
+                  </div>
+                )}
+                {allFlats.length > 0 && (
+                  <div className="space-y-2">
+                    {showFlatSearch && (
+                      <Input
+                        label={`Find your flat (${allFlats.length} flats)`}
+                        placeholder="Type a flat number or building"
+                        value={flatSearch}
+                        onChange={(e) => setFlatSearch(e.target.value)}
+                      />
+                    )}
+                    <Select
+                      label="Your Flat *"
+                      value={flatId}
+                      onChange={(e) => setFlatId(e.target.value)}
+                      options={flatOptions}
+                      placeholder="Select your flat"
+                    />
+                    {showFlatSearch && q && flatOptions.length === 0 && (
+                      <p className="text-xs text-red-600">No flat matches &ldquo;{flatSearch}&rdquo;.</p>
+                    )}
+                  </div>
                 )}
                 <Select
                   label="I am the flat's *"
@@ -244,7 +281,7 @@ export default function JoinPage() {
                     {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
-                <Button onClick={submitJoin} loading={loading} className="w-full" size="lg">
+                <Button onClick={submitJoin} loading={loading} disabled={allFlats.length === 0} className="w-full" size="lg">
                   Join Society
                 </Button>
               </div>
