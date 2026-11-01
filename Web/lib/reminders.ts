@@ -42,6 +42,8 @@ export function previewReminder(template: string): string {
 export interface WhatsappStatus {
   /** The server has a WhatsApp gateway set up. */
   configured: boolean;
+  /** The platform owner has allowed this society to use WhatsApp. Without it the society cannot switch messages on. */
+  allowed: boolean;
   enabled: boolean;
   reminderDays: number[];
   /** The gateway's session: `ready` is the only state in which messages go out. */

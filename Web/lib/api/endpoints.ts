@@ -608,6 +608,8 @@ export interface PlatformSociety {
   city: string | null;
   state: string | null;
   isActive: boolean;
+  /** May this society send WhatsApp messages through the platform's number? Only the platform owner changes it. */
+  whatsappAllowed: boolean;
   joinCode: string | null;
   /** Set when the society was removed with "keep the data". */
   deletedAt?: string | null;
@@ -650,6 +652,10 @@ export const platformApi = {
    *  bills and history are untouched, so reinstating restores it as it was. */
   setSocietyStatus: (id: string, isActive: boolean) =>
     api.patch(`/societies/${id}/status`, { isActive }),
+
+  /** Allow or stop a society from sending WhatsApp messages through the platform's number. Stopping drops what it had queued. */
+  setSocietyWhatsapp: (id: string, allowed: boolean) =>
+    api.patch(`/societies/${id}/whatsapp`, { allowed }),
 
   /** Soft delete — nothing is dropped, the society just stops appearing on the platform. */
   deleteSociety: (id: string) => api.delete(`/societies/${id}`),

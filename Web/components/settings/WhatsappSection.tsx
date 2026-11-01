@@ -159,6 +159,13 @@ export function WhatsappSection({ admin }: { admin: boolean }) {
           otherwise the owner. Messages are sent one at a time, between 9 am and 8 pm only.
         </p>
 
+        {status && !status.allowed && (
+          <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            WhatsApp messages are not switched on for your society. The platform owner allows them one society at a time. Until
+            then nothing is sent from here; the reminder wording above still works for WhatsApp links you send by hand.
+          </p>
+        )}
+
         <div className="rounded-lg border border-green-100 bg-white px-3 py-2 text-xs text-slate-700">
           {!status ? (
             'Checking the WhatsApp connection…'
@@ -185,7 +192,7 @@ export function WhatsappSection({ admin }: { admin: boolean }) {
             <p className="text-sm font-medium text-slate-800">Send WhatsApp messages automatically</p>
             <p className="text-xs text-slate-500">Off until you switch it on. Turning it off stops anything still waiting.</p>
           </div>
-          <Toggle checked={shownEnabled} onChange={setEnabled} disabled={!admin || (status ? !status.configured : false)} />
+          <Toggle checked={shownEnabled} onChange={setEnabled} disabled={!admin || (status ? !status.configured || !status.allowed : false)} />
         </div>
 
         <div>
@@ -213,7 +220,7 @@ export function WhatsappSection({ admin }: { admin: boolean }) {
               variant="secondary"
               onClick={() => test.mutate()}
               loading={test.isPending}
-              disabled={testPhone.replace(/\D/g, '').length < 8 || !status?.configured}
+              disabled={testPhone.replace(/\D/g, '').length < 8 || !status?.configured || !status?.allowed}
             >
               Send test
             </Button>

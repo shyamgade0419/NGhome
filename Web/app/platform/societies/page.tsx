@@ -47,6 +47,21 @@ export default function PlatformSocietiesPage() {
     enabled: !!user?.isPlatformAdmin,
   });
 
+  // Which societies may send WhatsApp messages through the platform's one number. Off for every society until allowed.
+  const setWhatsapp = useMutation({
+    mutationFn: ({ id, allowed }: { id: string; allowed: boolean }) => platformApi.setSocietyWhatsapp(id, allowed),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ['platform-societies'] });
+      toast.success(vars.allowed ? 'WhatsApp allowed for this society' : 'WhatsApp stopped for this society');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Could not change WhatsApp for this society'),
+  });
+  const toggleWhatsapp = (s: PlatformSociety) => {
+    const name = s.displayName ?? s.name;
+    if (s.whatsappAllowed && !window.confirm(`Stop ${name} from sending WhatsApp messages? Anything it still has waiting to be sent is dropped.`)) return;
+    setWhatsapp.mutate({ id: s.id, allowed: !s.whatsappAllowed });
+  };
+
   const setStatus = useMutation({
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => platformApi.setSocietyStatus(id, isActive),
     onSuccess: (_res, vars) => {
@@ -178,7 +193,7 @@ export default function PlatformSocietiesPage() {
         />
       ) : (
         <TableWrap>
-          <DTable head={['Society', 'Admin contact', 'Members', 'Buildings', 'Join code', 'Status', 'Since', <span key="a" className="block text-right">Actions</span>]}>
+          <DTable head={['Society', 'Admin contact', 'Members', 'Buildings', 'Join code', 'Status', 'WhatsApp', 'Since', <span key="a" className="block text-right">Actions</span>]}>
             {societies.map((s) => (
               <tr key={s.id} className="hover:bg-gray-800/30">
                 <Td>
@@ -220,6 +235,22 @@ export default function PlatformSocietiesPage() {
                     <Pill tone="slate">Deleted</Pill>
                   ) : (
                     <Pill tone={s.isActive ? 'green' : 'red'}>{s.isActive ? 'Active' : 'Suspended'}</Pill>
+                  )}
+                </Td>
+                <Td>
+                  {showingDeleted ? (
+                    <span className="text-xs text-gray-500">—</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => toggleWhatsapp(s)}
+                      disabled={setWhatsapp.isPending}
+                      aria-label={`WhatsApp for ${s.displayName ?? s.name}: ${s.whatsappAllowed ? 'allowed, click to stop' : 'not allowed, click to allow'}`}
+                      title={s.whatsappAllowed ? 'This society may send WhatsApp messages. Click to stop.' : 'Not allowed to use your WhatsApp number. Click to allow.'}
+                      className="disabled:opacity-50"
+                    >
+                      <Pill tone={s.whatsappAllowed ? 'green' : 'slate'}>{s.whatsappAllowed ? 'Allowed' : 'Off'}</Pill>
+                    </button>
                   )}
                 </Td>
                 <Td className="whitespace-nowrap text-xs text-gray-400">{formatDate(s.createdAt)}</Td>

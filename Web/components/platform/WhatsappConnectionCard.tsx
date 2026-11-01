@@ -98,7 +98,7 @@ export function WhatsappConnectionCard() {
         <p className="text-sm text-gray-400">
           One WhatsApp number sends bill, reminder, late-fine and payment messages for every society. Enter where the WhatsApp
           gateway (OpenWA) is running and its key, then link the phone by scanning a QR code. Use a dedicated number, not a
-          personal one. Each society switches the messages on in its own Settings → Billing Rules → WhatsApp.
+          personal one. A society can only use it once you allow it on the Societies page (every society starts Off); it then switches the messages on in its own Settings → Billing Rules → WhatsApp.
         </p>
         {gateway.source === 'environment' && (
           <p className="rounded-lg bg-gray-800/60 px-3 py-2 text-xs text-gray-300">
