@@ -55,7 +55,7 @@ export function WhatsappAutomationCard() {
   let line: { text: string; color: string };
   if (!status) line = { text: 'Checking the WhatsApp connection…', color: colors.textSecondary };
   else if (!status.configured)
-    line = { text: 'WhatsApp is not connected to this server yet. The platform owner sets it up once; until then nothing is sent.', color: colors.warning };
+    line = { text: 'WhatsApp is not connected yet. The platform owner links a phone once, in the web Platform console under Settings; until then nothing is sent.', color: colors.warning };
   else if (status.session === 'ready')
     line = {
       text: `Connected${status.sendingFrom ? ` — sending from +${status.sendingFrom}` : ''}. ${status.sentToday} sent today, ${status.queued} waiting${status.failedThisWeek ? `, ${status.failedThisWeek} failed this week` : ''}.`,

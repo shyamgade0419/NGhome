@@ -27,6 +27,8 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ReminderTemplateEditor } from '@/components/billing/ReminderTemplateEditor';
+import { WhatsappAutomationCard } from '@/components/billing/WhatsappAutomationCard';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -405,7 +407,18 @@ export default function BillingRulesScreen() {
               description="Tap + to add the rule that decides how maintenance is calculated."
             />
           }
-          ListFooterComponent={<View style={{ height: spacing['3xl'] }} />}
+          keyboardShouldPersistTaps="handled"
+          ListFooterComponent={
+            <View style={styles.whatsapp}>
+              <Text style={styles.whatsappTitle}>WhatsApp</Text>
+              <Text style={styles.whatsappSub}>Payment reminders and automatic messages: bill published, reminders, late fine and payment received.</Text>
+              <Text style={styles.subHead}>Reminder wording</Text>
+              <ReminderTemplateEditor />
+              <Text style={styles.subHead}>Automatic messages</Text>
+              <WhatsappAutomationCard />
+              <View style={{ height: spacing['3xl'] }} />
+            </View>
+          }
         />
       )}
 
@@ -418,6 +431,10 @@ export default function BillingRulesScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   list: { padding: spacing.base },
+  whatsapp: { marginTop: spacing.xl, paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, gap: spacing.md },
+  whatsappTitle: { ...typography.headingMedium, color: colors.text },
+  whatsappSub: { ...typography.bodySmall, color: colors.textSecondary },
+  subHead: { ...typography.labelSmall, color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 1, marginTop: spacing.sm },
 
   notice: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start',

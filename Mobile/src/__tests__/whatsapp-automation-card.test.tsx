@@ -88,7 +88,7 @@ describe('WhatsApp automation card', () => {
   it('says plainly when the server has no WhatsApp connection, and will not let it be switched on', async () => {
     mockStatus = { ...mockStatus, configured: false, session: null, sendingFrom: null };
     const tree = await mount();
-    expect(textOf(tree.root)).toContain('not connected to this server yet');
+    expect(textOf(tree.root)).toContain('WhatsApp is not connected yet');
     expect(tree.root.findByType(Switch).props.disabled).toBe(true);
   });
 
