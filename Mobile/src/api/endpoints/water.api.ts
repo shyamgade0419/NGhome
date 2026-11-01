@@ -70,6 +70,8 @@ export interface AllocateCostsPayload {
   tankerCost: number;
   commonElectricityBill: number;
   electricityWaterPercent: number;
+  /** Omit to use the saved limit; an object applies and saves a new one; null switches it off. */
+  usageLimit?: { limitUnits: number; mode: 'PERCENT' | 'PER_UNIT' | 'ONE_TIME'; value: number } | null;
   readings: FlatReading[];
 }
 
@@ -85,6 +87,10 @@ export interface AllocationResult {
   totalUnits: number;
   ratePerUnit: number;
   flatCount: number;
+  /** The usage limit these charges used (null when none), and how much it added in all. */
+  usageLimit?: { limitUnits: number; mode: string; value: number } | null;
+  usageLimitText?: string | null;
+  excessTotal?: number;
   flatReadings: Array<{
     flatId: string;
     flatCode: string;
@@ -92,6 +98,9 @@ export interface AllocationResult {
     closingReading: number;
     consumption: number;
     ratePerUnit: number;
+    baseCharge?: number;
+    excessUnits?: number;
+    excessCharge?: number;
     charge: number;
   }>;
 }

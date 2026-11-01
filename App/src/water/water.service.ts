@@ -5,6 +5,7 @@ import { CreateWaterConfigDto } from './dto/create-water-config.dto';
 import { RecordReadingDto } from './dto/record-reading.dto';
 import { AllocateWaterCostsDto } from './dto/allocate-water-costs.dto';
 import { readingOrderMessage, waterConsumption } from './water-rules';
+import { describeUsageLimit, readUsageLimit, validateUsageLimit, waterCharge, type UsageLimit } from './water-usage-limit';
 export { CreateWaterConfigDto } from './dto/create-water-config.dto';
 export { RecordReadingDto } from './dto/record-reading.dto';
 export { AllocateWaterCostsDto, FlatReadingInputDto as FlatReadingInput } from './dto/allocate-water-costs.dto';
@@ -119,6 +120,12 @@ export class WaterService {
       throw new BadRequestException('At least one flat reading is required');
     }
 
+    // A usage limit sent with the readings is checked up front, so a bad one never gets as far as the database.
+    if (dto.usageLimit) {
+      const problem = validateUsageLimit(dto.usageLimit);
+      if (problem) throw new BadRequestException(problem);
+    }
+
     // Validate all flats belong to this society
     const flatIds = dto.readings.map((r) => r.flatId);
     const flats = await this.prisma.flat.findMany({
@@ -177,6 +184,16 @@ export class WaterService {
       });
     }
 
+    // The limit: the one sent with these readings (saved below), none if it was switched off, or whatever
+    // the society has already saved. Units above it are charged more; the normal rate stays the same.
+    const savedLimit = readUsageLimit(config.config);
+    const limit: UsageLimit | null =
+      dto.usageLimit === undefined
+        ? savedLimit
+        : dto.usageLimit === null
+          ? null
+          : { limitUnits: dto.usageLimit.limitUnits, mode: dto.usageLimit.mode, value: dto.usageLimit.value };
+
     const readingDate = new Date(dto.readingDate);
     const results: Array<{
       flatId: string;
@@ -185,11 +202,28 @@ export class WaterService {
       closingReading: number;
       consumption: number;
       ratePerUnit: number;
+      /** Every unit at the normal rate. */
+      baseCharge: number;
+      /** Units above the usage limit, and what they cost on top of the normal rate. */
+      excessUnits: number;
+      excessCharge: number;
+      /** What the flat pays: the base plus the extra. */
       charge: number;
     }> = [];
 
     // Upsert water readings for each flat
     await this.prisma.$transaction(async (tx) => {
+      // The rule is part of the society's water rules, so it is saved with the readings it was applied to:
+      // both land or neither does, and next month starts from the same limit.
+      if (dto.usageLimit !== undefined) {
+        const rest = { ...((config!.config as Record<string, unknown>) ?? {}) };
+        delete rest['usageLimit'];
+        await tx.waterBillingConfig.update({
+          where: { id: config!.id },
+          data: { config: (limit ? { ...rest, usageLimit: limit } : rest) as Prisma.InputJsonValue },
+        });
+      }
+
       // Delete existing readings for this period (to allow re-calculation)
       await tx.waterMeterReading.deleteMany({
         where: { societyId, billingPeriodId: dto.billingPeriodId },
@@ -197,7 +231,8 @@ export class WaterService {
 
       for (const r of dto.readings) {
         const consumption = consumptionByFlat.get(r.flatId)!;
-        const charge = consumption * ratePerUnit;
+        const priced = waterCharge(consumption, ratePerUnit, limit);
+        const charge = priced.total.toNumber();
 
         await tx.waterMeterReading.create({
           data: {
@@ -211,7 +246,10 @@ export class WaterService {
             consumption: new Prisma.Decimal(consumption),
             unit: 'KL',
             effectiveRate: new Prisma.Decimal(ratePerUnit),
-            calculatedAmount: new Prisma.Decimal(charge),
+            calculatedAmount: priced.total,
+            // Recorded only when a limit applied (0 for a flat that stayed within it), so the bill can say so.
+            excessUnits: limit ? priced.excessUnits : null,
+            excessCharge: limit ? priced.excessCharge : null,
             notes: r.notes,
           },
         });
@@ -224,6 +262,9 @@ export class WaterService {
           closingReading: r.closingReading,
           consumption,
           ratePerUnit,
+          baseCharge: priced.baseCharge.toDecimalPlaces(2).toNumber(),
+          excessUnits: priced.excessUnits.toNumber(),
+          excessCharge: priced.excessCharge.toNumber(),
           charge,
         });
       }
@@ -240,6 +281,10 @@ export class WaterService {
       },
       totalUnits,
       ratePerUnit,
+      // The rule these charges used, in words, and how much of the total it added. Null when there is none.
+      usageLimit: limit,
+      usageLimitText: limit ? describeUsageLimit(limit) : null,
+      excessTotal: results.reduce((sum, r) => sum + r.excessCharge, 0),
       flatCount: results.length,
       flatReadings: results,
     };
@@ -265,6 +310,7 @@ export class WaterService {
       (sum, r) => sum + (r.calculatedAmount?.toNumber() ?? 0),
       0,
     );
+    const totalExcess = readings.reduce((sum, r) => sum + (r.excessCharge?.toNumber() ?? 0), 0);
     const ratePerUnit =
       readings.length > 0 && readings[0].effectiveRate
         ? readings[0].effectiveRate.toNumber()
@@ -278,6 +324,8 @@ export class WaterService {
       readingCount: readings.length,
       totalUnits,
       totalCharge,
+      /** How much of totalCharge came from units above the usage limit. */
+      totalExcess,
       ratePerUnit,
       readings: readings.map((r) => ({
         id: r.id,
@@ -290,6 +338,8 @@ export class WaterService {
         unit: r.unit,
         effectiveRate: r.effectiveRate?.toNumber() ?? null,
         calculatedAmount: r.calculatedAmount?.toNumber() ?? null,
+        excessUnits: r.excessUnits?.toNumber() ?? null,
+        excessCharge: r.excessCharge?.toNumber() ?? null,
         notes: r.notes,
       })),
     };

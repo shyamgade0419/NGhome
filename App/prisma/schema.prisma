@@ -735,6 +735,10 @@ model WaterMeterReading {
   unit             String   @default("KL")
   effectiveRate    Decimal? @db.Decimal(10, 4)
   calculatedAmount Decimal? @db.Decimal(12, 2)
+  // Set when a usage limit applied: the units above the limit, and what they cost on top of the normal
+  // rate. calculatedAmount already includes it; these say how much of the charge it is, for the bill.
+  excessUnits      Decimal? @db.Decimal(12, 3)
+  excessCharge     Decimal? @db.Decimal(12, 2)
   notes            String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt

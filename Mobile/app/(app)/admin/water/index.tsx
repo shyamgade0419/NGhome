@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
+  Switch,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -25,6 +26,10 @@ import { colors, spacing, typography, radius } from '@/theme';
 import { BillingPeriod, billingPeriodName } from '@/types/billing.types';
 import { Flat } from '@/types/society.types';
 import { waterUnits, readingProblem, wrongWayLabel } from '@/utils/water';
+import {
+  DEFAULT_LIMIT_FORM, MODE_OPTIONS, chargeFor, describeLimit, formFromSaved, limitFromForm, validateLimitForm,
+  type UsageLimitForm,
+} from '@/utils/waterUsageLimit';
 
 /* ── Cost input row ──────────────────────────────────────────────── */
 function CostRow({
@@ -56,6 +61,7 @@ function CostRow({
           style={costStyles.input}
           value={value}
           onChangeText={onChangeText}
+          accessibilityLabel={label}
           keyboardType="decimal-pad"
           placeholder="0"
           placeholderTextColor={colors.textTertiary}
@@ -161,6 +167,7 @@ function FlatReadingRow({
               style={flatStyles.input}
               value={entry.opening}
               onChangeText={(v) => onChange('opening', v)}
+              accessibilityLabel={`Opening reading for ${entry.flatCode}`}
               keyboardType="decimal-pad"
               placeholder="0"
               placeholderTextColor={colors.textTertiary}
@@ -179,6 +186,7 @@ function FlatReadingRow({
             ]}
             value={entry.closing}
             onChangeText={(v) => onChange('closing', v)}
+            accessibilityLabel={`Current reading for ${entry.flatCode}`}
             keyboardType="decimal-pad"
             placeholder="0"
             placeholderTextColor={colors.textTertiary}
@@ -254,6 +262,22 @@ export default function WaterReadingsScreen() {
   // Per-flat readings
   const [flatEntries, setFlatEntries] = useState<FlatEntry[]>([]);
 
+  // The usage limit: off until the society sets one; once saved it is where every month starts.
+  const [limitForm, setLimitForm] = useState<UsageLimitForm>(DEFAULT_LIMIT_FORM);
+  const [limitLoaded, setLimitLoaded] = useState(false);
+  const { data: waterConfigs } = useQuery({
+    queryKey: ['water-configs'],
+    queryFn: () => waterApi.listConfigs(),
+  });
+  useEffect(() => {
+    if (limitLoaded || waterConfigs === undefined) return;
+    const saved = waterConfigs.find((c) => c.billingModel === 'SOCIETY_ALLOCATION')?.config?.usageLimit as
+      | { limitUnits: number; mode: 'PERCENT' | 'PER_UNIT' | 'ONE_TIME'; value: number }
+      | undefined;
+    setLimitForm(formFromSaved(saved));
+    setLimitLoaded(true);
+  }, [waterConfigs, limitLoaded]);
+
   const { data: periodsData, isLoading: periodsLoading } = useQuery({
     queryKey: ['billing-periods-water'],
     queryFn: () => billingApi.getBillingPeriods({ limit: 12 }),
@@ -313,11 +337,18 @@ export default function WaterReadingsScreen() {
       qc.invalidateQueries({ queryKey: ['water-period-summary', selectedPeriodId] });
       // Refresh history so these closing readings become next month's openings.
       qc.invalidateQueries({ queryKey: ['water-readings-history'] });
+      qc.invalidateQueries({ queryKey: ['water-configs'] });
       const rate = result?.ratePerUnit?.toFixed(2) ?? '—';
       const total = result?.flatReadings?.length ?? 0;
+      const over = (result?.flatReadings ?? []).filter((f) => (f.excessUnits ?? 0) > 0).length;
+      const extra = result?.excessTotal ?? 0;
       Alert.alert(
         'Water Readings Saved ✓',
-        `Rate: ₹${rate}/KL across ${total} flats.\nBills will reflect the new water charges.`,
+        `Rate: ₹${rate}/KL across ${total} flats.` +
+          (result?.usageLimit
+            ? `\n${over} ${over === 1 ? 'flat is' : 'flats are'} above the ${result.usageLimit.limitUnits} KL limit, adding ₹${extra.toLocaleString('en-IN', { maximumFractionDigits: 2 })}.`
+            : '') +
+          '\nBills will reflect the new water charges.',
         [{ text: 'OK' }],
       );
     },
@@ -358,6 +389,12 @@ export default function WaterReadingsScreen() {
       return;
     }
 
+    const limitProblem = validateLimitForm(limitForm);
+    if (limitProblem) {
+      Alert.alert('Usage limit', limitProblem);
+      return;
+    }
+
     Alert.alert(
       'Save Water Readings',
       `Save readings for ${filledReadings.length} flat(s)?`,
@@ -372,6 +409,8 @@ export default function WaterReadingsScreen() {
               tankerCost: parseFloat(costs.tankerCost || '0'),
               commonElectricityBill: parseFloat(costs.commonElectricityBill || '0'),
               electricityWaterPercent: parseFloat(costs.electricityWaterPercent || '50'),
+              // Always sent, so what is on screen is what is saved: the rule, or null for "no limit".
+              usageLimit: limitFromForm(limitForm),
               readings: filledReadings.map((e) => ({
                 flatId: e.flatId,
                 openingReading: parseFloat(e.opening),
@@ -389,6 +428,18 @@ export default function WaterReadingsScreen() {
     parseFloat(costs.municipalWaterBill || '0') +
     parseFloat(costs.tankerCost || '0') +
     parseFloat(costs.commonElectricityBill || '0') * (parseFloat(costs.electricityWaterPercent || '50') / 100);
+
+  // What the limit would add, from the readings entered so far: the normal rate is the cost over all units.
+  const unitsFor = (e: FlatEntry) => {
+    if (e.closing === '' || e.opening === '') return 0;
+    return waterUnits(parseFloat(e.opening), parseFloat(e.closing), e.reversed) ?? 0;
+  };
+  const totalUnitsEntered = flatEntries.reduce((s, e) => s + unitsFor(e), 0);
+  const previewRate = totalUnitsEntered > 0 ? totalCost / totalUnitsEntered : 0;
+  const activeLimit = limitFromForm(limitForm);
+  const limitProblem = validateLimitForm(limitForm);
+  const previewExtra = flatEntries.reduce((s, e) => s + chargeFor(unitsFor(e), previewRate, activeLimit).excess, 0);
+  const flatsOverLimit = activeLimit ? flatEntries.filter((e) => unitsFor(e) > activeLimit.limitUnits).length : 0;
 
   if (periodsLoading || flatsLoading) return <LoadingState fullscreen message="Loading..." />;
 
@@ -500,6 +551,71 @@ export default function WaterReadingsScreen() {
             )}
           </View>
 
+          {/* Heavy use: units above a limit cost more */}
+          <View style={styles.section}>
+            <View style={styles.sectionRow}>
+              <Text style={styles.sectionTitle}>Charge more for heavy use</Text>
+              <Switch
+                value={limitForm.enabled}
+                onValueChange={(v) => setLimitForm((f) => ({ ...f, enabled: v }))}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                accessibilityLabel="Charge more for heavy use"
+              />
+            </View>
+            <Text style={styles.sectionHint}>
+              A flat pays the normal rate for its units up to a limit; units above it cost more. The normal rate and every
+              flat within the limit stay the same.
+            </Text>
+
+            {limitForm.enabled && (
+              <>
+                <CostRow
+                  icon="speedometer-outline"
+                  label="Limit per flat"
+                  hint="Units a flat may use at the normal rate"
+                  value={limitForm.limitUnits}
+                  onChangeText={(v) => setLimitForm((f) => ({ ...f, limitUnits: v.replace(/[^0-9.]/g, '') }))}
+                  suffix="KL"
+                />
+                <Text style={[costStyles.label, { marginTop: spacing.md }]}>Above the limit, charge</Text>
+                <View style={styles.modeRow}>
+                  {MODE_OPTIONS.map((m) => (
+                    <TouchableOpacity
+                      key={m.value}
+                      style={[styles.modeChip, limitForm.mode === m.value && styles.modeChipActive]}
+                      onPress={() => setLimitForm((f) => ({ ...f, mode: m.value }))}
+                      accessibilityLabel={`Charge ${m.label}`}
+                    >
+                      <Text style={[styles.modeChipText, limitForm.mode === m.value && styles.modeChipTextActive]}>{m.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <CostRow
+                  icon="trending-up-outline"
+                  label={limitForm.mode === 'PERCENT' ? 'Extra' : limitForm.mode === 'PER_UNIT' ? 'Extra per KL' : 'One-time fee'}
+                  hint={MODE_OPTIONS.find((m) => m.value === limitForm.mode)?.hint}
+                  value={limitForm.value}
+                  onChangeText={(v) => setLimitForm((f) => ({ ...f, value: v.replace(/[^0-9.]/g, '') }))}
+                  suffix={limitForm.mode === 'PERCENT' ? '%' : '₹'}
+                />
+                {limitProblem ? (
+                  <Text style={styles.limitError} accessibilityRole="alert">{limitProblem}</Text>
+                ) : activeLimit ? (
+                  <View style={styles.totalCostBadge}>
+                    <Ionicons name="information-circle-outline" size={14} color={colors.primary} />
+                    <Text style={styles.totalCostText}>
+                      {describeLimit(activeLimit, previewRate)}
+                      {totalUnitsEntered > 0
+                        ? ` ${flatsOverLimit} ${flatsOverLimit === 1 ? 'flat is' : 'flats are'} above it, adding about ₹${previewExtra.toLocaleString('en-IN', { maximumFractionDigits: 0 })}.`
+                        : ''}
+                    </Text>
+                  </View>
+                ) : null}
+                <Text style={styles.limitNote}>Saved with your water rules, so next month starts with the same limit.</Text>
+              </>
+            )}
+          </View>
+
           {/* Reading Date */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Reading Date</Text>
@@ -586,6 +702,17 @@ const styles = StyleSheet.create({
   sectionTitle: { ...typography.headingSmall, color: colors.text, marginBottom: spacing.xs },
   sectionHint: { ...typography.bodySmall, color: colors.textSecondary, marginBottom: spacing.md },
   sectionHint2: { ...typography.bodySmall, color: colors.textSecondary },
+
+  modeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  modeChip: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1,
+    borderColor: colors.border, backgroundColor: colors.surface,
+  },
+  modeChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  modeChipText: { ...typography.labelMedium, color: colors.textSecondary },
+  modeChipTextActive: { color: '#fff' },
+  limitError: { ...typography.bodySmall, color: colors.error, marginTop: spacing.sm },
+  limitNote: { ...typography.bodySmall, color: colors.textTertiary, marginTop: spacing.sm },
 
   periodBtn: {
     flexDirection: 'row',

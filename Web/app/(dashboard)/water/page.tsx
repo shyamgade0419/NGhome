@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Droplets, Calculator, CheckCircle2, ChevronDown, Info, Zap, Truck, Building2,
 } from 'lucide-react';
@@ -18,6 +18,10 @@ import { formatCurrency, formatDate, cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { billingPeriodLabel } from '@/lib/types';
 import { can } from '@/lib/permissions';
+import {
+  DEFAULT_LIMIT_FORM, MODE_OPTIONS, chargeFor, describeLimit, formFromSaved, limitFromForm, validateLimitForm,
+  type UsageLimitForm,
+} from '@/lib/waterUsageLimit';
 
 /* ── Types ────────────────────────────────────────────────────── */
 interface FlatReading {
@@ -56,8 +60,14 @@ interface AllocationResult {
     closingReading: number;
     consumption: number;
     ratePerUnit: number;
+    baseCharge?: number;
+    excessUnits?: number;
+    excessCharge?: number;
     charge: number;
   }>;
+  /** The usage limit these charges used, and how much it added in all. */
+  usageLimit?: { limitUnits: number; mode: string; value: number } | null;
+  excessTotal?: number;
 }
 
 /* ── Cost Input Card ──────────────────────────────────────────── */
@@ -104,6 +114,7 @@ function CostCard({
 
 /* ── Main Page ────────────────────────────────────────────────── */
 export default function WaterBillingPage() {
+  const qc = useQueryClient();
   const { activeMembership, user } = useAuth();
   // Staff can also enter readings (they do physical meter reads)
   const isAdmin = can.enterWaterReadings(activeMembership?.role, user?.isPlatformAdmin);
@@ -117,6 +128,9 @@ export default function WaterBillingPage() {
   });
   const [readings, setReadings] = useState<FlatReading[]>([]);
   const [result, setResult] = useState<AllocationResult | null>(null);
+  // The usage limit: switched off until the society sets one; once saved it is the starting point every month.
+  const [limitForm, setLimitForm] = useState<UsageLimitForm>(DEFAULT_LIMIT_FORM);
+  const [limitLoaded, setLimitLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState<'entry' | 'summary'>('entry');
 
   /* Billing periods */
@@ -125,6 +139,20 @@ export default function WaterBillingPage() {
     queryFn: () => billingApi.listPeriods({ limit: 24 }).then((r: any) => r.data ?? r),
     enabled: isAdmin,
   });
+
+  /* The water rules saved for the society: the usage limit lives on the allocation configuration */
+  const { data: configsData } = useQuery({
+    queryKey: ['water-configs'],
+    queryFn: () => waterApi.listConfigs().then((r: any) => r.data ?? r),
+    enabled: isAdmin,
+  });
+  useEffect(() => {
+    if (limitLoaded || configsData === undefined) return;
+    const list: any[] = Array.isArray(configsData) ? configsData : (configsData?.data ?? []);
+    const saved = list.find((c) => c.billingModel === 'SOCIETY_ALLOCATION')?.config?.usageLimit;
+    setLimitForm(formFromSaved(saved));
+    setLimitLoaded(true);
+  }, [configsData, limitLoaded]);
 
   /* All flats */
   const { data: flatsData, isLoading: loadingFlats } = useQuery({
@@ -188,6 +216,8 @@ export default function WaterBillingPage() {
       );
       if (!validReadings.length) throw new Error('Enter readings for at least one flat');
       if (!selectedPeriodId) throw new Error('Select a billing period');
+      const limitProblem = validateLimitForm(limitForm);
+      if (limitProblem) throw new Error(limitProblem);
 
       return waterApi.allocatePeriodCosts(selectedPeriodId, {
         readingDate: new Date().toISOString().slice(0, 10),
@@ -195,6 +225,8 @@ export default function WaterBillingPage() {
         tankerCost: parseFloat(costs.tankerCost) || 0,
         commonElectricityBill: parseFloat(costs.commonElectricityBill) || 0,
         electricityWaterPercent: parseFloat(costs.electricityWaterPercent) || 0,
+        // Always sent, so what is on screen is what is saved: the rule, or null for "no limit".
+        usageLimit: limitFromForm(limitForm),
         readings: validReadings.map((r) => ({
           flatId: r.flatId,
           openingReading: parseFloat(r.openingReading),
@@ -207,6 +239,7 @@ export default function WaterBillingPage() {
       setResult(data);
       setActiveTab('summary');
       refetchSummary();
+      qc.invalidateQueries({ queryKey: ['water-configs'] });
       toast.success(`Water charges calculated & saved! Rate: ${formatCurrency(data.ratePerUnit)}/KL`);
     },
     onError: (e: any) => toast.error(e?.response?.data?.message ?? e.message ?? 'Failed to calculate'),
@@ -226,6 +259,15 @@ export default function WaterBillingPage() {
   const totalUnitsEntered = readings.reduce((s, r) => s + Math.max(0, unitsBetween(r)), 0);
 
   const previewRate = totalUnitsEntered > 0 ? totalWaterCost / totalUnitsEntered : 0;
+  const activeLimit = limitFromForm(limitForm);
+  const limitProblem = validateLimitForm(limitForm);
+  const previewExtra = readings.reduce((s, r) => s + chargeFor(Math.max(0, unitsBetween(r)), previewRate, activeLimit).excess, 0);
+  const flatsOverLimit = activeLimit
+    ? readings.filter((r) => r.closingReading !== '' && Math.max(0, unitsBetween(r)) > activeLimit.limitUnits).length
+    : 0;
+
+  // The extra columns only appear when a limit was applied to these charges
+  const showExcessColumns = (result?.usageLimit != null) || (existingReadings?.readings ?? []).some((r: any) => r.excessUnits != null);
 
   if (loadingPeriods || loadingFlats) return <PageSpinner />;
 
@@ -351,6 +393,73 @@ export default function WaterBillingPage() {
           </div>
         </div>
 
+        {/* Usage limit: the units a flat uses above it cost more */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+          <label className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              checked={limitForm.enabled}
+              onChange={(e) => { setLimitForm((f) => ({ ...f, enabled: e.target.checked })); setResult(null); }}
+              className="mt-1"
+            />
+            <span>
+              <span className="text-sm font-semibold text-slate-900">Charge more for heavy use</span>
+              <span className="block text-xs text-slate-500">
+                A flat pays the normal rate for its units up to a limit. Units above the limit cost more. The normal rate and
+                every flat within the limit are unchanged.
+              </span>
+            </span>
+          </label>
+
+          {limitForm.enabled && (
+            <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <Input
+                  label="Limit per flat (KL)"
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={limitForm.limitUnits}
+                  onChange={(e) => { setLimitForm((f) => ({ ...f, limitUnits: e.target.value })); setResult(null); }}
+                />
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="excess-mode" className="text-sm font-medium text-slate-700">Above the limit, charge</label>
+                  <select
+                    id="excess-mode"
+                    value={limitForm.mode}
+                    onChange={(e) => { setLimitForm((f) => ({ ...f, mode: e.target.value as UsageLimitForm['mode'] })); setResult(null); }}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                  >
+                    {MODE_OPTIONS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </div>
+                <Input
+                  label={limitForm.mode === 'PERCENT' ? 'Extra (%)' : limitForm.mode === 'PER_UNIT' ? 'Extra (₹ per KL)' : 'Fee (₹)'}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={limitForm.value}
+                  onChange={(e) => { setLimitForm((f) => ({ ...f, value: e.target.value })); setResult(null); }}
+                />
+              </div>
+              {limitProblem ? (
+                <p role="alert" className="text-xs text-red-600">{limitProblem}</p>
+              ) : activeLimit ? (
+                <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                  {describeLimit(activeLimit, previewRate)}
+                  {totalUnitsEntered > 0 && (
+                    <>
+                      {' '}<strong>{flatsOverLimit}</strong> {flatsOverLimit === 1 ? 'flat is' : 'flats are'} above it, adding about{' '}
+                      <strong>{formatCurrency(previewExtra)}</strong>.
+                    </>
+                  )}
+                </p>
+              ) : null}
+              <p className="text-xs text-slate-400">Saved with your water rules when you Calculate &amp; Save, so next month starts with the same limit.</p>
+            </>
+          )}
+        </div>
+
         {/* Tabs: Entry | Summary */}
         <div>
           <div className="mb-4 flex gap-1 rounded-xl border border-slate-200 bg-white p-1 w-fit">
@@ -396,7 +505,8 @@ export default function WaterBillingPage() {
                       {readings.map((r) => {
                         const used = unitsBetween(r);
                         const consumed = Math.max(0, used);
-                        const estCharge = consumed * previewRate;
+                        const est = chargeFor(consumed, previewRate, activeLimit);
+                        const estCharge = est.total;
                         const hasError = used < 0 && r.closingReading !== '';
                         return (
                           <tr key={r.flatId} className={cn('hover:bg-slate-50', hasError && 'bg-red-50')}>
@@ -447,7 +557,14 @@ export default function WaterBillingPage() {
                             </td>
                             <td className="px-4 py-2.5 tabular-nums">
                               {r.openingReading && r.closingReading && previewRate > 0 ? (
-                                <span className="font-medium text-primary-700">{formatCurrency(estCharge)}</span>
+                                <span className="font-medium text-primary-700">
+                                  {formatCurrency(estCharge)}
+                                  {est.excess > 0 && (
+                                    <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800" title={`${est.excessUnits.toFixed(2)} KL above the limit`}>
+                                      +{formatCurrency(est.excess)} over limit
+                                    </span>
+                                  )}
+                                </span>
                               ) : '—'}
                             </td>
                             <td className="px-4 py-2.5">
@@ -491,10 +608,14 @@ export default function WaterBillingPage() {
                   {/* Summary cards */}
                   <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
                     {[
-                      { label: 'Total Water Cost', value: formatCurrency(result?.costBreakdown.totalWaterCost ?? existingReadings?.totalCharge ?? 0) },
+                      // What the flats are charged in all: the society's cost, plus anything the usage limit added.
+                      { label: 'Total Charged to Flats', value: formatCurrency(result ? result.flatReadings.reduce((t, r) => t + r.charge, 0) : (existingReadings?.totalCharge ?? 0)) },
                       { label: 'Total Units', value: `${(result?.totalUnits ?? existingReadings?.totalUnits ?? 0).toFixed(2)} KL` },
                       { label: 'Rate per KL', value: formatCurrency(result?.ratePerUnit ?? existingReadings?.ratePerUnit ?? 0) },
                       { label: 'Flats Covered', value: String(result?.flatCount ?? existingReadings?.readingCount ?? 0) },
+                      ...((result?.excessTotal ?? existingReadings?.totalExcess ?? 0) > 0
+                        ? [{ label: 'Extra from usage limit', value: formatCurrency(result?.excessTotal ?? existingReadings?.totalExcess ?? 0) }]
+                        : []),
                     ].map(({ label, value }) => (
                       <Card key={label} padding="lg">
                         <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
@@ -519,6 +640,9 @@ export default function WaterBillingPage() {
                             <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Opening</th>
                             <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Closing</th>
                             <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Consumed (KL)</th>
+                            {showExcessColumns && (
+                              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Above limit (KL)</th>
+                            )}
                             <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Water Charge</th>
                           </tr>
                         </thead>
@@ -529,6 +653,11 @@ export default function WaterBillingPage() {
                               <td className="px-4 py-2.5 text-right tabular-nums text-slate-600">{r.openingReading?.toFixed(3)}</td>
                               <td className="px-4 py-2.5 text-right tabular-nums text-slate-600">{r.closingReading?.toFixed(3)}</td>
                               <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{(r.consumption ?? (r.closingReading - r.openingReading)).toFixed(3)}</td>
+                              {showExcessColumns && (
+                                <td className="px-4 py-2.5 text-right tabular-nums text-amber-700">
+                                  {(r.excessUnits ?? 0) > 0 ? `${Number(r.excessUnits).toFixed(3)} (+${formatCurrency(r.excessCharge ?? 0)})` : '—'}
+                                </td>
+                              )}
                               <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-primary-700">
                                 {formatCurrency(r.charge ?? r.calculatedAmount)}
                               </td>

@@ -476,7 +476,7 @@ export const GUIDE: GuidePart[] = [
         id: 'water',
         title: 'Water billing and meters',
         audience: 'admin',
-        summary: 'Meter readings, the month\'s costs, and a meter that counts down.',
+        summary: 'Meter readings, the month\'s costs, a limit above which water costs more, and a meter that counts down.',
         blocks: [
           { type: 'p', text: 'Open **Water Billing**, choose the period, and enter the month\'s **municipal bill, tanker cost, common electricity bill** and the **percentage of electricity used by the water motor**. NG Home adds these into one total, divides it by the total units used across all flats, and charges each flat its own units at that rate.' },
           { type: 'steps', items: [
@@ -486,6 +486,14 @@ export const GUIDE: GuidePart[] = [
             'Click **Calculate & Save**. Do this before you generate and publish the period.',
           ] },
           { type: 'shot', src: '/help/water.jpg', alt: 'Water Billing with meter readings for each flat and a flat marked counts down', caption: 'Water Billing: opening and closing readings per flat. The flat whose meter counts down carries a "counts down" tag, and its 26 units are worked out the other way round.' },
+          { type: 'p', text: '**Charging more for heavy use.** To discourage heavy use, set a **limit per flat** (for example 20 units, which is 20 KL). Tick **Charge more for heavy use** on the Water Billing screen (on the phone, the switch under the costs), enter the limit and choose how the units above it are charged:' },
+          { type: 'list', items: [
+            '**% more per unit:** each unit above the limit costs that much more than the normal rate. At ₹100 a unit and 25% more, the units above the limit cost ₹125.',
+            '**₹ more per unit:** each unit above the limit costs that many rupees more. At ₹100 and ₹20 more, they cost ₹120.',
+            '**One-time fee:** a flat that goes above the limit pays this fee once, however far above it goes.',
+          ] },
+          { type: 'p', text: 'The **normal rate does not change**, and a flat that stays within the limit pays exactly what it did before. Only the units above the limit carry the extra. A flat using 30 units with a 20-unit limit, at ₹100 and 25% more, pays 20 × ₹100 + 10 × ₹125 = ₹3,250. The screen shows how many flats are above the limit and roughly what it adds before you save; the results show each flat\'s units above the limit and the extra, and the bill\'s water line says how much of it came from the limit.' },
+          { type: 'tip', text: 'The limit is saved with your water rules when you Calculate & Save, so next month starts with the same one. Untick it (or switch it off) and save to remove it. The extra is on top of the society\'s water cost, so the society collects a little more than it spent.' },
           { type: 'p', text: '**A meter that counts down.** A faulty meter can run backwards (98362 last month, 98336 now, so 26 units used). On the web, open **Flats**, edit that flat and tick **Water meter counts down**. Then enter readings exactly as the meter shows them: for that flat the units are worked out as earlier minus later, so 26. Every other flat is unchanged. Untick it when the meter is fixed.' },
           { type: 'warn', text: 'The app never guesses the direction from the numbers. A reading lower than the last one on an ordinary flat is refused, because a typo or a replaced meter looks just the same.' },
         ],
@@ -723,6 +731,7 @@ export const GUIDE: GuidePart[] = [
             ['A resident cannot find their flat when joining', 'Their society has no flats added yet, or not that one. Add it under Flats, then they can pick it with the same invite code.'],
             ['An expense has the wrong amount or date', 'Click Edit (Correct on the phone) on the expense, change it and write a comment. For an approved or paid expense only the admin can, and the account moves by the difference.'],
             ['The funds do not match the bank', 'Open Accounts. Where the money is shows the bank split into the corpus, other funds and maintenance and general money, and tells you if the funds are more than the bank holds.'],
+            ['Heavy water users should pay more', 'On Water Billing, tick Charge more for heavy use, set the limit per flat and how the units above it are charged (a percentage or rupees more per unit, or a one-time fee). The normal rate is unchanged.'],
             ['A flat should pay less every month', 'Add a Flat Discount under Billing → Flat Discounts. It is taken off every bill generated and kept when bills are regenerated.'],
             ['A discount I added did not change a bill', 'The bill was generated before the discount. Generate that period\'s bills again (before publishing) and it will be applied.'],
             ['A flat wants its advance back', 'The admin can refund it under Billing → Advance Credit, from an account that holds the money.'],

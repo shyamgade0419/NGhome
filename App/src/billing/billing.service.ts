@@ -95,12 +95,21 @@ export class BillingService {
       // Build flat → total water charge map from any readings recorded for this period
       const waterReadings = await tx.waterMeterReading.findMany({
         where: { societyId, billingPeriodId: periodId },
-        select: { flatId: true, calculatedAmount: true },
+        select: { flatId: true, calculatedAmount: true, excessUnits: true, excessCharge: true },
       });
       const waterChargesMap = new Map<string, number>();
+      // What part of each flat's water charge came from units above the usage limit, for the bill's wording.
+      const waterExcessMap = new Map<string, { units: number; charge: number }>();
       for (const r of waterReadings) {
         const prev = waterChargesMap.get(r.flatId) ?? 0;
         waterChargesMap.set(r.flatId, prev + (r.calculatedAmount?.toNumber() ?? 0));
+        if (r.excessCharge && r.excessCharge.greaterThan(0)) {
+          const ex = waterExcessMap.get(r.flatId) ?? { units: 0, charge: 0 };
+          waterExcessMap.set(r.flatId, {
+            units: ex.units + (r.excessUnits?.toNumber() ?? 0),
+            charge: ex.charge + r.excessCharge.toNumber(),
+          });
+        }
       }
 
       let invoiceNumber = config.invoiceCurrentNumber;
@@ -157,13 +166,16 @@ export class BillingService {
           generatedBy: generatedById,
         };
 
+        const waterExcess = waterExcessMap.get(flat.id);
         const waterLineItem = waterCharge > 0
           ? [{
               componentName: 'Water Charges',
               componentType: 'WATER',
               description: 'Water meter reading charge for billing period',
               amount: new Prisma.Decimal(waterCharge),
-              calculationNote: `Water usage: ₹${waterCharge.toFixed(2)}`,
+              calculationNote: waterExcess
+                ? `Water usage: ₹${waterCharge.toFixed(2)}, including ₹${waterExcess.charge.toFixed(2)} for ${waterExcess.units} KL above the usage limit`
+                : `Water usage: ₹${waterCharge.toFixed(2)}`,
             }]
           : [];
 
@@ -658,6 +670,8 @@ export class BillingService {
               unit: water.unit,
               effectiveRate: water.effectiveRate?.toNumber() ?? null,
               waterCharges: water.calculatedAmount?.toNumber() ?? null,
+              excessUnits: water.excessUnits?.toNumber() ?? null,
+              excessCharge: water.excessCharge?.toNumber() ?? null,
             }
           : null,
         waterCharges,

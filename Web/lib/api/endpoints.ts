@@ -363,6 +363,8 @@ export const waterApi = {
       tankerCost: number;
       commonElectricityBill: number;
       electricityWaterPercent: number;
+      /** Omit to use the saved limit; an object applies and saves a new one; null switches it off. */
+      usageLimit?: { limitUnits: number; mode: 'PERCENT' | 'PER_UNIT' | 'ONE_TIME'; value: number } | null;
       readings: { flatId: string; openingReading: number; closingReading: number; notes?: string }[];
     },
   ) => api.post(`/water/periods/${periodId}/allocate`, data),
