@@ -41,12 +41,12 @@ WhatsApp messages come from **one phone number** that is linked to OpenWA. Use a
 SIM), not your personal one. OpenWA is an unofficial client, so WhatsApp can restrict or ban the number; the pacing above
 keeps the risk low but cannot remove it. Keep email and the in-app notification as the fallback: they always go out.
 
-1. **Run OpenWA** on your server (Docker, on the same Coolify server as the API is simplest). Give it a **persistent
-   volume** for `/app/data`, and set `AUTO_START_SESSIONS=true` so it brings a linked session back after a restart.
-   Set `SEND_PACING_ENABLED=true` as well. Keep it on a private network if you can; it only needs to be reachable from the API.
-2. **Get its API key**: `docker exec openwa-api cat /app/data/.api-key`.
+1. **Run OpenWA** in Coolify with `docs/openwa/docker-compose.yml`: paste it into a *Docker Compose Empty* resource, set the
+   `OPENWA_API_KEY` variable to a long random secret, and give the service a domain with port 2785. It sets the persistent
+   volume, the automatic restart and the pacing for you.
+2. **The gateway key** is the `OPENWA_API_KEY` you just set.
 3. Sign in to the **Platform console** and open **Settings → WhatsApp messages** (platform admins only; one number serves every society):
-   enter the gateway address (for example `http://openwa:2785`) and the key, and press **Save gateway**.
+   enter the gateway address (the domain you gave it, for example `https://wa.novagade.in`) and the key, and press **Save gateway**.
 4. Press **Connect a phone**. A QR code appears. On the dedicated number's phone: WhatsApp → Linked devices → Link a
    device → scan it. The panel then shows "Linked to +…".
 5. Then, in a society's **Settings → Billing Rules → WhatsApp**, switch **Send WhatsApp messages automatically** on, press **Send test** to your own number first, then **Save WhatsApp Settings**.

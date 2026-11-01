@@ -1,0 +1,67 @@
+# OpenWA (the WhatsApp gateway NG Home sends messages through), for Coolify.
+#
+# Paste this into Coolify: Project -> + New -> Docker Compose Empty. It runs the published image (nothing is built)
+# with one SQLite database, which is plenty for one WhatsApp number. Full steps: docs/whatsapp-automation.md.
+#
+# Before the first deploy, in Coolify -> Environment Variables, set:
+#   OPENWA_API_KEY   a long random secret, 40+ characters (this is the key you later paste into NG Home)
+# and give the "openwa" service the domain, with the port: https://wa.yourdomain.in:2785
+#
+# The data volume holds the WhatsApp link, so it survives redeploys: do not delete it.
+
+services:
+  openwa:
+    # Pinned, so an update is something you choose. "latest" would change under you.
+    image: ghcr.io/rmyndharis/openwa:0.27.0
+    restart: unless-stopped
+    # Same container hardening as OpenWA's own quick-start compose.
+    security_opt:
+      - 'no-new-privileges:true'
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - KILL
+      - SETGID
+      - SETUID
+    read_only: true
+    tmpfs:
+      - /tmp
+    pids_limit: 2048
+    mem_limit: 2g
+    expose:
+      - '2785'
+    volumes:
+      - openwa-data:/app/data
+    environment:
+      - NODE_ENV=development
+      - TZ=Asia/Kolkata
+      - PORT=2785
+      - HOME=/tmp
+      - XDG_CONFIG_HOME=/tmp/.config
+      - XDG_CACHE_HOME=/tmp/.cache
+      - LOG_LEVEL=info
+      # Bring the linked WhatsApp session back by itself after a restart or redeploy.
+      - AUTO_START_SESSIONS=true
+      # One small SQLite file inside the data volume.
+      - DATABASE_TYPE=sqlite
+      - DATABASE_SYNCHRONIZE=true
+      - SESSION_DATA_PATH=/app/data/sessions
+      - STORAGE_TYPE=local
+      - STORAGE_LOCAL_PATH=/app/data/media
+      - PLUGINS_DIR=/app/data/plugins
+      - PUPPETEER_HEADLESS=true
+      - PUPPETEER_ARGS=--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu
+      # Gentle on a number that is new to automation: a daily allowance that grows as the session ages.
+      - SEND_PACING_ENABLED=true
+      # The admin key, fixed here so you know it (it is only read the first time the gateway starts).
+      - API_MASTER_KEY=${OPENWA_API_KEY}
+      # The API docs page is not needed on the public internet.
+      - ENABLE_SWAGGER=false
+      # Updates are chosen by you, not announced by the gateway.
+      - UPDATE_CHECK_ENABLED=false
+
+volumes:
+  openwa-data:
