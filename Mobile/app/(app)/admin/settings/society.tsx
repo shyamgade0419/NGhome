@@ -22,6 +22,7 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { ReminderTemplateEditor } from '@/components/billing/ReminderTemplateEditor';
 import { colors, spacing, typography, radius } from '@/theme';
 
 // ─── Section heading ─────────────────────────────────────────────────────────
@@ -526,6 +527,10 @@ export default function SocietySettingsScreen() {
             fullWidth
             size="lg"
           />
+
+          {/* ── WhatsApp payment reminder wording ── */}
+          <Section title="WhatsApp Reminder" />
+          <ReminderTemplateEditor />
 
           <View style={{ height: spacing['3xl'] }} />
         </ScrollView>

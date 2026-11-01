@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { router, Stack } from 'expo-router';
+import { router, Stack, usePathname } from 'expo-router';
+import { POLL_EVERY_MS, STALE_AFTER_MS, startLiveRefresh } from '@/query/liveRefresh';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -15,8 +16,13 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 2,
-      staleTime: 30_000,
+      staleTime: STALE_AFTER_MS,
       gcTime: 5 * 60_000,
+      // What is on screen is re-read every half minute while the app is open (not in the background — React
+      // Query pauses it once the app is no longer in focus), and again the moment the app comes back to the front.
+      refetchInterval: POLL_EVERY_MS,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
     },
     mutations: {
       retry: 0,
@@ -28,6 +34,16 @@ export default function RootLayout() {
   useEffect(() => {
     SplashScreen.hideAsync();
   }, []);
+
+  // Refetch when the app returns to the front, when the network is back, and when a push arrives.
+  useEffect(() => startLiveRefresh(queryClient), []);
+
+  // Opening another screen: the tabs stay mounted behind it, so a tab last read minutes ago would otherwise be
+  // shown as it was. Anything past its freshness window is re-read as soon as the person lands on it.
+  const pathname = usePathname();
+  useEffect(() => {
+    void queryClient.refetchQueries({ type: 'active', stale: true });
+  }, [pathname]);
 
   // Android's hardware back button is a well-documented gap in this exact
   // stack (expo-router + Tabs holding hidden detail screens like
@@ -61,6 +77,7 @@ export default function RootLayout() {
   // redirect logic in (app)/_layout.tsx.
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      void queryClient.invalidateQueries(); // opened from a push: show what it is about, not what was loaded before
       const type = (response.notification.request.content.data as { type?: unknown } | undefined)?.type;
       // A visitor at the gate needs an answer now: go straight to the right screen for this person.
       // Anything else lands on the notification list, as before.

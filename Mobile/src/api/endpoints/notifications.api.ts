@@ -97,6 +97,14 @@ export const notificationsApi = {
     await apiClient.post('/notifications/push-token', { token, platform });
   },
 
+  /** Sends a test alert to this person's own phones and says what happened to it. */
+  pushTest: async (): Promise<{ devices: number; accepted: number; problems: string[] }> => {
+    const { data } = await apiClient.post<{ data: { devices: number; accepted: number; problems: string[] } }>(
+      '/notifications/push-test',
+    );
+    return data.data;
+  },
+
   /** Called on logout so this device stops receiving pushes for whoever
    *  signed out of it. */
   unregisterPushToken: async (token: string): Promise<void> => {

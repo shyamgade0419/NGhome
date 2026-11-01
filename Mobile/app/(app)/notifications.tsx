@@ -21,6 +21,7 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
+import { PushStatusBanner } from '@/components/notifications/PushStatusBanner';
 import { useIsRole } from '@/hooks/useAuth';
 import { colors, spacing, typography, radius } from '@/theme';
 
@@ -219,6 +220,7 @@ export default function ResidentNotificationsScreen() {
             <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />
           }
           renderItem={({ item }) => <NotifRow item={item} />}
+          ListHeaderComponent={<PushStatusBanner />}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
           ListEmptyComponent={
             <EmptyState

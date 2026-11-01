@@ -26,6 +26,7 @@
       "versionCode": 25,
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.POST_NOTIFICATIONS",
         "android.permission.VIBRATE"
       ],
       "blockedPermissions": [

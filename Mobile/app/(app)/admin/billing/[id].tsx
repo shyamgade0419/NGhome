@@ -23,39 +23,12 @@ import { Card } from '@/components/ui/Card';
 import { colors, spacing, typography, radius } from '@/theme';
 import { BillingPeriod, MaintenanceBill, billingPeriodName } from '@/types/billing.types';
 import { toNum, inr } from '@/utils/format';
+import { BillReminder } from '@/utils/reminders';
+import { RecordPaymentModal } from '@/components/billing/RecordPaymentModal';
+import { RemindAllModal, openWhatsApp } from '@/components/billing/RemindAllModal';
 
 const MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
-
-function buildBillMessage(bill: MaintenanceBill, period: BillingPeriod): string {
-  const month = `${MONTHS[period.periodMonth] ?? ''} ${period.periodYear}`;
-  const due = period.dueDate
-    ? new Date(period.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-    : '';
-  const total = toNum(bill.totalAmount);
-  const pending = toNum(bill.pendingAmount);
-  const water = toNum(bill.waterCharges);
-
-  const lines = [
-    `🏢 *${month} Maintenance*`,
-    '',
-    `Flat: *${bill.flatCode ?? ''}*  |  Invoice: ${bill.invoiceNumber ?? ''}`,
-    `Due Date: *${due}*`,
-    '',
-    `💰 Total: *₹${total.toLocaleString('en-IN')}*`,
-  ];
-  if (water > 0) {
-    lines.push(`   • Maintenance: ${inr(bill.baseAmount)}`);
-    lines.push(`   • Water: ₹${water.toLocaleString('en-IN')}`);
-  }
-  if (bill.isPaid) {
-    lines.push('', '✅ *Payment received — Thank you!*');
-  } else if (pending > 0) {
-    lines.push('', `⚠️ *Balance Due: ₹${pending.toLocaleString('en-IN')}*`);
-    lines.push(`Please pay before ${due} to avoid late fees.`);
-  }
-  return lines.join('\n');
-}
 
 function buildGroupMessage(period: BillingPeriod, bills: MaintenanceBill[]): string {
   const month = `${MONTHS[period.periodMonth] ?? ''} ${period.periodYear}`;
@@ -82,21 +55,20 @@ function buildGroupMessage(period: BillingPeriod, bills: MaintenanceBill[]): str
 /* ── Bill row ────────────────────────────────────────────────────── */
 function BillRow({
   bill,
-  period,
   isAdmin,
+  reminder,
+  onMarkPaid,
 }: {
   bill: MaintenanceBill;
-  period: BillingPeriod;
   isAdmin: boolean;
+  /** Who this flat's reminder goes to and its message; undefined until the list has loaded. */
+  reminder?: BillReminder;
+  onMarkPaid: (bill: MaintenanceBill) => void;
 }) {
   const pending = toNum(bill.pendingAmount);
 
-  const handleWhatsApp = async () => {
-    try {
-      await Share.share({ message: buildBillMessage(bill, period) });
-    } catch {
-      // User dismissed the share sheet — nothing to do.
-    }
+  const handleWhatsApp = () => {
+    if (reminder) void openWhatsApp(reminder);
   };
 
   return (
@@ -121,9 +93,25 @@ function BillRow({
           variant={bill.isPaid ? 'success' : bill.isPublished ? 'warning' : 'neutral'}
         />
         {isAdmin && bill.isPublished && !bill.isPaid && (
-          <TouchableOpacity onPress={handleWhatsApp} style={billStyles.waBtn} hitSlop={8}>
-            <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity
+              onPress={() => onMarkPaid(bill)}
+              style={billStyles.paidBtn}
+              hitSlop={8}
+              accessibilityLabel={`Mark Flat ${bill.flatCode} as paid`}
+            >
+              <Ionicons name="checkmark-circle-outline" size={20} color={colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleWhatsApp}
+              style={[billStyles.waBtn, !reminder && { opacity: 0.4 }]}
+              disabled={!reminder}
+              hitSlop={8}
+              accessibilityLabel={`WhatsApp Flat ${bill.flatCode}`}
+            >
+              <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+            </TouchableOpacity>
+          </>
         )}
       </View>
     </View>
@@ -155,6 +143,14 @@ const billStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  paidBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
 
 /* ── Main Screen ─────────────────────────────────────────────────── */
@@ -174,6 +170,17 @@ export default function BillingDetailScreen() {
     queryFn: () => billingApi.getBillsForPeriod(id, { limit: 200 }),
     enabled: !!id,
   });
+
+  const [payBill, setPayBill] = useState<MaintenanceBill | null>(null);
+  const [showRemind, setShowRemind] = useState(false);
+
+  const periodStatus = period?.status ?? '';
+  const { data: reminders } = useQuery({
+    queryKey: ['billing-period-reminders', id],
+    queryFn: () => billingApi.getReminders(id),
+    enabled: !!id && ['PUBLISHED', 'PARTIALLY_PAID'].includes(periodStatus),
+  });
+  const reminderFor = (billId: string) => reminders?.find((r) => r.billId === billId);
 
   const generateMutation = useMutation({
     mutationFn: () => billingApi.generateBills(id),
@@ -312,6 +319,14 @@ export default function BillingDetailScreen() {
                   fullWidth
                 />
               )}
+              {['PUBLISHED', 'PARTIALLY_PAID'].includes(status) && bills.some((b) => b.isPublished && !b.isPaid) && (
+                <TouchableOpacity onPress={() => setShowRemind(true)} style={styles.waGroupBtn} accessibilityLabel="Remind unpaid flats">
+                  <Ionicons name="notifications-outline" size={18} color="#128C5E" />
+                  <Text style={styles.waGroupText}>
+                    Remind {bills.filter((b) => b.isPublished && !b.isPaid).length} unpaid flats
+                  </Text>
+                </TouchableOpacity>
+              )}
               {status === 'PUBLISHED' && bills.length > 0 && (
                 <TouchableOpacity onPress={handleGroupWhatsApp} style={styles.waGroupBtn}>
                   <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
@@ -346,7 +361,12 @@ export default function BillingDetailScreen() {
           </>
         }
         renderItem={({ item }) => (
-          <BillRow bill={item} period={period} isAdmin={canGenerate || canPublish || canClose} />
+          <BillRow
+            bill={item}
+            isAdmin={canGenerate || canPublish || canClose}
+            reminder={reminderFor(item.id)}
+            onMarkPaid={setPayBill}
+          />
         )}
         ListEmptyComponent={
           billsLoading ? (
@@ -361,6 +381,8 @@ export default function BillingDetailScreen() {
         }
         ListFooterComponent={<View style={{ height: spacing['3xl'] }} />}
       />
+      {payBill && <RecordPaymentModal bill={payBill} periodId={id} onClose={() => setPayBill(null)} />}
+      {showRemind && <RemindAllModal periodId={id} onClose={() => setShowRemind(false)} />}
     </SafeAreaView>
   );
 }

@@ -3,6 +3,7 @@ import { ApiResponse, PaginatedResponse, PaginationQuery } from '@/api/types';
 import { BillingPeriod, MaintenanceBill } from '@/types/billing.types';
 import { OpeningBalances, OpeningSaveResult } from '@/utils/openingBalances';
 import { AdvanceCredits, DiscountType, FlatDiscount } from '@/utils/flatDiscounts';
+import { BillReminder, ReminderTemplate } from '@/utils/reminders';
 
 export const billingApi = {
   // ─── Admin: billing periods ────────────────────────────────────────────────
@@ -77,6 +78,26 @@ export const billingApi = {
       { params: query },
     );
     return data;
+  },
+
+  /** Every unpaid flat of a period: who to remind (the tenant, else the owner), their phone, and the message from the template. */
+  getReminders: async (periodId: string): Promise<BillReminder[]> => {
+    const { data } = await apiClient.get<ApiResponse<BillReminder[]>>(`/billing/periods/${periodId}/reminders`);
+    return data.data ?? [];
+  },
+
+  /** An in-app and phone-alert reminder to every unpaid flat. */
+  sendReminders: async (periodId: string) => {
+    const { data } = await apiClient.post<ApiResponse<{ unpaid: number; sent: number; withoutResident: string[] }>>(
+      `/billing/periods/${periodId}/remind`,
+    );
+    return data.data;
+  },
+
+  /** The wording of the payment reminder: the one in use, the default, and the placeholders it may use. */
+  getReminderTemplate: async (): Promise<ReminderTemplate> => {
+    const { data } = await apiClient.get<ApiResponse<ReminderTemplate>>('/billing/reminder-template');
+    return data.data;
   },
 
   getBill: async (billId: string) => {

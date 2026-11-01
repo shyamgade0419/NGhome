@@ -39,6 +39,20 @@ export const paymentsApi = {
     return data.data;
   },
 
+  /** Admin/accountant: record that a flat has paid (cash, cheque, transfer) and settle its bill in one step. */
+  recordPayment: async (payload: {
+    maintenanceBillId: string;
+    accountId: string;
+    amount: number;
+    paymentDate: string;
+    paymentMethod: string;
+    utrNumber?: string;
+    notes?: string;
+  }) => {
+    const { data } = await apiClient.post<ApiResponse<PaymentSubmission>>('/payments/record', payload);
+    return data.data;
+  },
+
   // Resident: my payment history
   getMyPayments: async (query?: PaginationQuery) => {
     const { data } = await apiClient.get<PaginatedResponse<PaymentSubmission>>(
