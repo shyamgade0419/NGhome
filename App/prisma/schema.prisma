@@ -2048,3 +2048,17 @@ model WhatsappMessage {
   @@index([societyId, createdAt])
   @@map("whatsapp_messages")
 }
+
+/// The WhatsApp gateway (OpenWA) connection, managed from the platform console instead of the server's environment.
+/// One row (id "singleton"). When present it wins over the WHATSAPP_* environment variables; deleting the row falls
+/// back to them. The API key is encrypted (AES-256-GCM) and never sent back to any client.
+model PlatformWhatsappSettings {
+  id          String   @id @default("singleton")
+  url         String
+  apiKeyEnc   String
+  sessionId   String?
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("platform_whatsapp_settings")
+}

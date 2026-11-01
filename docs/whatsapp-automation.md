@@ -5,11 +5,14 @@ NG Home can send WhatsApp messages by itself:
 | When | Who gets it | Message |
 | --- | --- | --- |
 | The maintenance bills are **published** | each flat's contact | the amount due and the due date |
-| On the **reminder days** (5th and 10th unless changed), if the flat has not paid | each flat that still owes | your own reminder wording (Settings → WhatsApp Reminder) |
+| On the **reminder days** (5th and 10th unless changed), if the flat has not paid | each flat that still owes | your own reminder wording |
 | A **late fine is added** to an unpaid bill | the flat's contact | the fine and the new amount due |
 | A payment is **approved**, or the admin marks a flat paid | the person who paid | "we received ₹X", and any balance still due |
 
 A flat's contact is its **tenant**, or its **owner** if there is no tenant (among the people who have a phone number).
+
+Everything is set up in the app: the phone is linked once in the **Platform console → Settings → WhatsApp messages**, and each society switches the messages on, and sets the reminder wording and days, under **Settings → Billing Rules → WhatsApp**. Nothing has to be set in Coolify except
+running the WhatsApp gateway itself.
 
 ## How it works
 
@@ -24,6 +27,8 @@ one at a time through [OpenWA](https://github.com/rmyndharis/OpenWA) (a self-hos
 - **Stops cleanly.** If OpenWA is down, the session is logged out, or the API key is wrong, nothing is lost: messages stay
   queued and go out when it is back. A message that fails is retried twice more, 15 and 30 minutes later, then marked
   failed (a number that is not on WhatsApp is marked failed at once).
+- **Reconnects by itself.** If the linked session has merely dropped (for example OpenWA was restarted), the sender starts
+  it again, at most once every ten minutes. A session that needs a new QR scan is not restarted in a loop.
 - A flat that has already **submitted a payment waiting for approval** is not reminded.
 
 The late-fine message goes out when the fine is **actually added**, which is the day after the due date plus the grace
@@ -36,28 +41,29 @@ WhatsApp messages come from **one phone number** that is linked to OpenWA. Use a
 SIM), not your personal one. OpenWA is an unofficial client, so WhatsApp can restrict or ban the number; the pacing above
 keeps the risk low but cannot remove it. Keep email and the in-app notification as the fallback: they always go out.
 
-1. **Deploy OpenWA** (Docker, on the same Coolify server as the API is simplest):
-   `docker compose -f docker-compose.dev.yml up -d` from the OpenWA repository, or add it as a Coolify service. Set
-   `SEND_PACING_ENABLED=true` for it as well. Keep it on a private network if you can; it needs only to be reachable from
-   the API.
+1. **Run OpenWA** on your server (Docker, on the same Coolify server as the API is simplest). Give it a **persistent
+   volume** for `/app/data`, and set `AUTO_START_SESSIONS=true` so it brings a linked session back after a restart.
+   Set `SEND_PACING_ENABLED=true` as well. Keep it on a private network if you can; it only needs to be reachable from the API.
 2. **Get its API key**: `docker exec openwa-api cat /app/data/.api-key`.
-3. **Create a session and link the phone**: in the OpenWA dashboard (port 2785) create a session, start it, and scan the
-   QR code from the dedicated number (WhatsApp → Linked devices → Link a device). Note the **session id**.
-4. **Tell the API about it**, in the API's environment (Coolify), then redeploy the API:
+3. Sign in to the **Platform console** and open **Settings → WhatsApp messages** (platform admins only; one number serves every society):
+   enter the gateway address (for example `http://openwa:2785`) and the key, and press **Save gateway**.
+4. Press **Connect a phone**. A QR code appears. On the dedicated number's phone: WhatsApp → Linked devices → Link a
+   device → scan it. The panel then shows "Linked to +…".
+5. Then, in a society's **Settings → Billing Rules → WhatsApp**, switch **Send WhatsApp messages automatically** on, press **Send test** to your own number first, then **Save WhatsApp Settings**.
 
-   ```
-   WHATSAPP_API_URL=http://<openwa-host>:2785
-   WHATSAPP_API_KEY=<the key from step 2>
-   WHATSAPP_SESSION_ID=<the session id from step 3>
-   ```
+The connection saved in the app wins over the `WHATSAPP_API_URL`, `WHATSAPP_API_KEY` and `WHATSAPP_SESSION_ID`
+environment variables, which still work as a fallback if you prefer them. The key is stored encrypted and never shown again.
 
-5. **Each society** then switches it on: Settings → WhatsApp Automation. The card shows "Connected — sending from +…", the
-   day's counts, and the latest messages. **Send a test** to your own number first.
+## Does it stay logged in?
 
-## Checking on it
+Yes. Scanning the QR code links the number once, and OpenWA keeps that link on its data volume, so it survives restarts and
+redeploys of both OpenWA and NG Home. You scan again only if:
 
-- Settings → WhatsApp Automation shows whether WhatsApp is connected, how many messages are waiting, how many were sent today
-  and how many failed this week.
-- If the status says the session is `qr_ready` or `disconnected`, the phone was unlinked: open the OpenWA dashboard and scan
-  the QR code again. Queued messages then go out by themselves.
-- Switching a society's automation **off** stops anything still waiting for it.
+- you **unlink** the device on the phone (WhatsApp → Linked devices) or press **Unlink this phone** in the app;
+- the OpenWA **data volume is lost or recreated**;
+- the phone has been **offline for about two weeks** (WhatsApp's own rule for linked devices): keep it charged and online;
+- WhatsApp **restricts or bans** the number.
+
+Settings → Billing Rules → WhatsApp shows whether it is connected, how many messages are waiting, and how many failed. If it
+says the session needs a QR code, open the Platform console → Settings → WhatsApp messages and press **Connect a phone** again. Queued messages then go out
+by themselves.

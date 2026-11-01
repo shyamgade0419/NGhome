@@ -98,3 +98,76 @@ export async function sessionStatus(cfg: GatewayConfig, fetchImpl: FetchLike = f
   const s = json?.data ?? json;
   return { status: (s?.status as SessionStatus) ?? 'unknown', phone: s?.phone ?? null };
 }
+
+// ─── Setting the connection up (platform console) ─────────────────────────────────────────────────────────────────
+
+/** Just enough to talk to the gateway before a session exists. */
+export interface GatewayCreds {
+  url: string;
+  key: string;
+}
+
+async function call<T>(creds: GatewayCreds, method: string, path: string, body?: unknown, timeoutMs = 20_000, fetchImpl: FetchLike = fetch): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetchImpl(`${creds.url}${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': creds.key },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    throw new GatewayError(`The WhatsApp gateway could not be reached at ${creds.url}: ${err instanceof Error ? err.message : err}`, undefined, true);
+  }
+  if (res.status === 204) return undefined as T;
+  if (!res.ok) {
+    const message = await errorText(res);
+    if (res.status === 401 || res.status === 403) throw new GatewayError(`The gateway refused the API key (${message}).`, res.status, true);
+    throw new GatewayError(message, res.status, res.status >= 500);
+  }
+  const json = (await res.json().catch(() => null)) as { data?: T } | T | null;
+  return ((json as { data?: T } | null)?.data ?? json) as T;
+}
+
+export interface GatewaySession {
+  id: string;
+  name: string;
+  status: SessionStatus | 'unknown';
+  phone: string | null;
+}
+
+const asSession = (s: { id?: string; name?: string; status?: string; phone?: string | null } | null | undefined): GatewaySession => ({
+  id: String(s?.id ?? ''),
+  name: String(s?.name ?? ''),
+  status: (s?.status as SessionStatus) ?? 'unknown',
+  phone: s?.phone ?? null,
+});
+
+export async function listSessions(creds: GatewayCreds): Promise<GatewaySession[]> {
+  const out = await call<unknown>(creds, 'GET', '/api/sessions');
+  const rows = Array.isArray(out) ? out : ((out as { sessions?: unknown[] } | null)?.sessions ?? []);
+  return (rows as { id?: string; name?: string; status?: string; phone?: string | null }[]).map(asSession);
+}
+
+export async function getSession(creds: GatewayCreds, sessionId: string): Promise<GatewaySession> {
+  return asSession(await call(creds, 'GET', `/api/sessions/${encodeURIComponent(sessionId)}`, undefined, 8_000));
+}
+
+export async function createSession(creds: GatewayCreds, name: string): Promise<GatewaySession> {
+  return asSession(await call(creds, 'POST', '/api/sessions', { name }));
+}
+
+/** Starting can take a while: the gateway opens WhatsApp Web in a browser. */
+export async function startSession(creds: GatewayCreds, sessionId: string): Promise<void> {
+  await call(creds, 'POST', `/api/sessions/${encodeURIComponent(sessionId)}/start`, undefined, 90_000);
+}
+
+export async function getQr(creds: GatewayCreds, sessionId: string): Promise<{ qrCode: string | null; status: SessionStatus | 'unknown' }> {
+  const out = await call<{ qrCode?: string; status?: string }>(creds, 'GET', `/api/sessions/${encodeURIComponent(sessionId)}/qr`, undefined, 10_000);
+  return { qrCode: out?.qrCode ?? null, status: (out?.status as SessionStatus) ?? 'unknown' };
+}
+
+/** Unlinks the phone and stops the session. */
+export async function logoutSession(creds: GatewayCreds, sessionId: string): Promise<void> {
+  await call(creds, 'POST', `/api/sessions/${encodeURIComponent(sessionId)}/logout`, undefined, 30_000);
+}

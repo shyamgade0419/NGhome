@@ -6,6 +6,7 @@ import { PlatformService } from './platform.service';
 import { PlatformMailService } from './platform-mail.service';
 import { UsersModule } from '../users/users.module';
 import { MailModule } from '../mail/mail.module';
+import { WhatsappModule } from '../whatsapp/whatsapp.module';
 import { SupportController } from './support.controller';
 
 @Module({
@@ -15,7 +16,7 @@ import { SupportController } from './support.controller';
   // password uses, instead of building a parallel token/email path.
   // UsersModule exports UserDeleteService: the platform console and a society
   // admin erase accounts with the same code, differing only in how far they may reach.
-  imports: [DocumentsModule, AuthModule, MailModule, UsersModule],
+  imports: [DocumentsModule, AuthModule, MailModule, UsersModule, WhatsappModule],
   controllers: [PlatformController, SupportController],
   providers: [PlatformService, PlatformMailService],
 })

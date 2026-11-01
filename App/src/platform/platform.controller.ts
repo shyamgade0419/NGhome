@@ -13,6 +13,9 @@ import { SetAdminStatusDto } from './dto/set-admin-status.dto';
 import { UpdatePlatformSettingsDto } from './dto/update-platform-settings.dto';
 import { UpdateMailSettingsDto } from './dto/update-mail-settings.dto';
 import { MailSettingsStore } from '../mail/mail-settings.store';
+import { WhatsappSettingsStore } from '../whatsapp/whatsapp-settings.store';
+import { WhatsappConnectionService } from '../whatsapp/whatsapp-connection.service';
+import { UpdateWhatsappSettingsDto } from './dto/update-whatsapp-settings.dto';
 import { InvitePlatformAdminDto } from './dto/invite-platform-admin.dto';
 
 @ApiTags('Platform')
@@ -25,6 +28,8 @@ export class PlatformController {
     private readonly platformMail: PlatformMailService,
     private readonly userDelete: UserDeleteService,
     private readonly mailSettings: MailSettingsStore,
+    private readonly whatsappSettings: WhatsappSettingsStore,
+    private readonly whatsappConnection: WhatsappConnectionService,
   ) {}
 
   @Get('storage')
@@ -62,6 +67,48 @@ export class PlatformController {
   @ApiOperation({ summary: '[Platform Admin] Forget the saved mail login and go back to the SMTP_* environment variables' })
   clearMailSettings(@CurrentUser() user: AuthenticatedUser) {
     return this.mailSettings.clear(user.id);
+  }
+
+  // The WhatsApp gateway (OpenWA) connection managed from the console. It wins over the WHATSAPP_* environment
+  // variables, so WhatsApp can be set up, and its phone linked, without touching the server.
+  @Get('whatsapp/settings')
+  @ApiOperation({ summary: '[Platform Admin] The saved WhatsApp gateway address (never the key) and where the connection comes from now' })
+  getWhatsappSettings() {
+    return this.whatsappSettings.view();
+  }
+
+  @Put('whatsapp/settings')
+  @ApiOperation({ summary: '[Platform Admin] Save the WhatsApp gateway address and key. A blank key keeps the saved one.' })
+  saveWhatsappSettings(@Body() dto: UpdateWhatsappSettingsDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.whatsappSettings.save(dto, user.id);
+  }
+
+  @Delete('whatsapp/settings')
+  @ApiOperation({ summary: '[Platform Admin] Forget the saved gateway and go back to the WHATSAPP_* environment variables' })
+  clearWhatsappSettings(@CurrentUser() user: AuthenticatedUser) {
+    return this.whatsappSettings.clear(user.id);
+  }
+
+  @Get('whatsapp/connection')
+  @ApiOperation({ summary: '[Platform Admin] Is a phone linked, and the QR code to scan while one is being linked' })
+  getWhatsappConnection() {
+    return this.whatsappConnection.state();
+  }
+
+  @Post('whatsapp/connect')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: '[Platform Admin] Start linking a phone: finds or creates the session and starts it' })
+  connectWhatsapp(@CurrentUser() user: AuthenticatedUser) {
+    return this.whatsappConnection.connect(user.id);
+  }
+
+  @Post('whatsapp/disconnect')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: '[Platform Admin] Unlink the phone from the gateway' })
+  disconnectWhatsapp() {
+    return this.whatsappConnection.disconnect();
   }
 
   // Logs in to the mail server and sends a real message to the admin asking, so

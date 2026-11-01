@@ -21,6 +21,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { LateFeeService } from '../src/billing/late-fee.service';
 import { WhatsappService } from '../src/whatsapp/whatsapp.service';
+import { WhatsappSettingsStore } from '../src/whatsapp/whatsapp-settings.store';
 
 jest.setTimeout(120_000);
 
@@ -61,6 +62,7 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
   let prisma: PrismaService;
   let whatsapp: WhatsappService;
   let lateFees: LateFeeService;
+  let store: WhatsappSettingsStore;
   const gw = fakeGateway();
   const http_ = () => request(app.getHttpServer());
   const auth = (t: string) => ({ Authorization: `Bearer ${t}` });
@@ -145,6 +147,10 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
     prisma = moduleFixture.get(PrismaService);
     whatsapp = moduleFixture.get(WhatsappService);
     lateFees = moduleFixture.get(LateFeeService);
+    store = moduleFixture.get(WhatsappSettingsStore);
+    // A connection saved in the platform console would win over the environment this suite relies on.
+    await prisma.platformWhatsappSettings.deleteMany();
+    store.invalidate();
 
     const reg = await http_().post('/api/v1/auth/register-society').send({
       society: { name: `E2E WhatsApp ${UNIQUE}`, address: '1 Street', city: 'Chennai', state: 'TN', pinCode: '600001', country: 'India', contactEmail: `soc-w-${UNIQUE}@test.example`, contactPhone: adminPhone() },
@@ -184,6 +190,7 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
       await setConfig({ whatsappEnabled: true });
       const saved = { ...process.env };
       delete process.env.WHATSAPP_API_URL;
+      store.invalidate();
       try {
         const f = await newFlat();
         await addPerson(f, SystemRole.RESIDENT, 'OWNER', { isPrimary: true });
@@ -194,6 +201,7 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
         expect((await http_().get('/api/v1/whatsapp/status').set(auth(admin)).expect(200)).body.data.configured).toBe(false);
       } finally {
         process.env.WHATSAPP_API_URL = saved.WHATSAPP_API_URL;
+        store.invalidate();
       }
     });
 

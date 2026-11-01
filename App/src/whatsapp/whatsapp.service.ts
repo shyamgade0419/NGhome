@@ -1,12 +1,13 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { WhatsappSettingsStore } from './whatsapp-settings.store';
 import { pickBillContact } from '../billing/billing-contact';
 import { MONTH_NAMES, readReminderTemplate, renderReminder } from '../billing/reminder-template';
 import { outstandingForFlat } from '../payments/settlement';
 import { fineMessage, paidMessage, publishedMessage } from './whatsapp-messages';
 import {
-  GatewayConfig, GatewayError, readGatewayConfig, sendText, sessionStatus,
+  GatewayConfig, GatewayError, sendText, sessionStatus, startSession,
 } from './openwa.client';
 import {
   chatIdFor, inSendWindow, istDayStart, istParts, normalizePhone, readWhatsappSettings,
@@ -62,8 +63,12 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   private reminderTimer?: NodeJS.Timeout;
   private firstRun?: NodeJS.Timeout;
   private draining = false;
+  private lastRestartAt = 0;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: WhatsappSettingsStore,
+  ) {}
 
   onModuleInit() {
     // Tests drive it directly; a timer would only keep them from exiting.
@@ -80,8 +85,9 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     for (const t of [this.firstRun, this.drainTimer, this.reminderTimer]) if (t) clearTimeout(t);
   }
 
-  isConfigured(): boolean {
-    return readGatewayConfig() !== null;
+  /** WhatsApp is set up: a gateway address, its key and a connected session are saved (console) or in the environment. */
+  async isConfigured(): Promise<boolean> {
+    return (await this.settings.effective()) !== null;
   }
 
   // ─── Who and what ───────────────────────────────────────────────────────────────────────────────
@@ -133,7 +139,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
 
   /** Whether events should produce messages for this society at all. */
   private async active(societyId: string) {
-    if (!this.isConfigured()) return null;
+    if (!(await this.isConfigured())) return null;
     const s = await this.settingsOf(societyId);
     return s.enabled ? s : null;
   }
@@ -268,7 +274,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
 
   /** Every society that has automation switched on: queue today's reminders if today is one of its reminder days. */
   async remindersPass(now = new Date()): Promise<{ societies: number; queued: number }> {
-    if (!this.isConfigured()) return { societies: 0, queued: 0 };
+    if (!(await this.isConfigured())) return { societies: 0, queued: 0 };
     // Not before the sending window opens: the queue would only hold them, and a society that switches the
     // setting off in the morning should not have the day's reminders already queued.
     if (!inSendWindow(now)) return { societies: 0, queued: 0 };
@@ -298,7 +304,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
    */
   async drain(opts: DrainOptions = {}): Promise<{ sent: number; failed: number; stopped: string | null }> {
     const result = { sent: 0, failed: 0, stopped: null as string | null };
-    const cfg = readGatewayConfig();
+    const cfg = await this.settings.effective();
     if (!cfg) return { ...result, stopped: 'not configured' };
     if (this.draining) return { ...result, stopped: 'already running' };
     const now = opts.now ?? new Date();
@@ -314,7 +320,20 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       if (waiting === 0) return result;
 
       try {
-        const session = await sessionStatus(cfg);
+        let session = await sessionStatus(cfg);
+        // The gateway does not always bring a linked phone back by itself after it restarts. A session that has
+        // merely dropped (rather than needing a new QR scan) comes back when it is started again, so try that —
+        // not more than once every ten minutes, and never while a scan is waiting.
+        if (['disconnected', 'created', 'failed'].includes(session.status) && now.getTime() - this.lastRestartAt > 10 * MINUTE_MS) {
+          this.lastRestartAt = now.getTime();
+          this.logger.warn(`The WhatsApp session is ${session.status}; trying to start it again.`);
+          try {
+            await startSession(cfg, cfg.sessionId);
+            session = await sessionStatus(cfg);
+          } catch (e) {
+            this.logger.warn(`Starting the WhatsApp session again failed: ${e instanceof Error ? e.message : e}`);
+          }
+        }
         if (session.status !== 'ready') return { ...result, stopped: `the WhatsApp session is ${session.status}` };
       } catch (err) {
         return { ...result, stopped: err instanceof Error ? err.message : String(err) };
@@ -382,7 +401,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   /** What the settings screen shows: is it set up, is WhatsApp connected, what is waiting. */
   async status(societyId: string) {
     const settings = await this.settingsOf(societyId);
-    const cfg = readGatewayConfig();
+    const cfg = await this.settings.effective();
     let session: { status: string; phone: string | null } | null = null;
     let problem: string | null = null;
     if (cfg) {
@@ -425,7 +444,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
    * through the queue's own sender, so it counts toward the daily cap and is logged like any other.
    */
   async sendTest(societyId: string, rawPhone: string): Promise<{ sent: boolean; error?: string }> {
-    const cfg: GatewayConfig | null = readGatewayConfig();
+    const cfg: GatewayConfig | null = await this.settings.effective();
     if (!cfg) return { sent: false, error: 'WhatsApp is not connected to this server yet (see the setup notes).' };
     const phone = normalizePhone(rawPhone);
     if (!phone) return { sent: false, error: 'That does not look like a mobile number.' };
