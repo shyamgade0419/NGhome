@@ -66,6 +66,12 @@ export const accountsApi = {
     return ((data as any)?.data ?? data) as { id: string; name: string; deleted: boolean; removedFromLists: boolean };
   },
 
+  /** Raises or lowers the balance by hand so it matches the bank. Admin only; a comment is required. */
+  adjust: async (id: string, payload: { direction: 'INCREASE' | 'DECREASE'; amount: number; comment: string }) => {
+    const { data } = await apiClient.post(`/accounts/${id}/adjust`, payload);
+    return ((data as any)?.data ?? data) as SocietyAccount;
+  },
+
   get: async (id: string) => {
     const { data } = await apiClient.get<ApiResponse<SocietyAccount>>(`/accounts/${id}`);
     return data.data ?? (data as unknown as SocietyAccount);
@@ -110,7 +116,40 @@ export interface FundSummary {
   adds: boolean;
 }
 
+/** One entry that moved a fund: a contribution, a hand adjustment with its comment, or an expense paid from it. */
+export interface FundHistoryEntry {
+  id: string;
+  date: string;
+  direction: 'IN' | 'OUT';
+  amount: string;
+  description: string;
+  movedBankAccount: boolean;
+  by: string | null;
+}
+
 export const fundsApi = {
+  /**
+   * Raises or lowers a fund by hand, with a comment. Lowering is admin only and never goes below zero.
+   * `accountId` also moves that bank account, for money that really came in or went out; leave it out when the
+   * money is already in the accounts, or it is counted twice.
+   */
+  adjust: async (
+    id: string,
+    payload: { direction: 'INCREASE' | 'DECREASE'; amount: number; comment: string; accountId?: string },
+  ) => {
+    const { data } = await apiClient.post(`/funds/${id}/adjust`, payload);
+    return ((data as any)?.data ?? data) as SocietyFund;
+  },
+
+  /** Every entry that has moved the fund, newest first, with the comments. */
+  history: async (id: string) => {
+    const { data } = await apiClient.get(`/funds/${id}/history`);
+    return ((data as any)?.data ?? data) as {
+      fund: { id: string; name: string; openingBalance: string; currentBalance: string };
+      entries: FundHistoryEntry[];
+    };
+  },
+
   summary: async () => {
     const { data } = await apiClient.get('/funds/summary');
     return ((data as any)?.data ?? data) as FundSummary;

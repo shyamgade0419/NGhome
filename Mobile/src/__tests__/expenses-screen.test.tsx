@@ -96,6 +96,6 @@ describe('Expenses screen — Mark Paid', () => {
     await act(async () => { confirm.props.onPress(); });
     await flush();
 
-    expect(mockPost).toHaveBeenCalledWith('/expenses/exp-1/mark-paid', { accountId: 'acc-1' });
+    expect(mockPost).toHaveBeenCalledWith('/expenses/exp-1/mark-paid', { accountId: 'acc-1', fundId: null });
   });
 });

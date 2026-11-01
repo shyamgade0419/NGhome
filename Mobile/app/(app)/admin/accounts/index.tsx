@@ -28,6 +28,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { accountsApi, fundsApi, SocietyAccount, SocietyFund, AccountType, FundKind, FundSummary } from '@/api/endpoints/accounts.api';
+import { adjustmentEffect, adjustmentProblem, AdjustDirection } from '@/utils/adjustments';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { useIsSocietyAdmin } from '@/hooks/useAuth';
 import { inr as inrExact } from '@/utils/format';
@@ -52,7 +53,7 @@ const TYPE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
 
 // ── Transactions sheet ───────────────────────────────────────────────────────
 
-function LedgerModal({ account, onClose }: { account: SocietyAccount; onClose: () => void }) {
+function LedgerModal({ account, onClose, onAdjust }: { account: SocietyAccount; onClose: () => void; onAdjust: () => void }) {
   const qc = useQueryClient();
   const isAdmin = useIsSocietyAdmin();
   const remove = useMutation({
@@ -130,6 +131,17 @@ function LedgerModal({ account, onClose }: { account: SocietyAccount; onClose: (
             }
             ListFooterComponent={
               <View style={{ paddingBottom: spacing['3xl'] }}>
+                {isAdmin ? (
+                  <TouchableOpacity
+                    style={styles.adjustBtn}
+                    onPress={onAdjust}
+                    activeOpacity={0.8}
+                    accessibilityLabel="Adjust balance"
+                  >
+                    <Ionicons name="options-outline" size={16} color={colors.primary} />
+                    <Text style={styles.addMoneyText}>Adjust balance to match the bank</Text>
+                  </TouchableOpacity>
+                ) : null}
                 {isAdmin ? (
                   <TouchableOpacity
                     style={styles.deleteBtn}
@@ -441,46 +453,76 @@ function NewFundModal({ onClose, initialKind, hasCorpus }: { onClose: () => void
   );
 }
 
+type AdjustTarget = { kind: 'fund'; item: SocietyFund } | { kind: 'account'; item: SocietyAccount };
+
 /**
- * Adding money to a fund. The bank-account question is the whole reason this
- * form has a second field: a fund is an earmark inside an account, not a
- * separate pot, so crediting an account for money that already arrived as an
- * approved payment would count it twice. Default is off, which is the case
- * that matches money already collected through the app.
+ * Raising or lowering a fund, or correcting a bank balance, always with a comment. A fund is an earmark inside
+ * the bank accounts, so by default only the fund moves; naming a bank account (money that really arrived in it
+ * or left it, and was not recorded as a payment or expense) moves that too. The preview says what each choice
+ * does to the bank and to the general money before anything is saved.
  */
-function ContributeModal({ fund, onClose }: { fund: SocietyFund; onClose: () => void }) {
+function AdjustModal({ target, general, onClose }: { target: AdjustTarget; general: number | null; onClose: () => void }) {
   const qc = useQueryClient();
+  const isAdmin = useIsSocietyAdmin();
+  const isFund = target.kind === 'fund';
+  const [direction, setDirection] = useState<AdjustDirection>('INCREASE');
   const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
+  const [comment, setComment] = useState('');
   const [alsoCreditAccount, setAlsoCreditAccount] = useState(false);
   const [accountId, setAccountId] = useState<string | null>(null);
-
   const { data: accounts } = useQuery({ queryKey: ['accounts'], queryFn: accountsApi.list });
 
+  const balance = parseFloat(target.item.currentBalance ?? '0');
+
   const mutation = useMutation({
-    mutationFn: () =>
-      fundsApi.contribute(fund.id, {
-        amount: parseFloat(amount),
-        description: description.trim() || undefined,
-        accountId: alsoCreditAccount && accountId ? accountId : undefined,
-      }),
+    mutationFn: async () => {
+      const body = { direction, amount: Number(amount), comment: comment.trim() };
+      if (target.kind === 'fund') {
+        await fundsApi.adjust(target.item.id, { ...body, accountId: alsoCreditAccount && accountId ? accountId : undefined });
+      } else {
+        await accountsApi.adjust(target.item.id, body);
+      }
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['funds'] });
       qc.invalidateQueries({ queryKey: ['accounts'] });
       qc.invalidateQueries({ queryKey: ['fund-summary'] });
+      qc.invalidateQueries({ queryKey: ['fund-history'] });
       onClose();
     },
-    onError: (e: any) =>
-      Alert.alert('Error', e?.response?.data?.message ?? 'Failed to add money to fund.'),
+    onError: (e: any) => Alert.alert('Error', e?.response?.data?.message ?? 'Could not save the change.'),
   });
+
+  const effect = adjustmentEffect({
+    kind: target.kind,
+    name: target.item.name,
+    direction,
+    amount,
+    balance,
+    general,
+    bankMoves: isFund && alsoCreditAccount && !!accountId,
+  });
+
+  const submit = () => {
+    const problem = adjustmentProblem(amount, comment, direction, balance);
+    if (problem) {
+      Alert.alert('Check the details', problem);
+      return;
+    }
+    if (isFund && alsoCreditAccount && !accountId) {
+      Alert.alert('Required', 'Pick which bank account this money went into or came out of.');
+      return;
+    }
+    mutation.mutate();
+  };
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.modalHeader}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.modalTitle} numberOfLines={1}>Add Money</Text>
-            <Text style={styles.rowMeta}>{fund.name} · {inr(fund.currentBalance)} now</Text>
+            <Text style={styles.modalTitle} numberOfLines={1}>{isFund ? 'Add / Remove Money' : 'Adjust Balance'}</Text>
+            <Text style={styles.rowMeta}>{target.item.name} · {inrExact(balance, { decimals: true })} now</Text>
           </View>
           <TouchableOpacity onPress={onClose} hitSlop={12}>
             <Ionicons name="close" size={22} color={colors.text} />
@@ -488,7 +530,23 @@ function ContributeModal({ fund, onClose }: { fund: SocietyFund; onClose: () => 
         </View>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
-            <Text style={styles.label}>Amount (₹) *</Text>
+            <View style={{ flexDirection: 'row' }}>
+              {([['INCREASE', 'Add money'], ['DECREASE', 'Remove money']] as const).map(([d, label]) => {
+                const locked = d === 'DECREASE' && !isAdmin;
+                return (
+                  <TouchableOpacity
+                    key={d}
+                    style={[styles.chip, direction === d && styles.chipActive, locked && { opacity: 0.5 }]}
+                    onPress={() => (locked ? Alert.alert('Admin only', 'Only the admin can take money out.') : setDirection(d))}
+                    accessibilityLabel={label}
+                  >
+                    <Text style={[styles.chipText, direction === d && styles.chipTextActive]}>{label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={[styles.label, { marginTop: spacing.base }]}>Amount (₹) *</Text>
             <TextInput
               style={styles.input}
               value={amount}
@@ -496,72 +554,124 @@ function ContributeModal({ fund, onClose }: { fund: SocietyFund; onClose: () => 
               keyboardType="decimal-pad"
               placeholder="0"
               placeholderTextColor={colors.textTertiary}
+              accessibilityLabel="Amount"
               autoFocus
             />
 
-            <Text style={[styles.label, { marginTop: spacing.base }]}>What is this?</Text>
+            <Text style={[styles.label, { marginTop: spacing.base }]}>Comment: why is this being changed? *</Text>
             <TextInput
               style={styles.input}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="e.g. Corpus collection Q3"
+              value={comment}
+              onChangeText={setComment}
+              placeholder={isFund ? 'e.g. Donations collected for Ganesh festival' : 'e.g. Interest credited by the bank'}
               placeholderTextColor={colors.textTertiary}
+              maxLength={500}
+              accessibilityLabel="Comment"
             />
 
-            <View style={styles.toggleRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Also add to a bank account</Text>
-                <Text style={styles.hint}>
-                  Only if this money is arriving now and wasn&apos;t already recorded as a payment
-                  — otherwise it gets counted twice.
-                </Text>
-              </View>
-              <Switch
-                value={alsoCreditAccount}
-                onValueChange={setAlsoCreditAccount}
-                trackColor={{ false: colors.border, true: colors.primary }}
-              />
-            </View>
-
-            {alsoCreditAccount && (
+            {isFund && (
               <>
-                <Text style={[styles.label, { marginTop: spacing.sm }]}>Which account?</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-                  {(accounts ?? []).map((a) => (
-                    <TouchableOpacity
-                      key={a.id}
-                      style={[styles.chip, accountId === a.id && styles.chipActive]}
-                      onPress={() => setAccountId(a.id)}
-                    >
-                      <Text style={[styles.chipText, accountId === a.id && styles.chipTextActive]}>
-                        {a.name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
+                <View style={styles.toggleRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.label}>{direction === 'INCREASE' ? 'Also add it to a bank account' : 'Also take it from a bank account'}</Text>
+                    <Text style={styles.hint}>
+                      Only if money really came into, or went out of, an account now and was not recorded as a payment
+                      or an expense. Otherwise leave this off, or the same money is counted twice.
+                    </Text>
+                  </View>
+                  <Switch
+                    value={alsoCreditAccount}
+                    onValueChange={setAlsoCreditAccount}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    accessibilityLabel="Also move a bank account"
+                  />
+                </View>
+                {alsoCreditAccount && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+                    {(accounts ?? []).map((a) => (
+                      <TouchableOpacity
+                        key={a.id}
+                        style={[styles.chip, accountId === a.id && styles.chipActive]}
+                        onPress={() => setAccountId(a.id)}
+                      >
+                        <Text style={[styles.chipText, accountId === a.id && styles.chipTextActive]}>{a.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
               </>
             )}
 
+            {effect ? (
+              <View style={styles.noteBox}>
+                <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
+                <Text style={styles.noteText}>{effect}</Text>
+              </View>
+            ) : null}
+
             <Button
-              label={mutation.isPending ? 'Adding…' : 'Add to Fund'}
-              onPress={() => {
-                const n = parseFloat(amount);
-                if (!amount || isNaN(n) || n <= 0) {
-                  Alert.alert('Required', 'Enter an amount greater than zero.');
-                  return;
-                }
-                if (alsoCreditAccount && !accountId) {
-                  Alert.alert('Required', 'Pick which bank account this money went into.');
-                  return;
-                }
-                mutation.mutate();
-              }}
+              label={mutation.isPending ? 'Saving…' : !isFund ? 'Save balance' : direction === 'INCREASE' ? 'Add to fund' : 'Take from fund'}
+              onPress={submit}
               loading={mutation.isPending}
               fullWidth
               style={{ marginTop: spacing.xl }}
             />
           </ScrollView>
         </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+/** Every entry that has moved a fund, newest first, with the comment each was made with. */
+function FundHistoryModal({ fund, onClose }: { fund: SocietyFund; onClose: () => void }) {
+  const { data, isLoading } = useQuery({ queryKey: ['fund-history', fund.id], queryFn: () => fundsApi.history(fund.id) });
+  const entries = data?.entries ?? [];
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.modalHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.modalTitle} numberOfLines={1}>History · {fund.name}</Text>
+            <Text style={styles.modalSub}>
+              Opened with {inrExact(data?.fund.openingBalance ?? fund.openingBalance, { decimals: true })} · holds{' '}
+              {inrExact(data?.fund.currentBalance ?? fund.currentBalance, { decimals: true })} now
+            </Text>
+          </View>
+          <TouchableOpacity onPress={onClose} hitSlop={12}>
+            <Ionicons name="close" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+        {isLoading ? (
+          <LoadingState message="Loading history…" />
+        ) : (
+          <FlatList
+            data={entries}
+            keyExtractor={(e) => e.id}
+            contentContainerStyle={styles.list}
+            ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+            renderItem={({ item }) => (
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle}>{item.description}</Text>
+                  <Text style={styles.rowMeta}>
+                    {new Date(item.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    {item.by ? ` · ${item.by}` : ''}
+                    {item.movedBankAccount ? ' · bank account moved too' : ''}
+                  </Text>
+                </View>
+                <Text style={[styles.rowAmount, { color: item.direction === 'IN' ? colors.success : colors.error }]}>
+                  {item.direction === 'IN' ? '+' : '−'}{inrExact(item.amount, { decimals: true })}
+                </Text>
+              </View>
+            )}
+            ListEmptyComponent={
+              <EmptyState icon="receipt-outline" title="No entries yet" description="Nothing has been added or taken out since it was opened." />
+            }
+            ListFooterComponent={<View style={{ height: spacing['3xl'] }} />}
+          />
+        )}
       </SafeAreaView>
     </Modal>
   );
@@ -609,7 +719,7 @@ function MoneyPicture({ money }: { money: FundSummary }) {
       </View>
       <Text style={styles.hint}>
         {money.fundsExceedBank
-          ? 'The funds add up to more than the accounts hold. Either money was added to a fund that never reached the bank, or money left the bank without being taken from a fund.'
+          ? `The funds add up to ${inrExact(Math.abs(parseFloat(money.generalBalance)), { decimals: true })} more than the bank holds, so this does not reconcile yet. If the bank really holds more, open the account and tap Adjust balance. If a fund was entered too high, tap Add / Remove on it. Each change keeps your comment.`
           : 'Corpus + other funds + maintenance and general money = what is in the bank.'}
       </Text>
     </View>
@@ -619,10 +729,12 @@ function MoneyPicture({ money }: { money: FundSummary }) {
 /** Funds are earmarked pools (corpus, sinking fund) held across accounts. */
 function FundsTab({
   onNewFund,
-  onContribute,
+  onAdjust,
+  onHistory,
 }: {
   onNewFund: () => void;
-  onContribute: (fund: SocietyFund) => void;
+  onAdjust: (fund: SocietyFund) => void;
+  onHistory: (fund: SocietyFund) => void;
 }) {
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['funds'],
@@ -678,14 +790,26 @@ function FundsTab({
               </View>
               <Text style={[styles.rowAmount, { color: colors.primary }]}>{inr(current)}</Text>
             </View>
-            <TouchableOpacity
-              style={styles.addMoneyBtn}
-              onPress={() => onContribute(item)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="add-circle-outline" size={16} color={colors.primary} />
-              <Text style={styles.addMoneyText}>Add Money</Text>
-            </TouchableOpacity>
+            <View style={styles.fundButtons}>
+              <TouchableOpacity
+                style={[styles.addMoneyBtn, { flex: 1 }]}
+                onPress={() => onAdjust(item)}
+                activeOpacity={0.8}
+                accessibilityLabel={`Add or remove money for ${item.name}`}
+              >
+                <Ionicons name="options-outline" size={16} color={colors.primary} />
+                <Text style={styles.addMoneyText}>Add / Remove</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.addMoneyBtn, { flex: 1 }]}
+                onPress={() => onHistory(item)}
+                activeOpacity={0.8}
+                accessibilityLabel={`History of ${item.name}`}
+              >
+                <Ionicons name="time-outline" size={16} color={colors.primary} />
+                <Text style={styles.addMoneyText}>History</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         );
       }}
@@ -710,7 +834,9 @@ export default function AccountsScreen() {
   const [showNewAccount, setShowNewAccount] = useState(false);
   const { data: fundList } = useQuery({ queryKey: ['funds'], queryFn: fundsApi.list });
   const hasCorpus = (fundList ?? []).some((fnd) => fnd.kind === 'CORPUS');
-  const [contributeTo, setContributeTo] = useState<SocietyFund | null>(null);
+  const [adjustTarget, setAdjustTarget] = useState<AdjustTarget | null>(null);
+  const [historyFund, setHistoryFund] = useState<SocietyFund | null>(null);
+  const { data: money } = useQuery({ queryKey: ['fund-summary'], queryFn: fundsApi.summary });
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['accounts'],
@@ -748,7 +874,11 @@ export default function AccountsScreen() {
       </View>
 
       {tab === 'Funds' ? (
-        <FundsTab onNewFund={() => setShowNewFund(true)} onContribute={setContributeTo} />
+        <FundsTab
+          onNewFund={() => setShowNewFund(true)}
+          onAdjust={(fund) => setAdjustTarget({ kind: 'fund', item: fund })}
+          onHistory={setHistoryFund}
+        />
       ) : isLoading ? (
         <LoadingState message="Loading accounts…" />
       ) : isError ? (
@@ -803,12 +933,23 @@ export default function AccountsScreen() {
         />
       )}
 
-      {selected && <LedgerModal account={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <LedgerModal
+          account={selected}
+          onClose={() => setSelected(null)}
+          onAdjust={() => { setAdjustTarget({ kind: 'account', item: selected }); setSelected(null); }}
+        />
+      )}
       {showNewFund && <NewFundModal onClose={() => setShowNewFund(false)} initialKind="OTHER" hasCorpus={hasCorpus} />}
       {showNewAccount && <NewAccountModal onClose={() => setShowNewAccount(false)} />}
-      {contributeTo && (
-        <ContributeModal fund={contributeTo} onClose={() => setContributeTo(null)} />
+      {adjustTarget && (
+        <AdjustModal
+          target={adjustTarget}
+          general={money ? parseFloat(money.generalBalance) : null}
+          onClose={() => setAdjustTarget(null)}
+        />
       )}
+      {historyFund && <FundHistoryModal fund={historyFund} onClose={() => setHistoryFund(null)} />}
     </SafeAreaView>
   );
 }
@@ -928,6 +1069,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryLight,
   },
   addMoneyText: { ...typography.labelMedium, color: colors.primary },
+  fundButtons: { flexDirection: 'row', gap: spacing.sm },
+  adjustBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    marginTop: spacing.xl, paddingVertical: 10,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.primary,
+  },
   deleteBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     marginTop: spacing.xl, paddingVertical: 10,

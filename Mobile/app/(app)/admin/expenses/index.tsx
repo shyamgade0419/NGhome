@@ -51,7 +51,7 @@ interface Expense {
   notes: string | null;
   createdAt: string;
   account?: { id: string; name: string } | null;
-  /** The fund it was paid out of, if any. */
+  /** The fund it was paid out of, or the one it is to be paid out of until it is paid. */
   fund?: { id: string; name: string } | null;
   /** Set when an admin corrected it after it was approved, with the comment they gave. */
   correctedAt?: string | null;
@@ -86,6 +86,9 @@ function AddExpenseModal({ visible, onClose }: { visible: boolean; onClose: () =
     notes: '',
   });
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  // The fund this is to be spent from (the corpus, a Ganesh fund). Nothing moves until it is marked paid.
+  const [fundId, setFundId] = useState<string | null>(null);
+  const { data: funds } = useQuery({ queryKey: ['funds'], queryFn: fundsApi.list });
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -96,6 +99,7 @@ function AddExpenseModal({ visible, onClose }: { visible: boolean; onClose: () =
         expenseDate: form.expenseDate,
         vendorPayee: form.vendorPayee.trim() || undefined,
         notes: form.notes.trim() || undefined,
+        fundId: fundId ?? undefined,
       });
       // The expense exists now; the receipts go one at a time, and one failing must not lose the
       // expense or the others — the card has an "Add receipt" for whatever did not make it.
@@ -129,6 +133,7 @@ function AddExpenseModal({ visible, onClose }: { visible: boolean; onClose: () =
         }
       }, 400);
       setReceipts([]);
+      setFundId(null);
       setForm({
         description: '', amount: '', category: CATEGORIES[0],
         expenseDate: new Date().toISOString().slice(0, 10),
@@ -225,6 +230,28 @@ function AddExpenseModal({ visible, onClose }: { visible: boolean; onClose: () =
               placeholder="Optional"
               placeholderTextColor={colors.textTertiary}
             />
+
+            {(funds ?? []).length > 0 && (
+              <>
+                <Text style={modal.label}>Spend from (optional)</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={modal.chipScroll}>
+                  {[{ id: null as string | null, name: 'General money' }, ...(funds ?? [])].map((fnd) => (
+                    <TouchableOpacity
+                      key={fnd.id ?? 'general'}
+                      style={[modal.chip, fundId === fnd.id && modal.chipActive]}
+                      onPress={() => setFundId(fnd.id)}
+                      accessibilityLabel={fnd.id ? `Spend from ${fnd.name}` : 'Spend from general money'}
+                    >
+                      <Text style={[modal.chipText, fundId === fnd.id && modal.chipTextActive]}>{fnd.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <Text style={modal.hint}>
+                  Pick a fund if this is paid out of one. Nothing moves yet: when it is marked paid, the fund and the
+                  bank account go down together.
+                </Text>
+              </>
+            )}
 
             <Text style={modal.label}>Notes</Text>
             <TextInput
@@ -343,7 +370,7 @@ export default function ExpensesScreen() {
   const { data: funds } = useQuery({ queryKey: ['funds'], queryFn: fundsApi.list });
 
   const markPaidMutation = useMutation({
-    mutationFn: ({ id, accountId, fundId }: { id: string; accountId: string; fundId?: string }) =>
+    mutationFn: ({ id, accountId, fundId }: { id: string; accountId: string; fundId: string | null }) =>
       expensesApi.markPaid(id, accountId, fundId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['expenses'] });
@@ -365,7 +392,8 @@ export default function ExpensesScreen() {
   // with several, the admin has to pick, and the sheet says so.
   const openPayModal = (item: Expense) => {
     setPayAccountId(accounts && accounts.length === 1 ? accounts[0].id : null);
-    setPayFundId(null);
+    // The fund it was posted against is the starting choice; the admin can still change it or clear it.
+    setPayFundId(item.fund?.id ?? null);
     setPayingExpense(item);
   };
 
@@ -385,7 +413,7 @@ export default function ExpensesScreen() {
       Alert.alert('Choose an account', 'Tap the account this expense was paid from, then confirm.');
       return;
     }
-    markPaidMutation.mutate({ id: payingExpense.id, accountId: payAccountId, fundId: payFundId ?? undefined });
+    markPaidMutation.mutate({ id: payingExpense.id, accountId: payAccountId, fundId: payFundId });
   };
 
   const handleApprove = (item: Expense) => {
@@ -424,7 +452,7 @@ export default function ExpensesScreen() {
           <Text style={styles.category}>{(item.category?.name ?? item.categoryName)?.replace(/_/g, ' ')}</Text>
           <Text style={styles.description} numberOfLines={1}>{item.description}</Text>
           {(item.vendorPayee ?? item.payeeName) ? <Text style={styles.payee}>{item.vendorPayee ?? item.payeeName}</Text> : null}
-          {item.fund ? <Text style={styles.notes} numberOfLines={1}>From {item.fund.name}</Text> : null}
+          {item.fund ? <Text style={styles.notes} numberOfLines={1}>{item.status === 'PAID' ? 'Paid from' : 'To be paid from'} {item.fund.name}</Text> : null}
           {item.correctedAt ? (
             <TouchableOpacity onPress={() => setHistoryExpense(item)} accessibilityLabel={`Corrections to ${item.description}`}>
               <Text style={styles.corrected} numberOfLines={2}>
@@ -860,6 +888,7 @@ const modal = StyleSheet.create({
     ...typography.bodyMedium, color: colors.text,
   },
   textarea: { minHeight: 72, textAlignVertical: 'top' },
+  hint: { ...typography.bodySmall, color: colors.textTertiary, marginBottom: spacing.sm },
 
   chipScroll: { marginBottom: spacing.sm },
   chip: {

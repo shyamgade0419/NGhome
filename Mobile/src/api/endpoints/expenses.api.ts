@@ -23,9 +23,13 @@ export const expensesApi = {
     return ((data as any)?.data ?? data) as HistoryEntry[];
   },
 
-  /** Pays an approved expense from an account — and out of a fund too, when `fundId` is given. */
-  markPaid: async (id: string, accountId: string, fundId?: string) => {
-    const { data } = await apiClient.post(`/expenses/${id}/mark-paid`, { accountId, ...(fundId ? { fundId } : {}) });
+  /**
+   * Pays an approved expense from an account — and out of a fund too, when `fundId` is given. `null` says
+   * "no fund": paid from the general money even if a fund was chosen when the expense was posted. Left out,
+   * the fund it was posted against is used.
+   */
+  markPaid: async (id: string, accountId: string, fundId?: string | null) => {
+    const { data } = await apiClient.post(`/expenses/${id}/mark-paid`, { accountId, ...(fundId !== undefined ? { fundId } : {}) });
     return data;
   },
 
