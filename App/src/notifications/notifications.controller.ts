@@ -65,6 +65,13 @@ export class NotificationsController {
     return this.pushService.registerToken(user.id, dto.token, dto.platform);
   }
 
+  @Post('push-test')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send a test alert to my own phones and report what happened' })
+  pushTest(@CurrentUser() user: AuthenticatedUser) {
+    return this.pushService.sendTest(user.id);
+  }
+
   @Delete('push-token')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Unregister this device (called on logout) so it stops receiving push notifications' })

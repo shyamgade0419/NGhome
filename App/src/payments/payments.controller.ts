@@ -10,6 +10,7 @@ import { PaymentsService } from './payments.service';
 import { SubmitPaymentDto } from './dto/submit-payment.dto';
 import { ApprovePaymentDto } from './dto/approve-payment.dto';
 import { RejectPaymentDto } from './dto/reject-payment.dto';
+import { RecordPaymentDto } from './dto/record-payment.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -39,6 +40,18 @@ export class PaymentsController {
   ) {
     if (!user.flatId) throw new Error('No flat associated with account');
     return this.paymentsService.submit(societyId, user.id, user.flatId, dto, proof);
+  }
+
+  @Post('record')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
+  @ApiOperation({ summary: 'Admin: Record that a flat has paid its maintenance — cash, cheque or transfer — and settle the bill' })
+  record(
+    @SocietyId() societyId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: RecordPaymentDto,
+  ) {
+    return this.paymentsService.recordForFlat(societyId, user.id, dto);
   }
 
   @Get()

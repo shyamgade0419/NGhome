@@ -107,6 +107,30 @@ export class BillingController {
     return this.billingService.publishPeriod(societyId, periodId, user.id);
   }
 
+  @Get('reminder-template')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
+  @ApiOperation({ summary: 'The wording of the payment reminder, the default, and the placeholders it may use' })
+  reminderTemplate(@SocietyId() societyId: string) {
+    return this.billingService.getReminderTemplate(societyId);
+  }
+
+  @Get('periods/:periodId/reminders')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
+  @ApiOperation({ summary: 'Every unpaid flat with who to remind (tenant, else owner) and the reminder worded from the template' })
+  reminders(@SocietyId() societyId: string, @Param('periodId') periodId: string) {
+    return this.billingService.getReminders(societyId, periodId);
+  }
+
+  @Post('periods/:periodId/remind')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
+  @ApiOperation({ summary: 'Send an in-app and phone-alert reminder to every unpaid flat' })
+  remind(@SocietyId() societyId: string, @Param('periodId') periodId: string) {
+    return this.billingService.sendReminders(societyId, periodId);
+  }
+
   @Post('periods/:periodId/close')
   @UseGuards(RolesGuard)
   @Roles(SystemRole.SOCIETY_ADMIN)

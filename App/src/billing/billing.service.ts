@@ -16,6 +16,10 @@ import { CreateBillingPeriodDto } from './dto/create-billing-period.dto';
 import { Prisma, BillingPeriodStatus, BillingPeriodKind } from '@prisma/client';
 import { generateInvoiceNumber } from '../common/utils/invoice-number';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
+import { pickBillContact, describeContact } from './billing-contact';
+import {
+  DEFAULT_REMINDER_TEMPLATE, MONTH_NAMES, REMINDER_PLACEHOLDERS, readReminderTemplate, renderReminder,
+} from './reminder-template';
 
 @Injectable()
 export class BillingService {
@@ -469,11 +473,14 @@ export class BillingService {
             select: {
               id: true,
               flatCode: true,
-              // Include primary resident so the admin can send direct WhatsApp reminders
+              // Every active resident, so the person a reminder goes to can be chosen: the tenant when
+              // there is one, otherwise the owner (see pickBillContact).
               memberships: {
-                where: { status: 'ACTIVE', isPrimary: true, role: 'RESIDENT' },
-                take: 1,
+                where: { status: 'ACTIVE', role: 'RESIDENT' },
                 select: {
+                  residencyType: true,
+                  isPrimary: true,
+                  joinedAt: true,
                   user: { select: { phone: true, firstName: true, lastName: true } },
                 },
               },
@@ -484,7 +491,121 @@ export class BillingService {
       }),
       this.prisma.maintenanceBill.count({ where: { societyId, billingPeriodId: periodId } }),
     ]);
-    return { data, meta: buildPaginationMeta(total, page, limit) };
+    return {
+      data: data.map(({ flat, ...bill }) => ({
+        ...bill,
+        flat: { id: flat.id, flatCode: flat.flatCode },
+        ...describeContact(pickBillContact(flat.memberships)),
+      })),
+      meta: buildPaginationMeta(total, page, limit),
+    };
+  }
+
+  /** The reminder wording in use, the default to go back to, and the placeholders a template may use. */
+  async getReminderTemplate(societyId: string) {
+    const config = await this.prisma.societyConfiguration.findUnique({ where: { societyId }, select: { additionalConfig: true } });
+    const template = readReminderTemplate(config?.additionalConfig);
+    return {
+      template,
+      isDefault: template === DEFAULT_REMINDER_TEMPLATE,
+      defaultTemplate: DEFAULT_REMINDER_TEMPLATE,
+      placeholders: REMINDER_PLACEHOLDERS,
+    };
+  }
+
+  /**
+   * Every unpaid, published bill of a period with the person it is addressed to (the tenant, else the owner) and
+   * the reminder worded from the society's template. Built here, once, so the web and the phone say the same thing.
+   */
+  async getReminders(societyId: string, periodId: string) {
+    const period = await this.findPeriod(societyId, periodId);
+    const [society, config, bills] = await Promise.all([
+      this.prisma.society.findUnique({ where: { id: societyId }, select: { name: true, displayName: true } }),
+      this.prisma.societyConfiguration.findUnique({ where: { societyId }, select: { additionalConfig: true } }),
+      this.prisma.maintenanceBill.findMany({
+        where: { societyId, billingPeriodId: periodId, isPublished: true, isPaid: false, pendingAmount: { gt: 0 } },
+        include: {
+          flat: {
+            select: {
+              memberships: {
+                where: { status: 'ACTIVE', role: 'RESIDENT' },
+                select: {
+                  userId: true,
+                  residencyType: true,
+                  isPrimary: true,
+                  joinedAt: true,
+                  user: { select: { phone: true, firstName: true, lastName: true } },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { flatCode: 'asc' },
+      }),
+    ]);
+
+    const template = readReminderTemplate(config?.additionalConfig);
+    const upi = ((config?.additionalConfig as { upiId?: unknown } | null)?.upiId as string | undefined) ?? '';
+    const societyName = society?.displayName || society?.name || 'Society';
+    const month = `${MONTH_NAMES[period.periodMonth] ?? ''} ${period.periodYear}`.trim();
+    const dueDate = period.dueDate
+      ? period.dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
+      : '';
+    const money = (d: Prisma.Decimal) => Number(d).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+
+    return bills.map((bill) => {
+      const contact = pickBillContact(bill.flat.memberships);
+      const info = describeContact(contact);
+      return {
+        billId: bill.id,
+        flatId: bill.flatId,
+        flatCode: bill.flatCode,
+        userId: contact?.userId ?? null,
+        ...info,
+        pendingAmount: bill.pendingAmount.toString(),
+        message: renderReminder(template, {
+          name: info.residentName ?? 'Resident',
+          flat: bill.flatCode,
+          month,
+          amount: money(bill.pendingAmount),
+          total: money(bill.totalAmount),
+          dueDate,
+          invoice: bill.invoiceNumber,
+          society: societyName,
+          upi,
+        }),
+      };
+    });
+  }
+
+  /**
+   * Remind every unpaid flat at once, inside the app: an entry in the person's notification list and a phone alert.
+   * Goes to the tenant when the flat has one, otherwise the owner — the same person the WhatsApp reminder is for.
+   * A flat with nobody registered is counted, not guessed at.
+   */
+  async sendReminders(societyId: string, periodId: string) {
+    const period = await this.findPeriod(societyId, periodId);
+    const reminders = await this.getReminders(societyId, periodId);
+    const month = `${MONTH_NAMES[period.periodMonth] ?? ''} ${period.periodYear}`.trim();
+
+    let sent = 0;
+    const withoutResident: string[] = [];
+    for (const r of reminders) {
+      if (!r.userId) {
+        withoutResident.push(r.flatCode);
+        continue;
+      }
+      await this.notifications.notifyQuietly(async () => {
+        await this.notifications.sendToUsers(societyId, [r.userId as string], {
+          title: `Maintenance reminder — Flat ${r.flatCode}`,
+          body: `₹${Number(r.pendingAmount).toLocaleString('en-IN')} is still unpaid for ${month}. Please pay and upload your payment.`,
+          type: 'BILL_REMINDER',
+          data: { billId: r.billId },
+        });
+        sent += 1;
+      }, `reminder for flat ${r.flatCode}`);
+    }
+    return { unpaid: reminders.length, sent, withoutResident };
   }
 
   async findMyBills(societyId: string, flatId: string, page: number, limit: number) {
@@ -586,7 +707,6 @@ export class BillingService {
           include: {
             memberships: {
               where: { status: 'ACTIVE', role: 'RESIDENT' },
-              take: 1,
               include: {
                 user: { select: { firstName: true, lastName: true, phone: true } },
               },
@@ -640,7 +760,7 @@ export class BillingService {
     }
 
     const statements = bills.map((bill) => {
-      const resident = bill.flat.memberships[0]?.user ?? null;
+      const resident = pickBillContact(bill.flat.memberships)?.user ?? null;
       const water = waterByFlat.get(bill.flatId) ?? null;
       const arrears = arrearsMap.get(bill.flatId) ?? 0;
 

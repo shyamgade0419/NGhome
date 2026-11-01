@@ -79,8 +79,8 @@ describe('PushService.sendToUsers', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const body = JSON.parse((fetchMock.mock.calls[0][1] as any).body);
     expect(body).toEqual([
-      { to: 'ExponentPushToken[a]', title: 'Hello', body: 'World', data: { type: 'GENERAL' }, sound: 'default' },
-      { to: 'ExponentPushToken[b]', title: 'Hello', body: 'World', data: { type: 'GENERAL' }, sound: 'default' },
+      { to: 'ExponentPushToken[a]', title: 'Hello', body: 'World', data: { type: 'GENERAL' }, sound: 'default', priority: 'high', channelId: 'alerts' },
+      { to: 'ExponentPushToken[b]', title: 'Hello', body: 'World', data: { type: 'GENERAL' }, sound: 'default', priority: 'high', channelId: 'alerts' },
     ]);
   });
 
@@ -105,5 +105,39 @@ describe('PushService.sendToUsers', () => {
     const service = new PushService(prisma);
 
     await expect(service.sendToUsers(['user-1'], 'Hello', 'World')).resolves.toBeUndefined();
+  });
+
+  describe('the test alert', () => {
+    it('says no phone is registered when the user has none', async () => {
+      global.fetch = jest.fn() as any;
+      const service = new PushService(makePrisma([]));
+      await expect(service.sendTest('user-1')).resolves.toEqual({ devices: 0, accepted: 0, problems: [] });
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('counts the phones Expo accepted', async () => {
+      global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ status: 'ok' }] }) }) as any;
+      const service = new PushService(makePrisma([{ token: 'ExponentPushToken[a]', userId: 'user-1' }]));
+      await expect(service.sendTest('user-1')).resolves.toEqual({ devices: 1, accepted: 1, problems: [] });
+    });
+
+    it('reports why Expo refused — missing Firebase credentials is the usual reason', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ data: [{ status: 'error', message: 'Unable to retrieve the FCM server key', details: { error: 'InvalidCredentials' } }] }),
+      }) as any;
+      const service = new PushService(makePrisma([{ token: 'ExponentPushToken[a]', userId: 'user-1' }]));
+      const out = await service.sendTest('user-1');
+      expect(out.accepted).toBe(0);
+      expect(out.problems[0]).toContain('InvalidCredentials');
+    });
+
+    it('reports an unreachable push service instead of throwing', async () => {
+      global.fetch = jest.fn().mockRejectedValue(new Error('network down')) as any;
+      const service = new PushService(makePrisma([{ token: 'ExponentPushToken[a]', userId: 'user-1' }]));
+      const out = await service.sendTest('user-1');
+      expect(out.accepted).toBe(0);
+      expect(out.problems[0]).toContain('network down');
+    });
   });
 });

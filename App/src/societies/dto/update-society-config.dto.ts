@@ -1,5 +1,5 @@
 import {
-  IsOptional, IsString, IsInt, IsBoolean, IsNumber, IsEnum, Min, Max,
+  IsOptional, IsString, IsInt, IsBoolean, IsNumber, IsEnum, Min, Max, MaxLength,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { BillingCycleType } from '@prisma/client';
@@ -102,4 +102,12 @@ export class UpdateSocietyConfigDto {
   @IsOptional()
   @IsBoolean()
   waterBillingEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'The wording of the payment reminder sent on WhatsApp, with {name} {flat} {month} {amount} … filled in per flat (stored in additionalConfig). An empty value goes back to the default wording.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1500)
+  reminderTemplate?: string;
 }

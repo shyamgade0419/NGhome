@@ -1,6 +1,8 @@
 import {
-  Injectable, NotFoundException, BadRequestException, ForbiddenException,
+  Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException,
 } from '@nestjs/common';
+import { pickBillContact } from '../billing/billing-contact';
+import { RecordPaymentDto } from './dto/record-payment.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from '../documents/sftp-storage.service';
 import { assertAllowedUpload } from '../documents/file-safety';
@@ -539,6 +541,75 @@ export class PaymentsService {
         }),
       `payment ${payment.id} auto-approved`,
     );
+  }
+
+  /**
+   * An admin or accountant records that a flat has paid. It is what a resident's submission becomes once approved,
+   * done in one step: the payment is created, the money goes into the chosen account and the flat's oldest unpaid
+   * months are settled first — the same path as approve(), so the books, the bill and the audit trail agree.
+   *
+   * The payment is filed under the person the flat's bill goes to (the tenant, else the owner), so it shows in their
+   * history and they are told it was received; the admin who recorded it is the reviewer.
+   */
+  async recordForFlat(societyId: string, adminId: string, dto: RecordPaymentDto) {
+    const bill = await this.prisma.maintenanceBill.findFirst({ where: { id: dto.maintenanceBillId, societyId } });
+    if (!bill) throw new NotFoundException('Bill not found');
+    if (!bill.isPublished) throw new BadRequestException('This bill has not been published yet.');
+    if (bill.isPaid) throw new BadRequestException('This bill is already paid.');
+
+    const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId, isActive: true } });
+    if (!account) throw new NotFoundException('Account not found');
+
+    const amount = new Prisma.Decimal(dto.amount);
+    const owed = await outstandingForFlat(this.prisma, societyId, bill.flatId);
+    const ceiling = maxPayment(owed, bill.totalAmount);
+    if (amount.greaterThan(ceiling)) {
+      throw new BadRequestException(
+        `That is more than this flat can pay at once (₹${ceiling.toString()}: what it owes plus a year ahead). Check the amount.`,
+      );
+    }
+
+    if (dto.utrNumber) {
+      const dup = await this.prisma.paymentSubmission.findFirst({ where: { societyId, flatId: bill.flatId, utrNumber: dto.utrNumber } });
+      if (dup) throw new ConflictException('A payment with this reference number is already recorded for this flat.');
+    }
+
+    const residents = await this.prisma.societyMembership.findMany({
+      where: { societyId, flatId: bill.flatId, status: 'ACTIVE', role: 'RESIDENT' },
+      select: {
+        userId: true, residencyType: true, isPrimary: true, joinedAt: true,
+        user: { select: { firstName: true, lastName: true, phone: true } },
+      },
+    });
+    const payerId = pickBillContact(residents)?.userId ?? adminId;
+
+    const payment = await this.prisma.paymentSubmission.create({
+      data: {
+        societyId,
+        flatId: bill.flatId,
+        userId: payerId,
+        maintenanceBillId: bill.id,
+        billingPeriodId: bill.billingPeriodId,
+        amount,
+        paymentDate: new Date(dto.paymentDate),
+        paymentMethod: dto.paymentMethod,
+        referenceNumber: dto.referenceNumber,
+        utrNumber: dto.utrNumber,
+        bankName: dto.bankName,
+        chequeNumber: dto.chequeNumber,
+        notes: dto.notes ? `Recorded by the admin. ${dto.notes}` : 'Recorded by the admin.',
+        status: PaymentStatus.PENDING,
+      },
+    });
+
+    try {
+      return await this.approve(societyId, payment.id, adminId, dto.accountId, dto.notes);
+    } catch (err) {
+      // Nothing was settled (approve is one transaction), so the half-made row must not linger as a pending
+      // payment the resident and the admin would both see.
+      await this.prisma.paymentSubmission.delete({ where: { id: payment.id } }).catch(() => undefined);
+      throw err;
+    }
   }
 
   async approve(societyId: string, paymentId: string, reviewedById: string, accountId: string, notes?: string) {

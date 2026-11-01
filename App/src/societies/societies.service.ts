@@ -447,13 +447,14 @@ export class SocietiesService {
 
     // upiId and waterBillingEnabled have no DB column; fold both into the
     // existing additionalConfig JSON field rather than migrate the schema.
-    const { upiId, waterBillingEnabled, ...configFields } = dto as UpdateSocietyConfigDto & {
+    const { upiId, waterBillingEnabled, reminderTemplate, ...configFields } = dto as UpdateSocietyConfigDto & {
       upiId?: string;
       waterBillingEnabled?: boolean;
+      reminderTemplate?: string;
     };
 
     let additionalConfigPatch: Prisma.InputJsonValue | undefined;
-    if (upiId !== undefined || waterBillingEnabled !== undefined) {
+    if (upiId !== undefined || waterBillingEnabled !== undefined || reminderTemplate !== undefined) {
       const current = await this.prisma.societyConfiguration.findUnique({
         where: { societyId },
         select: { additionalConfig: true },
@@ -463,6 +464,8 @@ export class SocietiesService {
         ...existing,
         ...(upiId !== undefined ? { upiId } : {}),
         ...(waterBillingEnabled !== undefined ? { waterBillingEnabled } : {}),
+        // Blank puts the default wording back (readReminderTemplate falls back when nothing is stored).
+        ...(reminderTemplate !== undefined ? { reminderTemplate: reminderTemplate.trim() } : {}),
       } as Prisma.InputJsonValue;
     }
 
