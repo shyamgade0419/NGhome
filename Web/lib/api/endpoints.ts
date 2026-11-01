@@ -17,7 +17,7 @@ import type { SlotFor, SlotRow, SlotStatus, VehicleRow } from '@/lib/vehicles';
 import type { AttendanceStatus, DayRow, MonthDay, RosterRow, Shift, SummaryRow } from '@/lib/attendance';
 import type { OpeningBalances, OpeningInputRow, OpeningSaveResult } from '@/lib/openingBalances';
 import type { AdvanceCredits, FlatDiscount, FlatDiscountInput } from '@/lib/flatDiscounts';
-import type { BillReminder, ReminderTemplate } from '@/lib/reminders';
+import type { BillReminder, ReminderTemplate, WhatsappMessageRow, WhatsappStatus } from '@/lib/reminders';
 
 // Dashboard — composites several report endpoints
 export const dashboardApi = {
@@ -158,6 +158,14 @@ export const billingRulesApi = {
   delete: (id: string) => api.delete(`/billing-rules/${id}`),
 };
 
+// WhatsApp automation (bill published, reminders, late fine, payment received)
+export const whatsappApi = {
+  status: (): Promise<{ data: WhatsappStatus }> => api.get('/whatsapp/status'),
+  messages: (limit = 30): Promise<{ data: WhatsappMessageRow[] }> => api.get('/whatsapp/messages', { params: { limit } }),
+  /** Sends one message to a number to prove the connection works (admin only). */
+  test: (phone: string): Promise<{ data: { sent: boolean; error?: string } }> => api.post('/whatsapp/test', { phone }),
+};
+
 // Payments
 export const paymentsApi = {
   list: (params?: Record<string, unknown>): Promise<{ data: PaginatedResponse<Payment> }> =>
@@ -266,6 +274,10 @@ export const societyApi = {
     upiId?: string;
     /** The wording of the WhatsApp payment reminder; empty goes back to the default. */
     reminderTemplate?: string;
+    /** Send bill, reminder, late-fine and payment-received messages on WhatsApp automatically. */
+    whatsappEnabled?: boolean;
+    /** Days of the month (1–28) reminders go out on. */
+    whatsappReminderDays?: number[];
   }) => api.patch('/societies/my/config', data),
 
   // Buildings
