@@ -58,7 +58,7 @@ async function mount() {
 
 beforeEach(() => {
   mockIsAdmin = true;
-  mockStatus = { configured: true, enabled: false, reminderDays: [5, 10], session: 'ready', sendingFrom: '919000011111', problem: null, queued: 2, sentToday: 5, failedThisWeek: 1 };
+  mockStatus = { configured: true, allowed: true, enabled: false, reminderDays: [5, 10], session: 'ready', sendingFrom: '919000011111', problem: null, queued: 2, sentToday: 5, failedThisWeek: 1 };
   mockSave.mockReset().mockResolvedValue(undefined);
   mockTest.mockReset().mockResolvedValue({ sent: true });
   jest.spyOn(Alert, 'alert').mockImplementation(() => {});
@@ -132,5 +132,25 @@ describe('WhatsApp automation card', () => {
     expect(tree.root.findByType(Switch).props.disabled).toBe(true);
     expect(input(tree, 'Reminder days').props.editable).toBe(false);
     expect(input(tree, 'Test phone number')).toBeUndefined();
+  });
+});
+
+describe('a society the platform owner has not allowed', () => {
+  it('says so, cannot be switched on, and cannot send a test', async () => {
+    mockStatus = { ...mockStatus, allowed: false, sendingFrom: null };
+    const tree = await mount();
+    const text = textOf(tree.root);
+    expect(text).toContain('not switched on for your society');
+    expect(text).toContain('platform owner allows them one society at a time');
+    expect(tree.root.findByType(Switch).props.disabled).toBe(true);
+    await act(async () => { input(tree, 'Test phone number').props.onChangeText('98765 43210'); });
+    const send = tree.root.findAll((n: any) => n.props.label === 'Send test' && typeof n.props.onPress === 'function')[0];
+    expect(send.props.disabled).toBe(true);
+  });
+
+  it('does not show the platform\'s number to it', async () => {
+    mockStatus = { ...mockStatus, allowed: false, sendingFrom: null, session: 'ready' };
+    const tree = await mount();
+    expect(textOf(tree.root)).not.toContain('sending from');
   });
 });

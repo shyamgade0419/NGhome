@@ -70,6 +70,12 @@ export function WhatsappAutomationCard() {
         is added, and when a payment is received. They go to the tenant when the flat has one, otherwise the owner, one at a
         time between 9 am and 8 pm.
       </Text>
+      {status && !status.allowed && (
+        <Text style={[s.status, { color: colors.warning }]} accessibilityLabel="WhatsApp not allowed for this society">
+          WhatsApp messages are not switched on for your society. The platform owner allows them one society at a time. Until
+          then nothing is sent from here; the reminder wording above still works for WhatsApp links you send by hand.
+        </Text>
+      )}
       <Text style={[s.status, { color: line.color }]} accessibilityLabel="WhatsApp connection status">{line.text}</Text>
 
       <View style={s.toggleRow}>
@@ -80,7 +86,7 @@ export function WhatsappAutomationCard() {
         <Switch
           value={shownEnabled}
           onValueChange={setEnabled}
-          disabled={!isAdmin || (status ? !status.configured : false)}
+          disabled={!isAdmin || (status ? !status.configured || !status.allowed : false)}
           trackColor={{ false: colors.border, true: colors.primary }}
           accessibilityLabel="Send WhatsApp messages automatically"
         />
@@ -120,7 +126,7 @@ export function WhatsappAutomationCard() {
               label="Send test"
               onPress={() => test.mutate()}
               loading={test.isPending}
-              disabled={testPhone.replace(/\D/g, '').length < 8 || !status?.configured}
+              disabled={testPhone.replace(/\D/g, '').length < 8 || !status?.configured || !status?.allowed}
               variant="outline"
             />
           </View>
