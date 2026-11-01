@@ -44,3 +44,43 @@ export function validPaymentDate(value: string, today = new Date()): boolean {
   if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== value) return false;
   return d.getTime() <= new Date(today.toISOString().slice(0, 10) + 'T00:00:00Z').getTime();
 }
+
+/** What the settings screen shows about WhatsApp automation. */
+export interface WhatsappStatus {
+  /** The server has a WhatsApp gateway set up. */
+  configured: boolean;
+  enabled: boolean;
+  reminderDays: number[];
+  /** The gateway's session: `ready` is the only state in which messages go out. */
+  session: string | null;
+  sendingFrom: string | null;
+  problem: string | null;
+  queued: number;
+  sentToday: number;
+  failedThisWeek: number;
+}
+
+export interface WhatsappMessageRow {
+  id: string;
+  kind: string;
+  toPhone: string;
+  status: 'PENDING' | 'SENDING' | 'SENT' | 'FAILED';
+  attempts: number;
+  lastError: string | null;
+  createdAt: string;
+  sentAt: string | null;
+}
+
+export const WHATSAPP_KIND_LABEL: Record<string, string> = {
+  BILL_PUBLISHED: 'Bill published',
+  REMINDER: 'Reminder',
+  FINE_IMPOSED: 'Late fine',
+  PAYMENT_RECEIVED: 'Payment received',
+  TEST: 'Test',
+};
+
+/** "5, 10" typed by the admin into the days a reminder goes out: whole days 1–28, once each, in order. */
+export function parseReminderDays(text: string): number[] {
+  const days = text.split(/[\s,;]+/).filter(Boolean).map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 28);
+  return Array.from(new Set(days)).sort((a, b) => a - b).slice(0, 6);
+}

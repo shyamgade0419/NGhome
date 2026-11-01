@@ -23,6 +23,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { ReminderTemplateEditor } from '@/components/billing/ReminderTemplateEditor';
+import { WhatsappAutomationCard } from '@/components/billing/WhatsappAutomationCard';
 import { colors, spacing, typography, radius } from '@/theme';
 
 // ─── Section heading ─────────────────────────────────────────────────────────
@@ -531,6 +532,10 @@ export default function SocietySettingsScreen() {
           {/* ── WhatsApp payment reminder wording ── */}
           <Section title="WhatsApp Reminder" />
           <ReminderTemplateEditor />
+
+          {/* ── WhatsApp that sends itself ── */}
+          <Section title="WhatsApp Automation" />
+          <WhatsappAutomationCard />
 
           <View style={{ height: spacing['3xl'] }} />
         </ScrollView>
