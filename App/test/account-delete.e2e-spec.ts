@@ -129,6 +129,47 @@ describe('Deleting an account (e2e, real Postgres)', () => {
     expect((await prisma.account.findUniqueOrThrow({ where: { id: gone } })).currentBalance.toFixed(2)).toBe('90.00');
   });
 
+  describe('adjusting the balance to match the bank', () => {
+    const adjust = (id: string, body: Record<string, unknown>, token = admin) => http().post(`/api/v1/accounts/${id}/adjust`).set(auth(token)).send(body);
+    const balance = async (id: string) => (await prisma.account.findUniqueOrThrow({ where: { id } })).currentBalance.toFixed(2);
+
+    it('raises and lowers the balance, writing a ledger entry with the comment each time', async () => {
+      const acct = await makeAccount('Reconcile me', 1000);
+      const up = await adjust(acct, { direction: 'INCREASE', amount: 250.75, comment: 'Interest credited by the bank' }).expect(201);
+      expect(up.body.data.currentBalance).toBe('1250.75');
+      await adjust(acct, { direction: 'DECREASE', amount: 50.75, comment: 'Bank charges not recorded' }).expect(201);
+      expect(await balance(acct)).toBe('1200.00');
+
+      const rows = await prisma.transaction.findMany({ where: { accountId: acct, linkedEntityType: 'ACCOUNT_ADJUSTMENT' }, orderBy: { createdAt: 'asc' } });
+      expect(rows.map((r) => [r.transactionType, r.amount.toFixed(2), r.balanceAfter.toFixed(2), r.description])).toEqual([
+        ['CREDIT', '250.75', '1250.75', 'Balance raised: Interest credited by the bank'],
+        ['DEBIT', '50.75', '1200.00', 'Balance lowered: Bank charges not recorded'],
+      ]);
+      const audit = await prisma.auditLog.findFirst({ where: { societyId, entityType: 'Account', entityId: acct, action: 'ACCOUNT_TRANSACTION' }, orderBy: { createdAt: 'asc' } });
+      expect(audit?.newValues).toMatchObject({ type: 'INCREASE', comment: 'Interest credited by the bank', balanceAfter: '1250.75' });
+    });
+
+    it('never takes a balance below zero, and needs a comment and a sensible amount', async () => {
+      const acct = await makeAccount('Guard rails', 100);
+      const res = await adjust(acct, { direction: 'DECREASE', amount: 101, comment: 'Too much' }).expect(400);
+      expect(messageOf(res.body)).toMatch(/holds only/);
+      await adjust(acct, { direction: 'INCREASE', amount: 5 }).expect(400);
+      await adjust(acct, { direction: 'INCREASE', amount: 5, comment: 'ab' }).expect(400);
+      await adjust(acct, { direction: 'INCREASE', amount: 0, comment: 'Zero' }).expect(400);
+      await adjust(acct, { direction: 'INCREASE', amount: 1.234, comment: 'Three places' }).expect(400);
+      expect(await balance(acct)).toBe('100.00');
+      expect(await prisma.transaction.count({ where: { accountId: acct } })).toBe(0);
+    });
+
+    it('is for the admin only, and a removed account cannot be adjusted', async () => {
+      const acct = await makeAccount('Admin only', 100);
+      await adjust(acct, { direction: 'INCREASE', amount: 5, comment: 'Not allowed' }, accountant).expect(403);
+      await prisma.account.update({ where: { id: acct }, data: { isActive: false } });
+      await adjust(acct, { direction: 'INCREASE', amount: 5, comment: 'Hidden account' }).expect(404);
+      expect(await balance(acct)).toBe('100.00');
+    });
+  });
+
   it('is for the admin only, and only for this society', async () => {
     const acct = await makeAccount('Guarded', 1);
     await remove(acct, accountant).expect(403);

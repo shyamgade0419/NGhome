@@ -183,8 +183,8 @@ export const expensesApi = {
   /** Settles an approved expense from a bank account. This is the only thing
    *  that debits Account.currentBalance for an expense — until it runs, the
    *  money is committed but the balance still shows it as available. */
-  markPaid: (id: string, accountId: string, fundId?: string) =>
-    api.post(`/expenses/${id}/mark-paid`, { accountId, ...(fundId ? { fundId } : {}) }),
+  markPaid: (id: string, accountId: string, fundId?: string | null) =>
+    api.post(`/expenses/${id}/mark-paid`, { accountId, ...(fundId !== undefined ? { fundId } : {}) }),
 
   /** Every correction made to an expense: what changed, who, when and the comment. Newest first. */
   history: (id: string) => api.get(`/expenses/${id}/history`),
@@ -539,6 +539,16 @@ export const accountsApi = {
   getAccount: (id: string) => api.get(`/accounts/${id}`),
   /** Deletes an account made by mistake; one that has already been used is only taken off the lists and out of the totals. */
   deleteAccount: (id: string) => api.delete(`/accounts/${id}`),
+  /** Raises or lowers an account's balance by hand to match the bank. A comment is required; admin only. */
+  adjustAccount: (id: string, data: { direction: 'INCREASE' | 'DECREASE'; amount: number; comment: string }) =>
+    api.post(`/accounts/${id}/adjust`, data),
+  /** Raises or lowers a fund by hand, with a comment. Lowering is admin only. `accountId` also moves that bank account. */
+  adjustFund: (
+    id: string,
+    data: { direction: 'INCREASE' | 'DECREASE'; amount: number; comment: string; accountId?: string },
+  ) => api.post(`/funds/${id}/adjust`, data),
+  /** Every entry that has moved a fund, newest first, with the comments. */
+  fundHistory: (id: string) => api.get(`/funds/${id}/history`),
   listFunds: (params?: Record<string, unknown>) => api.get('/funds', { params }),
   createFund: (data: unknown) => api.post('/funds', data),
   /** Where the money is: the bank, the corpus, every other fund and what is left, with a check that they add up. */

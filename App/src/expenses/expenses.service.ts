@@ -70,6 +70,10 @@ export class ExpensesService {
       const account = await this.prisma.account.findFirst({ where: { id: dto.accountId, societyId, isActive: true } });
       if (!account) throw new NotFoundException('Account not found in this society');
     }
+    if (dto.fundId) {
+      const fund = await this.prisma.fund.findFirst({ where: { id: dto.fundId, societyId, isActive: true } });
+      if (!fund) throw new NotFoundException('Fund not found in this society');
+    }
 
     return this.prisma.expense.create({
       data: {
@@ -77,6 +81,7 @@ export class ExpensesService {
         createdById,
         categoryId,
         accountId: dto.accountId,
+        fundId: dto.fundId,
         vendorPayee: dto.vendorPayee,
         description: dto.description,
         amount: new Prisma.Decimal(dto.amount),
@@ -313,18 +318,24 @@ export class ExpensesService {
    * fund is money earmarked inside the bank accounts, so paying from it must lower both together;
    * otherwise the funds would add up to more than the bank holds.
    */
-  async markPaid(societyId: string, expenseId: string, accountId: string, actorId: string, fundId?: string) {
+  async markPaid(societyId: string, expenseId: string, accountId: string, actorId: string, requestedFundId?: string | null) {
     // Fetch for scope verification; the status gate and the amount are taken again inside the transaction
     const expense = await this.findOne(societyId, expenseId);
-    if (fundId && expense.linkedEntityType === 'EVENT') {
+    const eventLinked = expense.linkedEntityType === 'EVENT';
+    if (requestedFundId && eventLinked) {
       throw new BadRequestException("This expense came from an event and has already been taken from the event's fund.");
     }
+    // Not said: use the fund it was posted against. Said as null: paid from the general money. An event's
+    // expense was taken from its fund when it was recorded, so it never takes a second one here.
+    const fundId = eventLinked ? undefined : (requestedFundId === undefined ? (expense.fundId ?? undefined) : (requestedFundId ?? undefined));
 
     return this.prisma.$transaction(async (tx) => {
       // 1. Atomic status check-and-update
       const { count } = await tx.expense.updateMany({
         where: { id: expenseId, societyId, status: ExpenseStatus.APPROVED },
-        data: { status: ExpenseStatus.PAID, paidAt: new Date(), accountId },
+        // A fund chosen when it was posted is only a plan: once paid, the fund is set below if one really paid
+        // for it, and cleared here if not, so a paid expense never names a fund that was not touched.
+        data: { status: ExpenseStatus.PAID, paidAt: new Date(), accountId, ...(eventLinked ? {} : { fundId: null }) },
       });
       if (count === 0) {
         throw new ForbiddenException('Only approved expenses can be marked as paid');

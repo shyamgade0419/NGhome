@@ -79,6 +79,15 @@ export class CreateExpenseDto {
   @IsOptional()
   @IsBoolean()
   isRecurring?: boolean;
+
+  /**
+   * The fund this is to be spent from (the corpus, a Ganesh fund). Nothing moves when it is posted: it is
+   * what Mark Paid takes the money from, unless the person paying picks something else.
+   */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  fundId?: string;
 }
 
 /** Same fields, all optional, same validators — so PATCH is validated too.

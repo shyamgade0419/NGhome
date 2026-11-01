@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
 import { AccountsService, CreateAccountDto } from './accounts.service';
 import { UpdateAccountDto } from './dto/create-account.dto';
+import { AdjustAccountDto } from './dto/adjust-account.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -43,6 +44,18 @@ export class AccountsController {
   @ApiOperation({ summary: 'Update account details' })
   update(@SocietyId() societyId: string, @Param('id') id: string, @Body() dto: UpdateAccountDto) {
     return this.accountsService.update(societyId, id, dto);
+  }
+
+  @Post(':id/adjust')
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @ApiOperation({ summary: 'Raise or lower an account balance by hand to match the bank, with a comment' })
+  adjust(
+    @SocietyId() societyId: string,
+    @Param('id') id: string,
+    @Body() dto: AdjustAccountDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.accountsService.adjust(societyId, id, dto, user.id);
   }
 
   @Delete(':id')

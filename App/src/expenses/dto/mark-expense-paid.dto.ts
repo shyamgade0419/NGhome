@@ -14,9 +14,12 @@ export class MarkExpensePaidDto {
   /**
    * The fund this is paid out of, when it is not ordinary maintenance money. The fund falls by the same
    * amount as the account, which is what keeps the funds from adding up to more than the bank holds.
+   *
+   * Left out, the fund the expense was posted against is used. `null` says "no fund": paid from the general
+   * money even though one was chosen when it was posted.
    */
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  fundId?: string;
+  fundId?: string | null;
 }

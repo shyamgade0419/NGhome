@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { AlertTriangle, CheckCircle2, Landmark, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, History, Landmark, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { accountsApi } from '@/lib/api/endpoints';
 import { Header } from '@/components/layout/Header';
@@ -17,9 +17,11 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import { PageSpinner } from '@/components/ui/Spinner';
+import { Textarea } from '@/components/ui/Textarea';
+import { PageSpinner, Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatDate } from '@/lib/utils';
+import { adjustmentProblem, adjustmentEffect, type AdjustDirection } from '@/lib/adjustments';
 import { useAuth } from '@/lib/auth/AuthContext';
 
 const createAccountSchema = z.object({
@@ -41,20 +43,16 @@ const createFundSchema = z.object({
 });
 type CreateFundForm = z.infer<typeof createFundSchema>;
 
-const contributeSchema = z.object({
-  amount: z.coerce.number().positive('Enter an amount greater than zero'),
-  description: z.string().optional(),
-  // '' means "don't credit any bank account" — see the note in the modal.
-  accountId: z.string().optional(),
-});
-type ContributeForm = z.infer<typeof contributeSchema>;
-
 export default function AccountsPage() {
   const qc = useQueryClient();
   const { activeMembership } = useAuth();
   const isAdmin = activeMembership?.role === 'SOCIETY_ADMIN';
   const [showNewFund, setShowNewFund] = useState(false);
-  const [contributeTo, setContributeTo] = useState<any | null>(null);
+  // Raising or lowering a fund or a bank balance by hand: what is being changed, and the form for it.
+  const [adjusting, setAdjusting] = useState<{ kind: 'fund' | 'account'; item: any } | null>(null);
+  const [adj, setAdj] = useState({ direction: 'INCREASE' as AdjustDirection, amount: '', comment: '', accountId: '' });
+  const [adjError, setAdjError] = useState<string | null>(null);
+  const [historyOf, setHistoryOf] = useState<any | null>(null);
 
   const { data: accountsData, isLoading: loadingAccounts } = useQuery({
     queryKey: ['accounts'],
@@ -132,7 +130,6 @@ You can add the account again with the right balance.`,
     createFundForm.reset({ kind });
     setShowNewFund(true);
   };
-  const contributeForm = useForm<ContributeForm>({ resolver: zodResolver(contributeSchema) });
 
   const createFund = useMutation({
     mutationFn: (d: CreateFundForm) => accountsApi.createFund(d),
@@ -146,22 +143,46 @@ You can add the account again with the right balance.`,
     onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to create fund'),
   });
 
-  const contribute = useMutation({
-    mutationFn: (d: ContributeForm) =>
-      accountsApi.contributeToFund(contributeTo.id, {
-        amount: d.amount,
-        description: d.description || undefined,
-        accountId: d.accountId || undefined,
-      }),
+  const openAdjust = (kind: 'fund' | 'account', item: any) => {
+    setAdjusting({ kind, item });
+    setAdj({ direction: 'INCREASE', amount: '', comment: '', accountId: '' });
+    setAdjError(null);
+  };
+  const closeAdjust = () => { setAdjusting(null); setAdjError(null); };
+
+  const adjust = useMutation({
+    mutationFn: () => {
+      const body = { direction: adj.direction, amount: Number(adj.amount), comment: adj.comment.trim() };
+      return adjusting!.kind === 'fund'
+        ? accountsApi.adjustFund(adjusting!.item.id, { ...body, ...(adj.accountId ? { accountId: adj.accountId } : {}) })
+        : accountsApi.adjustAccount(adjusting!.item.id, body);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['funds'] });
       qc.invalidateQueries({ queryKey: ['accounts'] });
       qc.invalidateQueries({ queryKey: ['fund-summary'] });
-      toast.success('Added to fund');
-      setContributeTo(null);
-      contributeForm.reset();
+      qc.invalidateQueries({ queryKey: ['fund-history'] });
+      toast.success(adjusting?.kind === 'fund' ? 'Fund updated' : 'Balance updated');
+      closeAdjust();
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to add to fund'),
+    onError: (e: any) => {
+      const m = e?.response?.data?.message;
+      setAdjError(Array.isArray(m) ? m.join(', ') : (m ?? 'Could not save the change'));
+    },
+  });
+
+  const submitAdjust = () => {
+    if (!adjusting) return;
+    const problem = adjustmentProblem(adj.amount, adj.comment, adj.direction, Number(adjusting.item.currentBalance));
+    if (problem) { setAdjError(problem); return; }
+    setAdjError(null);
+    adjust.mutate();
+  };
+
+  const { data: fundHistory, isLoading: historyLoading } = useQuery({
+    queryKey: ['fund-history', historyOf?.id],
+    queryFn: () => accountsApi.fundHistory(historyOf.id).then((r: any) => r.data),
+    enabled: !!historyOf,
   });
 
   const totalBalance = accounts.reduce(
@@ -253,6 +274,15 @@ You can add the account again with the right balance.`,
                     </Td>
                     {isAdmin && (
                       <Td className="text-right">
+                        <div className="flex justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          aria-label={`Adjust balance of ${a.name}`}
+                          onClick={() => openAdjust('account', a)}
+                        >
+                          <SlidersHorizontal size={14} /> Adjust
+                        </Button>
                         <Button
                           size="sm"
                           variant="danger"
@@ -262,6 +292,7 @@ You can add the account again with the right balance.`,
                         >
                           <Trash2 size={14} /> Delete
                         </Button>
+                        </div>
                       </Td>
                     )}
                   </Tr>
@@ -319,9 +350,14 @@ You can add the account again with the right balance.`,
                       </Badge>
                     </Td>
                     <Td className="text-right">
-                      <Button size="sm" variant="outline" onClick={() => setContributeTo(f)}>
-                        Add Money
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button size="sm" variant="outline" aria-label={`Add or remove money for ${f.name}`} onClick={() => openAdjust('fund', f)}>
+                          <SlidersHorizontal size={14} /> Add / Remove
+                        </Button>
+                        <Button size="sm" variant="ghost" aria-label={`History of ${f.name}`} onClick={() => setHistoryOf(f)}>
+                          <History size={14} /> History
+                        </Button>
+                      </div>
                     </Td>
                   </Tr>
                 ))}
@@ -435,8 +471,8 @@ You can add the account again with the right balance.`,
             {...createFundForm.register('openingBalance')}
           />
           <p className="-mt-2 text-xs text-slate-500">
-            What the fund already holds today. Later additions go through Add Money, so they
-            leave a ledger entry. A fund is money set aside inside your bank accounts, not extra
+            What the fund already holds today. Later changes go through Add / Remove, so they
+            leave a ledger entry with your comment. A fund is money set aside inside your bank accounts, not extra
             money: it is taken out of the maintenance and general money shown above.
           </p>
           {/* Unchecked by default: this is the only control over whether
@@ -460,55 +496,129 @@ You can add the account again with the right balance.`,
         </form>
       </Modal>
 
-      {/* Add money to fund */}
+      {/* Add or remove money: a fund, or a bank balance, always with a comment */}
       <Modal
-        open={!!contributeTo}
-        onClose={() => { setContributeTo(null); contributeForm.reset(); }}
-        title={contributeTo ? `Add Money — ${contributeTo.name}` : 'Add Money'}
+        open={!!adjusting}
+        onClose={closeAdjust}
+        title={adjusting ? (adjusting.kind === 'fund' ? `Add / Remove Money — ${adjusting.item.name}` : `Adjust Balance — ${adjusting.item.name}`) : 'Adjust'}
       >
-        <form
-          onSubmit={contributeForm.handleSubmit((d) => contribute.mutate(d))}
-          className="space-y-4"
-        >
-          <Input
-            label="Amount (₹)"
-            type="number"
-            step="0.01"
-            error={contributeForm.formState.errors.amount?.message}
-            {...contributeForm.register('amount')}
-          />
-          <Input
-            label="What is this?"
-            placeholder="e.g. Corpus collection Q3"
-            {...contributeForm.register('description')}
-          />
-          <Select
-            label="Also credit a bank account"
-            options={[
-              { value: '', label: 'No — money is already in the accounts' },
-              ...accounts.map((a: any) => ({ value: a.id, label: a.name })),
-            ]}
-            {...contributeForm.register('accountId')}
-          />
-          {/* A fund is an earmark inside an account, not a second pot of money.
-              Crediting an account for a payment that was already approved would
-              count the same rupee twice, so this defaults to "no". */}
-          <p className="-mt-2 text-xs text-slate-500">
-            Pick an account only if this money is arriving now and was never recorded as a
-            payment — a cash collection, say. If it came in through the app, leave this as
-            &ldquo;No&rdquo; or it will be counted twice.
-          </p>
-          <div className="flex justify-end gap-3 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => { setContributeTo(null); contributeForm.reset(); }}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" loading={contribute.isPending}>Add to Fund</Button>
+        {adjusting && (
+          <div className="space-y-4">
+            <div className="rounded-lg bg-slate-50 px-4 py-3">
+              <p className="text-xs text-slate-500">{adjusting.kind === 'fund' ? 'The fund holds' : 'The account holds'}</p>
+              <p className="text-lg font-bold text-slate-900">{formatCurrency(adjusting.item.currentBalance)}</p>
+            </div>
+            <div role="group" aria-label="Add or remove" className="grid grid-cols-2 gap-2">
+              {(['INCREASE', 'DECREASE'] as const).map((d) => {
+                const locked = d === 'DECREASE' && !isAdmin;
+                const on = adj.direction === d;
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    disabled={locked}
+                    aria-pressed={on}
+                    title={locked ? 'Only the admin can take money out' : undefined}
+                    onClick={() => { setAdj({ ...adj, direction: d }); setAdjError(null); }}
+                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                      on ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {d === 'INCREASE' ? 'Add money' : 'Remove money'}
+                  </button>
+                );
+              })}
+            </div>
+            <Input
+              label="Amount (₹)"
+              type="number"
+              step="0.01"
+              value={adj.amount}
+              onChange={(ev) => setAdj({ ...adj, amount: ev.target.value })}
+            />
+            <Textarea
+              label="Comment: why is this being changed? *"
+              placeholder={adjusting.kind === 'fund' ? 'e.g. Donations collected for Ganesh festival' : 'e.g. Interest credited by the bank'}
+              value={adj.comment}
+              maxLength={500}
+              onChange={(ev) => setAdj({ ...adj, comment: ev.target.value })}
+            />
+            {adjusting.kind === 'fund' && (
+              <>
+                <Select
+                  label={adj.direction === 'INCREASE' ? 'Also add it to a bank account' : 'Also take it from a bank account'}
+                  options={[
+                    { value: '', label: 'No: the money is already in the accounts' },
+                    ...accounts.map((a: any) => ({ value: a.id, label: `${a.name} — ${formatCurrency(a.currentBalance)}` })),
+                  ]}
+                  value={adj.accountId}
+                  onChange={(ev) => setAdj({ ...adj, accountId: ev.target.value })}
+                />
+                <p className="-mt-2 text-xs text-slate-500">
+                  A fund is set aside inside your bank accounts. Pick an account only if money really came into it, or
+                  went out of it, now and was not recorded as a payment or an expense. Otherwise leave this as
+                  &ldquo;No&rdquo; or the same money is counted twice.
+                </p>
+              </>
+            )}
+            {(() => {
+              const effect = adjustmentEffect({
+                kind: adjusting.kind,
+                name: adjusting.item.name,
+                direction: adj.direction,
+                amount: adj.amount,
+                balance: Number(adjusting.item.currentBalance),
+                general: money ? Number(money.generalBalance) : null,
+                bankMoves: adjusting.kind === 'fund' && !!adj.accountId,
+              });
+              return effect ? <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">{effect}</p> : null;
+            })()}
+            {adjError && <p role="alert" className="text-sm text-red-600">{adjError}</p>}
+            <div className="flex justify-end gap-3 pt-2">
+              <Button type="button" variant="outline" onClick={closeAdjust}>Cancel</Button>
+              <Button onClick={submitAdjust} loading={adjust.isPending}>
+                {adjusting.kind === 'account' ? 'Save balance' : adj.direction === 'INCREASE' ? 'Add to fund' : 'Take from fund'}
+              </Button>
+            </div>
           </div>
-        </form>
+        )}
+      </Modal>
+
+      {/* Every entry that has moved a fund, with the comments */}
+      <Modal open={!!historyOf} onClose={() => setHistoryOf(null)} title={historyOf ? `History — ${historyOf.name}` : 'History'} size="md">
+        {historyOf && (
+          <div className="space-y-3">
+            {historyLoading ? (
+              <div className="flex justify-center py-6"><Spinner /></div>
+            ) : (
+              <>
+                <p className="text-sm text-slate-600">
+                  Opened with {formatCurrency(fundHistory?.fund?.openingBalance ?? historyOf.openingBalance)}; holds{' '}
+                  <strong>{formatCurrency(fundHistory?.fund?.currentBalance ?? historyOf.currentBalance)}</strong> now.
+                </p>
+                {!fundHistory?.entries?.length ? (
+                  <p className="text-sm text-slate-500">Nothing has been added or taken out since it was opened.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {fundHistory.entries.map((e: any) => (
+                      <li key={e.id} className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 px-4 py-3">
+                        <div className="min-w-0">
+                          <p className="text-sm text-slate-900">{e.description}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            {formatDate(e.date)}{e.by ? ` · ${e.by}` : ''}{e.movedBankAccount ? ' · bank account moved too' : ''}
+                          </p>
+                        </div>
+                        <p className={`shrink-0 text-sm font-semibold ${e.direction === 'IN' ? 'text-green-700' : 'text-red-700'}`}>
+                          {e.direction === 'IN' ? '+' : '−'}{formatCurrency(e.amount)}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </Modal>
     </>
   );
@@ -580,7 +690,7 @@ function MoneyPicture({ money }: { money: FundSummary }) {
 
       <p className="mt-3 text-xs text-slate-500">
         {money.fundsExceedBank
-          ? 'The funds add up to more than the accounts hold. Either money was added to a fund that never arrived in the bank, or money left the bank without being taken from a fund. Check Add Money entries and expenses paid.'
+          ? `The funds add up to ${formatCurrency(Math.abs(Number(money.generalBalance)))} more than the bank holds, so this does not reconcile yet. If the bank really holds more, use Adjust on the bank account. If a fund was entered too high, use Add / Remove on that fund. Each change keeps your comment.`
           : 'Corpus fund + other funds + maintenance and general money = what is in the bank. A fund is set aside inside the accounts, so adding to one lowers the general money, not the bank.'}
       </p>
     </Card>

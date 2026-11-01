@@ -35,6 +35,8 @@ const expenseSchema = z.object({
   expenseDate: z.string().min(1, 'Date required'),
   vendorPayee: z.string().optional(),
   notes: z.string().optional(),
+  // The fund to spend this from, chosen when it is posted. Empty means the maintenance and general money.
+  fundId: z.string().optional(),
 });
 
 type ExpenseFormData = z.infer<typeof expenseSchema>;
@@ -74,7 +76,7 @@ export default function ExpensesPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (d: ExpenseFormData) => expensesApi.create(d),
+    mutationFn: (d: ExpenseFormData) => expensesApi.create({ ...d, fundId: d.fundId || undefined }),
     onSuccess: () => {
       toast.success('Expense logged');
       qc.invalidateQueries({ queryKey: ['expenses'] });
@@ -117,7 +119,9 @@ export default function ExpensesPage() {
   const funds: any[] = Array.isArray(fundsData) ? fundsData : (fundsData?.data ?? []);
 
   const markPaidMutation = useMutation({
-    mutationFn: () => expensesApi.markPaid(payingExpense!.id, payAccountId, payFundId || undefined),
+    // null says "no fund" on purpose: an expense posted against a fund is paid from the general money if the
+    // person paying clears the choice.
+    mutationFn: () => expensesApi.markPaid(payingExpense!.id, payAccountId, payFundId || null),
     onSuccess: () => {
       toast.success('Expense marked paid — account balance updated');
       qc.invalidateQueries({ queryKey: ['expenses'] });
@@ -260,7 +264,11 @@ export default function ExpensesPage() {
                             <span className="truncate">Corrected{e.correctionNote ? `: ${e.correctionNote}` : ''}</span>
                           </button>
                         )}
-                        {e.fund && <p className="mt-0.5 text-xs text-slate-400">From {e.fund.name}</p>}
+                        {e.fund && (
+                          <p className="mt-0.5 text-xs text-slate-400">
+                            {e.status === 'PAID' ? 'Paid from' : 'To be paid from'} {e.fund.name}
+                          </p>
+                        )}
                       </Td>
                       <Td className="text-xs">{e.category?.name ?? '—'}</Td>
                       <Td className="text-slate-500">{e.vendorPayee ?? '—'}</Td>
@@ -287,7 +295,7 @@ export default function ExpensesPage() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => { setPayingExpense(e); setPayAccountId(accounts[0]?.id ?? ''); setPayFundId(''); }}
+                              onClick={() => { setPayingExpense(e); setPayAccountId(accounts[0]?.id ?? ''); setPayFundId(e.fund?.id ?? ''); }}
                             >
                               Mark Paid
                             </Button>
@@ -357,8 +365,8 @@ export default function ExpensesPage() {
                   onChange={(ev) => setPayFundId(ev.target.value)}
                 />
                 <p className="-mt-2 text-xs text-slate-500">
-                  Choose a fund if this is spent from one (the corpus, a festival fund). The fund goes down by the
-                  same amount, so the funds and the bank still add up.
+                  Choose a fund if this is spent from one (the corpus, a Ganesh fund). The fund goes down by the
+                  same amount, so the funds and the bank still add up. Leave it on the general money if no fund pays for it.
                 </p>
               </>
             )}
@@ -506,6 +514,18 @@ export default function ExpensesPage() {
             {...register('category')}
           />
           <Input label="Vendor / Payee (optional)" placeholder="Vendor name" {...register('vendorPayee')} />
+          <Select
+            label="Spend from (optional)"
+            options={[
+              { value: '', label: 'Maintenance and general money (no fund)' },
+              ...funds.map((f: any) => ({ value: f.id, label: `${f.name} — ${formatCurrency(f.currentBalance)}` })),
+            ]}
+            {...register('fundId')}
+          />
+          <p className="-mt-2 text-xs text-slate-500">
+            Pick a fund (the corpus, a Ganesh fund) if this is to be paid out of one. Nothing moves yet: when the
+            expense is marked paid, the fund and the bank account go down together.
+          </p>
           <Textarea label="Notes (optional)" placeholder="Additional details…" {...register('notes')} />
           <div className="flex justify-end gap-3 pt-2">
             <Button type="button" variant="outline" onClick={() => { setShowModal(false); reset(); }}>Cancel</Button>

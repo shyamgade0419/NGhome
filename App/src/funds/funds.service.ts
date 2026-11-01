@@ -1,8 +1,12 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma, TransactionType, AuditAction, FundKind } from '@prisma/client';
+import { Prisma, TransactionType, AuditAction, FundKind, SystemRole } from '@prisma/client';
 import { buildFundSummary } from './fund-summary';
 import { ContributeFundDto } from './dto/contribute-fund.dto';
+import { AdjustFundDto } from './dto/adjust-fund.dto';
+
+/** Fund balances are Decimal(15,2); this keeps one adjustment far from the edge. */
+const MAX_FUND_ADJUSTMENT = new Prisma.Decimal('999999999.99');
 
 import { CreateFundDto } from './dto/create-fund.dto';
 export { CreateFundDto } from './dto/create-fund.dto';
@@ -158,6 +162,126 @@ export class FundsService {
 
       return updatedFund;
     });
+  }
+
+  /**
+   * Raises or lowers a fund by hand, with the reason on the record.
+   *
+   * The fund is an earmark inside the bank accounts, so by default only the earmark moves: the general money
+   * rises or falls by the same amount and the bank total stays put. When `accountId` is given the money really
+   * entered or left that account, and the account moves with the fund.
+   *
+   * A fund never goes below zero. Lowering one is the admin's call; raising one is open to the accountant too.
+   */
+  async adjust(societyId: string, id: string, dto: AdjustFundDto, actor: { id: string; role?: string }) {
+    const amount = new Prisma.Decimal(dto.amount);
+    if (amount.decimalPlaces() > 2) throw new BadRequestException('An amount can have at most two decimal places.');
+    if (amount.gt(MAX_FUND_ADJUSTMENT)) throw new BadRequestException('That amount is too large.');
+    const comment = dto.comment.trim();
+    if (comment.length < 3) throw new BadRequestException('Add a comment of at least 3 characters saying why.');
+
+    const increase = dto.direction === 'INCREASE';
+    if (!increase && actor.role !== SystemRole.SOCIETY_ADMIN) {
+      throw new ForbiddenException('Only the admin can take money out of a fund.');
+    }
+
+    const when = dto.date ? new Date(dto.date) : new Date();
+    if (Number.isNaN(when.getTime())) throw new BadRequestException('That is not a valid date.');
+
+    const fund = await this.prisma.fund.findFirst({ where: { id, societyId, isActive: true } });
+    if (!fund) throw new NotFoundException('Fund not found');
+
+    return this.prisma.$transaction(async (tx) => {
+      const moved = await tx.fund.updateMany({
+        where: increase ? { id: fund.id } : { id: fund.id, currentBalance: { gte: amount } },
+        data: { currentBalance: increase ? { increment: amount } : { decrement: amount } },
+      });
+      if (moved.count === 0) {
+        const now = await tx.fund.findUniqueOrThrow({ where: { id: fund.id }, select: { currentBalance: true } });
+        throw new BadRequestException(`${fund.name} holds only ₹${now.currentBalance.toFixed(2)}, so ₹${amount.toFixed(2)} cannot be taken out.`);
+      }
+      const updatedFund = await tx.fund.findUniqueOrThrow({ where: { id: fund.id } });
+
+      let accountId: string | null = null;
+      if (dto.accountId) {
+        const account = await tx.account.findFirst({ where: { id: dto.accountId, societyId, isActive: true } });
+        if (!account) throw new NotFoundException('Account not found');
+        await tx.account.update({
+          where: { id: account.id },
+          data: { currentBalance: increase ? { increment: amount } : { decrement: amount } },
+        });
+        accountId = account.id;
+      }
+
+      await tx.transaction.create({
+        data: {
+          societyId,
+          fundId: fund.id,
+          accountId,
+          transactionType: increase ? TransactionType.CREDIT : TransactionType.DEBIT,
+          amount,
+          transactionDate: when,
+          description: `${increase ? 'Added to' : 'Taken from'} ${fund.name}: ${comment}`,
+          linkedEntityType: 'FUND_ADJUSTMENT',
+          linkedEntityId: fund.id,
+          balanceAfter: updatedFund.currentBalance,
+          createdById: actor.id,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          societyId,
+          actorId: actor.id,
+          action: AuditAction.FUND_TRANSACTION,
+          entityType: 'Fund',
+          entityId: fund.id,
+          newValues: {
+            type: increase ? 'INCREASE' : 'DECREASE',
+            amount: amount.toString(),
+            comment,
+            balanceBefore: fund.currentBalance.toString(),
+            balanceAfter: updatedFund.currentBalance.toString(),
+            accountId,
+          },
+        },
+      });
+
+      return updatedFund;
+    });
+  }
+
+  /**
+   * Everything that has moved a fund since it was opened, newest first: contributions, hand adjustments with
+   * their comments, and expenses paid out of it. The opening balance is not an entry; it is where it started.
+   */
+  async history(societyId: string, id: string) {
+    const fund = await this.prisma.fund.findFirst({ where: { id, societyId } });
+    if (!fund) throw new NotFoundException('Fund not found');
+
+    const rows = await this.prisma.transaction.findMany({
+      where: { societyId, fundId: id },
+      orderBy: [{ transactionDate: 'desc' }, { createdAt: 'desc' }],
+      take: 200,
+    });
+    const ids = [...new Set(rows.map((r) => r.createdById).filter((v): v is string => !!v))];
+    const people = ids.length
+      ? await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, firstName: true, lastName: true } })
+      : [];
+    const nameOf = new Map(people.map((p) => [p.id, `${p.firstName} ${p.lastName}`.trim()]));
+
+    return {
+      fund: { id: fund.id, name: fund.name, openingBalance: fund.openingBalance.toFixed(2), currentBalance: fund.currentBalance.toFixed(2) },
+      entries: rows.map((r) => ({
+        id: r.id,
+        date: r.transactionDate,
+        direction: r.transactionType === TransactionType.CREDIT ? 'IN' : 'OUT',
+        amount: r.amount.toFixed(2),
+        description: r.description,
+        movedBankAccount: !!r.accountId,
+        by: r.createdById ? (nameOf.get(r.createdById) ?? null) : null,
+      })),
+    };
   }
 
   /**

@@ -1,9 +1,13 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuditAction, Prisma } from '@prisma/client';
+import { AuditAction, Prisma, TransactionType } from '@prisma/client';
 import { buildPaginationMeta } from '../common/utils/pagination';
 
 import { CreateAccountDto } from './dto/create-account.dto';
+import { AdjustAccountDto } from './dto/adjust-account.dto';
+
+/** Balances are Decimal(15,2); this keeps one adjustment far from the edge. */
+const MAX_ADJUSTMENT = new Prisma.Decimal('999999999.99');
 export { CreateAccountDto } from './dto/create-account.dto';
 
 @Injectable()
@@ -55,6 +59,71 @@ export class AccountsService {
         description: dto.description,
         isActive: true,
       },
+    });
+  }
+
+  /**
+   * Raises or lowers an account's balance by hand so it agrees with the bank, with the reason on the record.
+   * A ledger entry is written so the balance is always explained, and the balance never goes below zero.
+   * Funds are earmarks inside the accounts and are not touched: the general money rises or falls instead.
+   */
+  async adjust(societyId: string, id: string, dto: AdjustAccountDto, actorId: string) {
+    const amount = new Prisma.Decimal(dto.amount);
+    if (amount.decimalPlaces() > 2) throw new BadRequestException('An amount can have at most two decimal places.');
+    if (amount.gt(MAX_ADJUSTMENT)) throw new BadRequestException('That amount is too large.');
+    const comment = dto.comment.trim();
+    if (comment.length < 3) throw new BadRequestException('Add a comment of at least 3 characters saying why.');
+    const when = dto.date ? new Date(dto.date) : new Date();
+    if (Number.isNaN(when.getTime())) throw new BadRequestException('That is not a valid date.');
+
+    const increase = dto.direction === 'INCREASE';
+    const account = await this.prisma.account.findFirst({ where: { id, societyId, isActive: true } });
+    if (!account) throw new NotFoundException('Account not found');
+
+    return this.prisma.$transaction(async (tx) => {
+      const moved = await tx.account.updateMany({
+        where: increase ? { id } : { id, currentBalance: { gte: amount } },
+        data: { currentBalance: increase ? { increment: amount } : { decrement: amount } },
+      });
+      if (moved.count === 0) {
+        const now = await tx.account.findUniqueOrThrow({ where: { id }, select: { currentBalance: true } });
+        throw new BadRequestException(`${account.name} holds only ₹${now.currentBalance.toFixed(2)}, so ₹${amount.toFixed(2)} cannot be taken off.`);
+      }
+      const updated = await tx.account.findUniqueOrThrow({ where: { id } });
+
+      await tx.transaction.create({
+        data: {
+          societyId,
+          accountId: id,
+          transactionType: increase ? TransactionType.CREDIT : TransactionType.DEBIT,
+          amount,
+          transactionDate: when,
+          description: `Balance ${increase ? 'raised' : 'lowered'}: ${comment}`,
+          linkedEntityType: 'ACCOUNT_ADJUSTMENT',
+          linkedEntityId: id,
+          balanceAfter: updated.currentBalance,
+          createdById: actorId,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          societyId,
+          actorId,
+          action: AuditAction.ACCOUNT_TRANSACTION,
+          entityType: 'Account',
+          entityId: id,
+          newValues: {
+            type: increase ? 'INCREASE' : 'DECREASE',
+            amount: amount.toString(),
+            comment,
+            balanceBefore: account.currentBalance.toString(),
+            balanceAfter: updated.currentBalance.toString(),
+          },
+        },
+      });
+
+      return updated;
     });
   }
 
