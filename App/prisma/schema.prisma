@@ -363,6 +363,10 @@ model Society {
   phone               String?
   website             String?
   logoUrl             String?
+  // May this society send WhatsApp messages through the platform's WhatsApp number? Only the platform owner can change
+  // it (Platform console → Societies). Off for every society until switched on, so one society's admin cannot use a
+  // number that was linked for another.
+  whatsappAllowed     Boolean   @default(false)
   isActive            Boolean   @default(true)
   // Resident self-registration via join code
   joinCode            String?   @unique

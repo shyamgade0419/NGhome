@@ -93,8 +93,17 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   // ─── Who and what ───────────────────────────────────────────────────────────────────────────────
 
   private async settingsOf(societyId: string) {
-    const config = await this.prisma.societyConfiguration.findUnique({ where: { societyId }, select: { additionalConfig: true } });
-    return { ...readWhatsappSettings(config?.additionalConfig), additionalConfig: config?.additionalConfig };
+    const [config, society] = await Promise.all([
+      this.prisma.societyConfiguration.findUnique({ where: { societyId }, select: { additionalConfig: true } }),
+      this.prisma.society.findUnique({ where: { id: societyId }, select: { whatsappAllowed: true, isActive: true, deletedAt: true } }),
+    ]);
+    return {
+      ...readWhatsappSettings(config?.additionalConfig),
+      additionalConfig: config?.additionalConfig,
+      // The platform owner decides which societies may use the platform's WhatsApp number. A suspended or deleted
+      // society never sends.
+      allowed: !!society && society.whatsappAllowed && society.isActive && !society.deletedAt,
+    };
   }
 
   private async societyName(societyId: string): Promise<string> {
@@ -141,7 +150,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   private async active(societyId: string) {
     if (!(await this.isConfigured())) return null;
     const s = await this.settingsOf(societyId);
-    return s.enabled ? s : null;
+    return s.enabled && s.allowed ? s : null;
   }
 
   // ─── Events ─────────────────────────────────────────────────────────────────────────────────────
@@ -343,7 +352,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       let budget = Math.min(opts.maxPerRun ?? 25, Math.max(0, dailyCap() - sentToday));
       if (budget === 0) return { ...result, stopped: 'the daily limit is reached' };
 
-      const enabledCache = new Map<string, boolean>();
+      const permitCache = new Map<string, { enabled: boolean; allowed: boolean }>();
       const gap = opts.gap ?? gapMs;
       while (budget > 0) {
         const next = await this.prisma.whatsappMessage.findFirst({
@@ -358,9 +367,20 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
         });
         if (claimed.count !== 1) continue;
 
-        if (!enabledCache.has(next.societyId)) enabledCache.set(next.societyId, (await this.settingsOf(next.societyId)).enabled);
-        if (next.kind !== 'TEST' && !enabledCache.get(next.societyId)) {
-          await this.prisma.whatsappMessage.update({ where: { id: next.id }, data: { status: 'FAILED', lastError: 'WhatsApp messages were switched off for this society.' } });
+        if (!permitCache.has(next.societyId)) {
+          const p = await this.settingsOf(next.societyId);
+          permitCache.set(next.societyId, { enabled: p.enabled, allowed: p.allowed });
+        }
+        const permit = permitCache.get(next.societyId) as { enabled: boolean; allowed: boolean };
+        // Checked again at send time, not only when queued: the society, or the platform owner, may have switched it off since.
+        if (next.kind !== 'TEST' && (!permit.allowed || !permit.enabled)) {
+          await this.prisma.whatsappMessage.update({
+            where: { id: next.id },
+            data: {
+              status: 'FAILED',
+              lastError: permit.allowed ? 'WhatsApp messages were switched off for this society.' : 'This society is not allowed to send WhatsApp messages.',
+            },
+          });
           result.failed += 1;
           continue;
         }
@@ -419,10 +439,13 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     ]);
     return {
       configured: cfg !== null,
+      // Whether the platform owner has allowed this society to use WhatsApp at all.
+      allowed: settings.allowed,
       enabled: settings.enabled,
       reminderDays: settings.reminderDays,
       session: session?.status ?? null,
-      sendingFrom: session?.phone ?? null,
+      // The platform's number is not shown to a society that may not use it.
+      sendingFrom: settings.allowed ? (session?.phone ?? null) : null,
       problem,
       queued,
       sentToday,
@@ -446,6 +469,9 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   async sendTest(societyId: string, rawPhone: string): Promise<{ sent: boolean; error?: string }> {
     const cfg: GatewayConfig | null = await this.settings.effective();
     if (!cfg) return { sent: false, error: 'WhatsApp is not connected to this server yet (see the setup notes).' };
+    if (!(await this.settingsOf(societyId)).allowed) {
+      return { sent: false, error: 'WhatsApp messages are not switched on for your society. Ask the platform owner to allow them.' };
+    }
     const phone = normalizePhone(rawPhone);
     if (!phone) return { sent: false, error: 'That does not look like a mobile number.' };
     const society = await this.societyName(societyId);

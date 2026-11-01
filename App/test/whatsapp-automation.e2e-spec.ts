@@ -158,6 +158,8 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
     }).expect(201);
     admin = reg.body.data.accessToken;
     societyId = reg.body.data.memberships[0].societyId;
+    // Only the platform owner can allow a society to use WhatsApp; done here directly, as the console would.
+    await prisma.society.update({ where: { id: societyId }, data: { whatsappAllowed: true } });
     buildingId = (await http_().post('/api/v1/buildings').set(auth(admin)).send({ name: 'W', code: 'W' }).expect(201)).body.data.id;
     accountId = (await prisma.account.create({ data: { societyId, name: 'Main', accountType: 'CURRENT' } })).id;
     accountant = (await addPerson(null, SystemRole.SOCIETY_ACCOUNTANT, 'OWNER')).token;
@@ -578,6 +580,67 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
       const [a, b] = await Promise.all([drain(), drain()]);
       expect(a.sent + b.sent).toBe(3);
       expect(gw.state.sent).toHaveLength(3);
+    });
+  });
+
+  describe('a society the platform owner has not allowed', () => {
+    const messageOf = (body: any) => String(body?.message ?? body?.error?.message ?? JSON.stringify(body));
+    const allow = (allowed: boolean) => prisma.society.update({ where: { id: societyId }, data: { whatsappAllowed: allowed } });
+    afterEach(async () => { await allow(true); });
+
+    it('cannot switch automation on, and the refusal says why', async () => {
+      await setConfig({ whatsappEnabled: false });
+      await allow(false);
+      const res = await http_().patch('/api/v1/societies/my/config').set(auth(admin)).send({ whatsappEnabled: true }).expect(403);
+      expect(messageOf(res.body)).toMatch(/Ask the platform owner/);
+      // switching it off, or changing the days and the wording, is still fine: only turning it on is held back
+      await http_().patch('/api/v1/societies/my/config').set(auth(admin)).send({ whatsappEnabled: false, whatsappReminderDays: [3] }).expect(200);
+      await setConfig({ whatsappReminderDays: [5, 10] });
+    });
+
+    it('queues nothing even if the setting was somehow already on', async () => {
+      await setConfig({ whatsappEnabled: true });
+      await allow(false);
+      const f = await newFlat();
+      await addPerson(f, SystemRole.RESIDENT, 'OWNER', { isPrimary: true, phone: mobile(81) });
+      const p = await newPeriod('REVIEW');
+      await newBill(p, f, 700, `W-${flatNo}`, false);
+      await http_().post(`/api/v1/billing/periods/${p}/publish`).set(auth(admin)).expect(201);
+      expect(await rows()).toHaveLength(0);
+      expect(await whatsapp.enqueueReminders(societyId, new Date('2044-03-05T05:30:00Z'))).toBe(0);
+    });
+
+    it('does not send what was queued before it was stopped', async () => {
+      await setConfig({ whatsappEnabled: true });
+      await prisma.whatsappMessage.create({ data: { societyId, kind: 'REMINDER', dedupeKey: `stop-${UNIQUE}`, toPhone: wa(82), body: 'x', sendAfter: new Date(Date.now() - 5000) } });
+      await allow(false);
+      const out = await drain();
+      expect(out).toMatchObject({ sent: 0, failed: 1 });
+      expect((await rows())[0]).toMatchObject({ status: 'FAILED', lastError: 'This society is not allowed to send WhatsApp messages.' });
+      expect(gw.state.sent).toHaveLength(0);
+    });
+
+    it('is not shown the platform\'s number, and cannot send a test', async () => {
+      await allow(false);
+      const status = (await http_().get('/api/v1/whatsapp/status').set(auth(admin)).expect(200)).body.data;
+      expect(status).toMatchObject({ allowed: false, sendingFrom: null });
+      const test = (await http_().post('/api/v1/whatsapp/test').set(auth(admin)).send({ phone: mobile(83) }).expect(200)).body.data;
+      expect(test.sent).toBe(false);
+      expect(test.error).toMatch(/Ask the platform owner/);
+      expect(gw.state.sent).toHaveLength(0);
+      await allow(true);
+      expect((await http_().get('/api/v1/whatsapp/status').set(auth(admin)).expect(200)).body.data).toMatchObject({ allowed: true, sendingFrom: '919000011111' });
+    });
+
+    it('a suspended society never sends, even if it was allowed', async () => {
+      await setConfig({ whatsappEnabled: true });
+      await prisma.society.update({ where: { id: societyId }, data: { isActive: false } });
+      try {
+        await prisma.whatsappMessage.create({ data: { societyId, kind: 'REMINDER', dedupeKey: `susp-${UNIQUE}`, toPhone: wa(84), body: 'x', sendAfter: new Date(Date.now() - 5000) } });
+        expect(await drain()).toMatchObject({ sent: 0, failed: 1 });
+      } finally {
+        await prisma.society.update({ where: { id: societyId }, data: { isActive: true } });
+      }
     });
   });
 

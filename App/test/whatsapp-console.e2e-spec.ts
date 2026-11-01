@@ -134,6 +134,7 @@ describe('Platform: WhatsApp connection from the console (e2e, real Postgres, fa
     }).expect(201);
     societyAdmin = reg.body.data.accessToken;
     societyId = reg.body.data.memberships[0].societyId;
+    await prisma.society.update({ where: { id: societyId }, data: { whatsappAllowed: true } });
   });
 
   afterAll(async () => {
@@ -288,6 +289,77 @@ describe('Platform: WhatsApp connection from the console (e2e, real Postgres, fa
       const moved = (await save({ url: 'http://127.0.0.1:9', apiKey: '' }).expect(200)).body.data;
       expect(moved.sessionId).toBeNull();
       await save({ url: gatewayUrl, apiKey: '', sessionId: 'sess-2' }).expect(200);
+    });
+  });
+
+  describe('which societies may use the platform\'s number', () => {
+    let otherSociety: string;
+    let otherAdmin: string;
+    const allowTo = (id: string, allowed: boolean, token = platformToken) => http_().patch(`/api/v1/societies/${id}/whatsapp`).set(auth(token)).send({ allowed });
+
+    beforeAll(async () => {
+      const reg = await http_().post('/api/v1/auth/register-society').send({
+        society: { name: `E2E WA Other ${UNIQUE}`, address: '2 Street', city: 'Chennai', state: 'TN', pinCode: '600001', country: 'India', contactEmail: email('other-soc'), contactPhone: '96' + String(UNIQUE).slice(-8) },
+        admin: { firstName: 'Other', lastName: 'Admin', email: email('other'), phone: '96' + String(UNIQUE).slice(-8), password: PASSWORD },
+      }).expect(201);
+      otherAdmin = reg.body.data.accessToken;
+      otherSociety = reg.body.data.memberships[0].societyId;
+    });
+    afterAll(async () => {
+      await prisma.whatsappMessage.deleteMany({ where: { societyId: otherSociety } });
+      await prisma.society.update({ where: { id: otherSociety }, data: { deletedAt: new Date() } });
+    });
+
+    it('is off for a new society, and only the platform owner can change it', async () => {
+      expect((await prisma.society.findUniqueOrThrow({ where: { id: otherSociety } })).whatsappAllowed).toBe(false);
+      await allowTo(otherSociety, true, otherAdmin).expect(403); // the society's own admin cannot
+      await allowTo(societyId, false, societyAdmin).expect(403); // nor can another society's
+      await http_().patch(`/api/v1/societies/${otherSociety}/whatsapp`).set(auth(platformToken)).send({}).expect(400); // a missing value is refused
+      expect((await prisma.society.findUniqueOrThrow({ where: { id: otherSociety } })).whatsappAllowed).toBe(false);
+    });
+
+    it('another society cannot use the number while this society can', async () => {
+      // this society is allowed, the other is not
+      const other = await http_().patch('/api/v1/societies/my/config').set(auth(otherAdmin)).send({ whatsappEnabled: true }).expect(403);
+      expect(JSON.stringify(other.body)).toMatch(/platform owner/);
+      expect(await prisma.societyConfiguration.findUnique({ where: { societyId: otherSociety } }).then((c) => (c?.additionalConfig as any)?.whatsapp?.enabled ?? false)).toBe(false);
+      // and the number is not shown to it
+      expect((await http_().get('/api/v1/whatsapp/status').set(auth(otherAdmin)).expect(200)).body.data).toMatchObject({ allowed: false, sendingFrom: null, enabled: false });
+      // this society is unaffected
+      expect((await http_().get('/api/v1/whatsapp/status').set(auth(societyAdmin)).expect(200)).body.data).toMatchObject({ allowed: true });
+    });
+
+    it('the platform owner allows it, the society can switch it on, and stopping it again drops what was waiting', async () => {
+      const res = (await allowTo(otherSociety, true).expect(200)).body.data;
+      expect(res).toMatchObject({ id: otherSociety, whatsappAllowed: true });
+      await http_().patch('/api/v1/societies/my/config').set(auth(otherAdmin)).send({ whatsappEnabled: true }).expect(200);
+
+      await prisma.whatsappMessage.createMany({
+        data: [
+          { societyId: otherSociety, kind: 'REMINDER', dedupeKey: `p1-${UNIQUE}`, toPhone: '919876500001', body: 'x', status: 'PENDING' },
+          { societyId: otherSociety, kind: 'REMINDER', dedupeKey: `p2-${UNIQUE}`, toPhone: '919876500002', body: 'x', status: 'SENT', sentAt: new Date() },
+          { societyId, kind: 'REMINDER', dedupeKey: `mine-${UNIQUE}`, toPhone: '919876500003', body: 'x', status: 'PENDING' },
+        ],
+      });
+      const stopped = (await allowTo(otherSociety, false).expect(200)).body.data;
+      expect(stopped.whatsappAllowed).toBe(false);
+
+      const rows = await prisma.whatsappMessage.findMany({ where: { dedupeKey: { in: [`p1-${UNIQUE}`, `p2-${UNIQUE}`, `mine-${UNIQUE}`] } } });
+      const by = (k: string) => rows.find((r) => r.dedupeKey === `${k}-${UNIQUE}`)!;
+      expect(by('p1')).toMatchObject({ status: 'FAILED', lastError: 'This society is not allowed to send WhatsApp messages.' });
+      expect(by('p2').status).toBe('SENT'); // what was already sent stays as it was
+      expect(by('mine').status).toBe('PENDING'); // another society's queue is untouched
+      await prisma.whatsappMessage.deleteMany({ where: { societyId } });
+    });
+
+    it('is recorded in the audit log, and shown in the platform\'s society list', async () => {
+      await allowTo(otherSociety, true).expect(200);
+      const audit = await prisma.auditLog.findFirst({ where: { societyId: otherSociety, entityType: 'Society', newValues: { path: ['action'], equals: 'WHATSAPP_ALLOWED' } }, orderBy: { createdAt: 'desc' } });
+      expect(audit).toBeTruthy();
+      const list = (await http_().get('/api/v1/societies?limit=100').set(auth(platformToken)).expect(200)).body.data as any[];
+      expect(list.find((s) => s.id === otherSociety)).toMatchObject({ whatsappAllowed: true });
+      expect(list.find((s) => s.id === societyId)).toMatchObject({ whatsappAllowed: true });
+      await allowTo(otherSociety, false).expect(200);
     });
   });
 

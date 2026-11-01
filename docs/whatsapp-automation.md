@@ -49,10 +49,27 @@ keeps the risk low but cannot remove it. Keep email and the in-app notification 
    enter the gateway address (the domain you gave it, for example `https://wa.novagade.in`) and the key, and press **Save gateway**.
 4. Press **Connect a phone**. A QR code appears. On the dedicated number's phone: WhatsApp → Linked devices → Link a
    device → scan it. The panel then shows "Linked to +…".
-5. Then, in a society's **Settings → Billing Rules → WhatsApp**, switch **Send WhatsApp messages automatically** on, press **Send test** to your own number first, then **Save WhatsApp Settings**.
+5. **Allow your society.** In the Platform console open **Societies** and press the **WhatsApp** pill on your society's row
+   so it reads **Allowed**. Every society starts **Off**, so no other society can send from your number.
+6. Then, in the society's **Settings → Billing Rules → WhatsApp**, switch **Send WhatsApp messages automatically** on, press **Send test** to your own number first, then **Save WhatsApp Settings**.
 
 The connection saved in the app wins over the `WHATSAPP_API_URL`, `WHATSAPP_API_KEY` and `WHATSAPP_SESSION_ID`
 environment variables, which still work as a fallback if you prefer them. The key is stored encrypted and never shown again.
+
+## Which societies may use the number
+
+The number is the platform's, but **a society can only use it if you allow it**. Platform console → Societies has a
+**WhatsApp** pill on each row: **Off** (the default for every society, new ones included) or **Allowed**.
+
+- A society that is Off sees a note in its WhatsApp settings, cannot switch the messages on, cannot send a test, and is not
+  shown the number.
+- Pressing **Allowed** back to **Off** stops that society straight away and drops anything it still had waiting. What was
+  already sent stays in its history, and no other society is affected.
+- A suspended or deleted society never sends, whatever its setting.
+- Each change is recorded in the audit log.
+
+If each society should one day use **its own** number, that is a different design (one connection per society); the
+current one deliberately shares a single number, controlled by you.
 
 ## Does it stay logged in?
 

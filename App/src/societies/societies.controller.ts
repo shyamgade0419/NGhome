@@ -12,6 +12,7 @@ import { PurgeSocietyDto } from './dto/purge-society.dto';
 import { CreateSocietyDto } from './dto/create-society.dto';
 import { UpdateSocietyDto } from './dto/update-society.dto';
 import { SetSocietyStatusDto } from './dto/set-society-status.dto';
+import { SetSocietyWhatsappDto } from './dto/set-society-whatsapp.dto';
 import { UpdateSocietyConfigDto } from './dto/update-society-config.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -177,6 +178,17 @@ export class SocietiesController {
   @ApiOperation({ summary: '[Platform Admin] Get society by ID, with its admin contacts' })
   async findOne(@Param('id') id: string) {
     return this.societiesService.findOneForPlatform(id);
+  }
+
+  @Patch(':id/whatsapp')
+  @UseGuards(PlatformAdminGuard)
+  @ApiOperation({ summary: "[Platform Admin] Allow or stop a society from sending WhatsApp messages through the platform's number" })
+  async setWhatsapp(
+    @Param('id') id: string,
+    @Body() dto: SetSocietyWhatsappDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.societiesService.setWhatsappAllowed(id, dto.allowed, user.id);
   }
 
   @Patch(':id/status')

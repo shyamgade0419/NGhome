@@ -366,6 +366,36 @@ export class SocietiesService {
    * It does not delete anything: memberships, bills and history are untouched,
    * so reinstating restores the society exactly as it was.
    */
+  /**
+   * The platform owner's say on which societies may send WhatsApp messages through the platform's number. Turning it
+   * off also drops what the society still had waiting to be sent, so a message queued earlier cannot go out after.
+   */
+  async setWhatsappAllowed(id: string, allowed: boolean, actorId: string) {
+    const society = await this.findOne(id);
+    const updated = await this.prisma.society.update({ where: { id }, data: { whatsappAllowed: allowed }, select: { id: true, whatsappAllowed: true } });
+    let dropped = 0;
+    if (!allowed) {
+      dropped = (
+        await this.prisma.whatsappMessage.updateMany({
+          where: { societyId: id, status: { in: ['PENDING', 'SENDING'] } },
+          data: { status: 'FAILED', lastError: 'This society is not allowed to send WhatsApp messages.' },
+        })
+      ).count;
+    }
+    await this.prisma.auditLog.create({
+      data: {
+        societyId: id,
+        actorId,
+        action: AuditAction.CONFIG_CHANGED,
+        entityType: 'Society',
+        entityId: id,
+        oldValues: { whatsappAllowed: society.whatsappAllowed } as Prisma.InputJsonValue,
+        newValues: { whatsappAllowed: allowed, action: allowed ? 'WHATSAPP_ALLOWED' : 'WHATSAPP_STOPPED', queuedMessagesDropped: dropped } as Prisma.InputJsonValue,
+      },
+    });
+    return updated;
+  }
+
   async setActive(id: string, isActive: boolean, actorId: string) {
     const society = await this.findOne(id);
 
@@ -444,7 +474,10 @@ export class SocietiesService {
   }
 
   async updateConfiguration(societyId: string, dto: UpdateSocietyConfigDto) {
-    await this.findOne(societyId);
+    const society = await this.findOne(societyId);
+    if ((dto as { whatsappEnabled?: boolean }).whatsappEnabled === true && !society.whatsappAllowed) {
+      throw new ForbiddenException('WhatsApp messages are not switched on for your society. Ask the platform owner to allow them.');
+    }
 
     // upiId and waterBillingEnabled have no DB column; fold both into the
     // existing additionalConfig JSON field rather than migrate the schema.
