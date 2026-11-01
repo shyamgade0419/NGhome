@@ -119,6 +119,8 @@ export interface MaintenanceBill {
   residentPhone?: string | null;
   /** Primary resident's display name — populated alongside residentPhone. */
   residentName?: string | null;
+  /** Whether that contact is the flat's tenant or its owner (the tenant is preferred). */
+  residentType?: 'OWNER' | 'TENANT' | null;
 }
 
 // Matches backend PaymentSubmission Prisma model (with joins from service)

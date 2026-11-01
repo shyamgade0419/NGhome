@@ -17,6 +17,7 @@ import type { SlotFor, SlotRow, SlotStatus, VehicleRow } from '@/lib/vehicles';
 import type { AttendanceStatus, DayRow, MonthDay, RosterRow, Shift, SummaryRow } from '@/lib/attendance';
 import type { OpeningBalances, OpeningInputRow, OpeningSaveResult } from '@/lib/openingBalances';
 import type { AdvanceCredits, FlatDiscount, FlatDiscountInput } from '@/lib/flatDiscounts';
+import type { BillReminder, ReminderTemplate } from '@/lib/reminders';
 
 // Dashboard — composites several report endpoints
 export const dashboardApi = {
@@ -93,6 +94,17 @@ export const billingApi = {
   getBill: (billId: string): Promise<{ data: MaintenanceBill }> =>
     api.get(`/billing/bills/${billId}`),
 
+  /** Every unpaid flat of a period: who to remind (the tenant, else the owner), their phone, and the message from the template. */
+  getReminders: (periodId: string): Promise<{ data: BillReminder[] }> =>
+    api.get(`/billing/periods/${periodId}/reminders`),
+
+  /** An in-app and phone-alert reminder to every unpaid flat. */
+  sendReminders: (periodId: string): Promise<{ data: { unpaid: number; sent: number; withoutResident: string[] } }> =>
+    api.post(`/billing/periods/${periodId}/remind`),
+
+  /** The wording of the payment reminder: the one in use, the default, and the placeholders it may use. */
+  getReminderTemplate: (): Promise<{ data: ReminderTemplate }> => api.get('/billing/reminder-template'),
+
   // Full period report for PDF / holistic view (admin)
   getPeriodReport: (periodId: string) => api.get(`/billing/periods/${periodId}/report`),
 
@@ -153,6 +165,12 @@ export const paymentsApi = {
 
   get: (id: string): Promise<{ data: Payment }> =>
     api.get(`/payments/${id}`),
+
+  /** The admin or accountant records that a flat has paid (cash, cheque, transfer) and settles its bill in one step. */
+  record: (data: {
+    maintenanceBillId: string; accountId: string; amount: number; paymentDate: string; paymentMethod: string;
+    referenceNumber?: string; utrNumber?: string; notes?: string;
+  }): Promise<{ data: Payment }> => api.post('/payments/record', data),
 
   // accountId: ID of the society account to credit; fetch via reportsApi.accountBalances() first
   approve: (id: string, accountId: string, notes?: string): Promise<{ data: Payment }> =>
@@ -246,6 +264,8 @@ export const societyApi = {
     showAccountBalancesToResidents?: boolean; showExpensesToResidents?: boolean;
     publishStatementToResidents?: boolean; publishMeetingMinutes?: boolean;
     upiId?: string;
+    /** The wording of the WhatsApp payment reminder; empty goes back to the default. */
+    reminderTemplate?: string;
   }) => api.patch('/societies/my/config', data),
 
   // Buildings

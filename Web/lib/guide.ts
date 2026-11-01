@@ -371,7 +371,9 @@ export const GUIDE: GuidePart[] = [
           { type: 'list', items: [
             '**Discount or surcharge, one-off** (admin): open a flat\'s bill from the sheet on mobile and choose **Apply Discount / Surcharge**, with a note. Allowed until the period is published, and lost if the period\'s bills are generated again. For a discount that repeats every month, use **Flat Discounts** (below).',
             '**Notes** (admin): click a cell in the Note column to add a private note, such as "Cheque received".',
-            '**WhatsApp reminder:** the green icon on an unpaid row opens a ready-made message to that flat\'s number.',
+            '**Mark a flat as paid** (admin or accountant): when a flat pays in cash, by cheque or by a transfer you have seen in the bank, open the period and tap **Mark paid** on its row. Choose the account the money went into, the amount and the date. The bill is settled, older unpaid months are cleared first, and the resident is told it was received.',
+            '**WhatsApp reminder:** **Remind** on an unpaid row opens a ready-made message to that flat. It goes to the **tenant** when the flat has one, otherwise to the **owner**. **Remind All** lists every unpaid flat so you can send each one in turn, and **Notify all in the app** sends a notification, with a sound, to every unpaid flat at once.',
+            '**Change the reminder wording** (admin): in **Settings**, under **WhatsApp Reminder**, write the message once and drop in {name}, {flat}, {month}, {amount} and the other details. A preview shows how it will look.',
             '**Print / PDF:** prints A4 landscape without the navigation.',
           ] },
         ],

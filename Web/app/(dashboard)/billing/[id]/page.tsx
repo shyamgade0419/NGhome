@@ -7,7 +7,13 @@ import {
   Send, CheckCircle2, Lock, Droplets, MessageSquare, LayoutList,
 } from 'lucide-react';
 import Link from 'next/link';
-import { billingApi, waterApi } from '@/lib/api/endpoints';
+import { accountsApi, billingApi, paymentsApi, waterApi } from '@/lib/api/endpoints';
+import { whatsappUrl } from '@/lib/reminders';
+import type { BillReminder } from '@/lib/reminders';
+import { Modal } from '@/components/ui/Modal';
+import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Textarea } from '@/components/ui/Textarea';
 import { billingPeriodLabel } from '@/lib/types';
 import type { MaintenanceBill } from '@/lib/types';
 import { Header } from '@/components/layout/Header';
@@ -27,40 +33,6 @@ import toast from 'react-hot-toast';
    message. On mobile they open the app; on desktop they open
    WhatsApp Web. Admin chooses which contact or group to send to.
 ──────────────────────────────────────────────────────────────── */
-function buildBillMessage(bill: MaintenanceBill, period: any, societyName = 'Society'): string {
-  const MONTHS = ['','January','February','March','April','May','June',
-    'July','August','September','October','November','December'];
-  const month = `${MONTHS[period.periodMonth] ?? ''} ${period.periodYear}`;
-  const due   = period.dueDate ? new Date(period.dueDate).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) : '';
-  const total = parseFloat(bill.totalAmount);
-  const pending = parseFloat(bill.pendingAmount ?? '0');
-  const water = parseFloat(bill.waterCharges ?? '0');
-
-  const lines: string[] = [
-    `🏢 *${societyName} — ${month} Maintenance*`,
-    '',
-    `Flat: *${bill.flatCode ?? bill.flat?.flatCode ?? ''}*  |  Invoice: ${bill.invoiceNumber ?? ''}`,
-    `Due Date: *${due}*`,
-    '',
-    `💰 Total Amount: *₹${total.toLocaleString('en-IN')}*`,
-  ];
-
-  if (water > 0) {
-    lines.push(`   • Maintenance: ₹${parseFloat(bill.baseAmount ?? '0').toLocaleString('en-IN')}`);
-    lines.push(`   • Water Charges: ₹${water.toLocaleString('en-IN')}`);
-  }
-
-  if (bill.isPaid) {
-    lines.push('', '✅ *Payment received — Thank you!*');
-  } else if (pending > 0) {
-    lines.push('', `⚠️ *Balance Due: ₹${pending.toLocaleString('en-IN')}*`);
-    lines.push(`Please pay before ${due} to avoid late fees.`);
-  }
-
-  lines.push('', `_${societyName} Management_`);
-  return lines.join('\n');
-}
-
 function buildGroupMessage(period: any, bills: MaintenanceBill[], societyName = 'Society'): string {
   const MONTHS = ['','January','February','March','April','May','June',
     'July','August','September','October','November','December'];
@@ -103,16 +75,21 @@ function buildGroupMessage(period: any, bills: MaintenanceBill[], societyName = 
  * non-digits and prepend 91 (India) if no country code present.
  */
 function openWhatsApp(message: string, phone?: string | null): void {
-  let url: string;
-  if (phone) {
-    const digits = phone.replace(/\D/g, '');
-    const e164 = digits.length === 10 ? `91${digits}` : digits;
-    url = `https://wa.me/${e164}?text=${encodeURIComponent(message)}`;
-  } else {
-    url = `https://wa.me/?text=${encodeURIComponent(message)}`;
-  }
-  window.open(url, '_blank', 'noopener');
+  window.open(whatsappUrl(message, phone), '_blank', 'noopener');
 }
+
+const PAYMENT_METHODS = [
+  { value: 'CASH', label: 'Cash' },
+  { value: 'UPI', label: 'UPI' },
+  { value: 'BANK_TRANSFER', label: 'Bank transfer' },
+  { value: 'CHEQUE', label: 'Cheque' },
+  { value: 'NEFT', label: 'NEFT' },
+  { value: 'IMPS', label: 'IMPS' },
+  { value: 'RTGS', label: 'RTGS' },
+  { value: 'OTHER', label: 'Other' },
+];
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const MONTH_NAMES = [
   '', 'January', 'February', 'March', 'April', 'May', 'June',
@@ -141,6 +118,85 @@ export default function BillingPeriodDetailPage({ params }: { params: { id: stri
     queryFn: () => billingApi.listBills(id, { limit: 200 }).then((r) => r.data),
     enabled: !!period,
   });
+
+  /* Who each unpaid flat's reminder goes to (the tenant, else the owner) and its message, worded from the society's template */
+  const remindersOpen = isAdmin && !!period && ['PUBLISHED', 'PARTIALLY_PAID'].includes(period.status);
+  const { data: reminderList } = useQuery({
+    queryKey: ['billing-period-reminders', id],
+    queryFn: () => billingApi.getReminders(id).then((r: any) => (r.data ?? r) as BillReminder[]),
+    enabled: remindersOpen,
+  });
+  const reminderFor = (billId: string) => reminderList?.find((r) => r.billId === billId);
+
+  const sendRemindersMutation = useMutation({
+    mutationFn: () => billingApi.sendReminders(id).then((r: any) => r.data ?? r),
+    onSuccess: (r: { unpaid: number; sent: number; withoutResident: string[] }) => {
+      toast.success(
+        `Reminder sent to ${r.sent} of ${r.unpaid} unpaid flat${r.unpaid === 1 ? '' : 's'}` +
+          (r.withoutResident.length ? `. No resident yet in: ${r.withoutResident.join(', ')}` : ''),
+        { duration: 6000 },
+      );
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Could not send the reminders'),
+  });
+
+  /* Mark a flat's bill as paid (admin / accountant) */
+  const [payingBill, setPayingBill] = useState<MaintenanceBill | null>(null);
+  const [pay, setPay] = useState({ amount: '', date: todayIso(), method: 'CASH', accountId: '', reference: '', notes: '' });
+  const [payError, setPayError] = useState<string | null>(null);
+  const { data: accountList } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => accountsApi.listAccounts({ limit: 100 }).then((r: any) => (Array.isArray(r.data) ? r.data : r.data?.data ?? []) as any[]),
+    enabled: isAdmin,
+  });
+  const accounts: any[] = accountList ?? [];
+
+  const openPay = (bill: MaintenanceBill) => {
+    setPayingBill(bill);
+    setPayError(null);
+    setPay({
+      amount: String(parseFloat(bill.pendingAmount ?? '0')),
+      date: todayIso(),
+      method: 'CASH',
+      accountId: accounts.length === 1 ? accounts[0].id : '',
+      reference: '',
+      notes: '',
+    });
+  };
+
+  const recordMutation = useMutation({
+    mutationFn: (bill: MaintenanceBill) =>
+      paymentsApi.record({
+        maintenanceBillId: bill.id,
+        accountId: pay.accountId,
+        amount: Number(pay.amount),
+        paymentDate: pay.date,
+        paymentMethod: pay.method,
+        ...(pay.reference.trim() ? { utrNumber: pay.reference.trim() } : {}),
+        ...(pay.notes.trim() ? { notes: pay.notes.trim() } : {}),
+      }),
+    onSuccess: (_r, bill) => {
+      toast.success(`Flat ${bill.flatCode} marked as paid`);
+      setPayingBill(null);
+      qc.invalidateQueries({ queryKey: ['billing-period', id] });
+      qc.invalidateQueries({ queryKey: ['billing-period-bills', id] });
+      qc.invalidateQueries({ queryKey: ['billing-period-reminders', id] });
+      qc.invalidateQueries({ queryKey: ['billing-period-report', id] });
+      qc.invalidateQueries({ queryKey: ['billing-period-statement', id] });
+      qc.invalidateQueries({ queryKey: ['accounts'] });
+    },
+    onError: (e: any) => setPayError(e?.response?.data?.message ?? 'Could not record the payment'),
+  });
+
+  const submitPay = () => {
+    if (!payingBill) return;
+    const amount = Number(pay.amount);
+    if (!pay.accountId) return setPayError('Choose the account the money went into.');
+    if (!(amount > 0)) return setPayError('Enter an amount greater than zero.');
+    if (!pay.date) return setPayError('Choose the date it was paid.');
+    setPayError(null);
+    recordMutation.mutate(payingBill);
+  };
 
   /* Full report (for holistic view) */
   const { data: reportData, isLoading: reportLoading } = useQuery({
@@ -503,21 +559,32 @@ export default function BillingPeriodDetailPage({ params }: { params: { id: stri
                             </button>
                           )}
                           {bill.isPublished && !bill.isPaid && (
-                            <button
-                              onClick={() => openWhatsApp(
-                                buildBillMessage(bill, period),
-                                bill.residentPhone,
-                              )}
-                              title={
-                                bill.residentPhone
-                                  ? `WhatsApp Flat ${bill.flatCode} directly`
-                                  : `WhatsApp reminder for Flat ${bill.flatCode}`
-                              }
-                              className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50 transition-colors"
-                            >
-                              <MessageSquare size={13} />
-                              <span className="hidden sm:inline">Remind</span>
-                            </button>
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => openPay(bill)}
+                                title={`Record that Flat ${bill.flatCode} has paid`}
+                                className="flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50 transition-colors"
+                              >
+                                <CheckCircle2 size={13} />
+                                <span className="hidden sm:inline">Mark paid</span>
+                              </button>
+                              <button
+                                disabled={!reminderFor(bill.id)}
+                                onClick={() => {
+                                  const r = reminderFor(bill.id);
+                                  if (r) openWhatsApp(r.message, r.residentPhone);
+                                }}
+                                title={
+                                  reminderFor(bill.id)?.residentPhone
+                                    ? `WhatsApp ${reminderFor(bill.id)?.residentName ?? 'Flat ' + bill.flatCode} (${(reminderFor(bill.id)?.residentType ?? '').toLowerCase()})`
+                                    : `WhatsApp reminder for Flat ${bill.flatCode}: pick the contact yourself`
+                                }
+                                className="flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50 transition-colors disabled:opacity-40"
+                              >
+                                <MessageSquare size={13} />
+                                <span className="hidden sm:inline">Remind</span>
+                              </button>
+                            </div>
                           )}
                         </Td>
                       )}
@@ -895,6 +962,65 @@ export default function BillingPeriodDetailPage({ params }: { params: { id: stri
         }
       `}</style>
 
+      {/* ── Mark a flat's bill as paid ───────────────────────────────────────── */}
+      <Modal
+        open={!!payingBill}
+        onClose={() => setPayingBill(null)}
+        title={payingBill ? `Mark Flat ${payingBill.flatCode} as paid` : 'Mark as paid'}
+      >
+        {payingBill && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
+              <div>
+                <p className="text-xs text-slate-500">Still to pay on this bill</p>
+                <p className="text-lg font-bold text-slate-900">{formatCurrency(payingBill.pendingAmount)}</p>
+              </div>
+              <p className="text-right text-xs text-slate-500">of {formatCurrency(payingBill.totalAmount)}<br />Invoice {payingBill.invoiceNumber}</p>
+            </div>
+            <Input
+              label="Amount received (₹)"
+              type="number"
+              step="0.01"
+              value={pay.amount}
+              onChange={(ev) => setPay({ ...pay, amount: ev.target.value })}
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="Date paid" type="date" value={pay.date} onChange={(ev) => setPay({ ...pay, date: ev.target.value })} />
+              <Select label="Paid by" options={PAYMENT_METHODS} value={pay.method} onChange={(ev) => setPay({ ...pay, method: ev.target.value })} />
+            </div>
+            <Select
+              label="Money went into"
+              placeholder="Choose an account"
+              options={accounts.map((a: any) => ({ value: a.id, label: `${a.name} — ${formatCurrency(a.currentBalance)}` }))}
+              value={pay.accountId}
+              onChange={(ev) => setPay({ ...pay, accountId: ev.target.value })}
+            />
+            <Input
+              label="Reference / UTR / cheque number (optional)"
+              value={pay.reference}
+              onChange={(ev) => setPay({ ...pay, reference: ev.target.value })}
+            />
+            <Textarea
+              label="Note (optional)"
+              placeholder="e.g. Cash handed to the secretary on 5 Oct"
+              value={pay.notes}
+              maxLength={500}
+              onChange={(ev) => setPay({ ...pay, notes: ev.target.value })}
+            />
+            <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              This adds the amount to the chosen account and settles the flat&apos;s bill. If the flat has older unpaid
+              months, those are cleared first; anything above what it owes is kept as advance credit. The resident is
+              told it was received.
+            </p>
+            {payError && <p role="alert" className="text-sm text-red-600">{payError}</p>}
+            <div className="flex justify-end gap-3 pt-2">
+              <Button type="button" variant="outline" onClick={() => setPayingBill(null)}>Cancel</Button>
+              <Button onClick={submitPay} loading={recordMutation.isPending}>Mark as paid</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {/* ── Remind All Unpaid modal ──────────────────────────────────────────
            Lists every unpaid published bill with a direct WhatsApp button.
            When the resident's phone number is on file, the button opens
@@ -920,7 +1046,7 @@ export default function BillingPeriodDetailPage({ params }: { params: { id: stri
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {unpaidBills.length} unpaid {unpaidBills.length === 1 ? 'flat' : 'flats'} ·{' '}
-                  {unpaidBills.filter((b) => !!b.residentPhone).length} with saved numbers
+                  {(reminderList ?? []).filter((r) => !!r.residentPhone).length} with saved numbers · goes to the tenant, else the owner
                 </p>
               </div>
               <button
@@ -934,8 +1060,9 @@ export default function BillingPeriodDetailPage({ params }: { params: { id: stri
             {/* List */}
             <div className="overflow-y-auto flex-1 divide-y divide-slate-50">
               {unpaidBills.map((bill) => {
-                const phone = bill.residentPhone;
-                const residentName = bill.residentName;
+                const reminder = reminderFor(bill.id);
+                const phone = reminder?.residentPhone ?? null;
+                const residentName = reminder?.residentName ?? null;
                 const pending = parseFloat(bill.pendingAmount ?? '0');
                 return (
                   <div key={bill.id} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
@@ -943,7 +1070,17 @@ export default function BillingPeriodDetailPage({ params }: { params: { id: stri
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-slate-900">{bill.flatCode}</p>
                       {residentName && (
-                        <p className="text-xs text-slate-500 truncate">{residentName}</p>
+                        <p className="text-xs text-slate-500 truncate">
+                          {residentName}
+                          {reminder?.residentType && (
+                            <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-slate-600">
+                              {reminder.residentType === 'TENANT' ? 'Tenant' : 'Owner'}
+                            </span>
+                          )}
+                        </p>
+                      )}
+                      {!residentName && reminderList && (
+                        <p className="text-xs text-amber-600">No resident registered for this flat</p>
                       )}
                       {phone && (
                         <p className="text-xs text-green-600 font-mono">{phone}</p>
@@ -960,7 +1097,8 @@ export default function BillingPeriodDetailPage({ params }: { params: { id: stri
 
                     {/* WhatsApp button */}
                     <button
-                      onClick={() => openWhatsApp(buildBillMessage(bill, period), phone)}
+                      disabled={!reminder}
+                      onClick={() => reminder && openWhatsApp(reminder.message, phone)}
                       className={cn(
                         'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors shrink-0',
                         phone
@@ -980,26 +1118,37 @@ export default function BillingPeriodDetailPage({ params }: { params: { id: stri
             {/* Footer */}
             <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between gap-3 bg-slate-50 rounded-b-2xl">
               {/* Copy all phone numbers that we have */}
-              {unpaidBills.some((b) => !!b.residentPhone) ? (
+              <div className="flex flex-col items-start gap-1.5">
                 <button
-                  onClick={() => {
-                    const nums = unpaidBills
-                      .map((b) => b.residentPhone)
-                      .filter(Boolean)
-                      .join(', ');
-                    navigator.clipboard.writeText(nums);
-                    toast.success('Phone numbers copied — paste into a WhatsApp broadcast list');
-                  }}
-                  className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 transition-colors"
+                  onClick={() => sendRemindersMutation.mutate()}
+                  disabled={sendRemindersMutation.isPending}
+                  title="Sends a notification, with a sound on their phone, to every unpaid flat at once"
+                  className="flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700 disabled:opacity-60 transition-colors"
                 >
-                  <CheckCircle2 size={13} />
-                  Copy all numbers
+                  <Send size={12} />
+                  {sendRemindersMutation.isPending ? 'Sending…' : `Notify all ${unpaidBills.length} in the app`}
                 </button>
-              ) : (
-                <p className="text-xs text-slate-400">
-                  Phone numbers will appear here once residents register.
-                </p>
-              )}
+                {(reminderList ?? []).some((r) => !!r.residentPhone) ? (
+                  <button
+                    onClick={() => {
+                      const nums = (reminderList ?? [])
+                        .map((r) => r.residentPhone)
+                        .filter(Boolean)
+                        .join(', ');
+                      navigator.clipboard.writeText(nums);
+                      toast.success('Phone numbers copied — paste into a WhatsApp broadcast list');
+                    }}
+                    className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 transition-colors"
+                  >
+                    <CheckCircle2 size={13} />
+                    Copy all numbers
+                  </button>
+                ) : (
+                  <p className="text-xs text-slate-400">
+                    Phone numbers will appear here once residents register.
+                  </p>
+                )}
+              </div>
               <button
                 onClick={() => setRemindAllOpen(false)}
                 className="text-xs font-medium text-slate-600 hover:text-slate-900 transition-colors"

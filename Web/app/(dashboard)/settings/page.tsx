@@ -9,7 +9,10 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
-import { societyApi, billingRulesApi, usersApi } from '@/lib/api/endpoints';
+import { societyApi, billingApi, billingRulesApi, usersApi } from '@/lib/api/endpoints';
+import { previewReminder } from '@/lib/reminders';
+import type { ReminderTemplate } from '@/lib/reminders';
+import { Textarea } from '@/components/ui/Textarea';
 import { BASIS_LABEL, KIND_LABEL, buildRulePayload, describeRule } from '@/lib/billingRules';
 import { ruleDetailRows } from '@/lib/billingRuleDetails';
 import type { Basis, ChargeKind, RuleForm } from '@/lib/billingRules';
@@ -134,6 +137,16 @@ function BillingConfigSection({ admin }: { admin: boolean }) {
   const [form, setForm] = useState<Record<string, any>>({});
   const [dirty, setDirty] = useState(false);
 
+  // The WhatsApp reminder wording lives apart from `form`, which is rebuilt from the server on every refetch and
+  // would throw away a half-written template. null = not edited yet: show what the server has.
+  const { data: tplData } = useQuery({
+    queryKey: ['reminder-template'],
+    queryFn: () => billingApi.getReminderTemplate().then((r: any) => (r.data ?? r) as ReminderTemplate),
+  });
+  const [tpl, setTpl] = useState<string | null>(null);
+  const tplValue = tpl ?? tplData?.template ?? '';
+  const editTpl = (v: string) => { setTpl(v); setDirty(true); };
+
   useEffect(() => {
     if (data) {
       setForm({
@@ -176,10 +189,15 @@ function BillingConfigSection({ admin }: { admin: boolean }) {
         publishStatementToResidents: form.publishStatementToResidents,
         publishMeetingMinutes: form.publishMeetingMinutes,
         upiId: form.upiId || undefined,
+        // Wording the same as the default is stored as "unset", so the society follows the default if it improves.
+        ...(tpl !== null ? { reminderTemplate: tpl.trim() === tplData?.defaultTemplate.trim() ? '' : tpl.trim() } : {}),
       }),
     onSuccess: () => {
       toast.success('Configuration saved');
       qc.invalidateQueries({ queryKey: ['society-config'] });
+      qc.invalidateQueries({ queryKey: ['reminder-template'] });
+      qc.invalidateQueries({ queryKey: ['billing-period-reminders'] });
+      setTpl(null);
       setDirty(false);
     },
     onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to save'),
@@ -307,6 +325,52 @@ function BillingConfigSection({ admin }: { admin: boolean }) {
           <p className="mt-2 text-[11px] text-emerald-600">
             Residents will see a &ldquo;Pay via UPI&rdquo; button with a deep link to open their UPI app automatically.
           </p>
+        )}
+      </div>
+
+      <SectionDivider title="WhatsApp Reminder" icon={<Bell size={14} />} />
+      <div className="rounded-lg border border-green-100 bg-green-50 p-4 space-y-3">
+        <p className="text-xs text-green-800">
+          The message sent to a flat that has not paid. Each flat gets its own details filled in. It goes to the
+          tenant when the flat has one, otherwise to the owner. WhatsApp shows <code>*text*</code> in bold and{' '}
+          <code>_text_</code> in italics.
+        </p>
+        <div className="flex flex-wrap gap-1.5" aria-label="Details you can put in the message">
+          {(tplData?.placeholders ?? []).map((p) => (
+            <button
+              key={p.token}
+              type="button"
+              disabled={!admin}
+              title={`${p.token}: ${p.meaning}. Click to add it at the end.`}
+              onClick={() => editTpl(`${tplValue}${tplValue && !/\s$/.test(tplValue) ? ' ' : ''}${p.token}`)}
+              className="rounded-full border border-green-200 bg-white px-2.5 py-1 font-mono text-[11px] text-green-800 hover:bg-green-100 disabled:opacity-50"
+            >
+              {p.token}
+            </button>
+          ))}
+        </div>
+        <Textarea
+          label="Message"
+          rows={9}
+          maxLength={1500}
+          value={tplValue}
+          disabled={!admin}
+          onChange={(e) => editTpl(e.target.value)}
+        />
+        <div>
+          <p className="mb-1 text-xs font-medium text-slate-600">How it looks for one flat</p>
+          <pre className="whitespace-pre-wrap rounded-lg border border-green-100 bg-white p-3 font-sans text-xs text-slate-800">
+            {previewReminder(tplValue) || 'Nothing yet: the standard wording will be used.'}
+          </pre>
+        </div>
+        {admin && tplData && tplValue.trim() !== tplData.defaultTemplate.trim() && (
+          <button
+            type="button"
+            onClick={() => editTpl(tplData.defaultTemplate)}
+            className="text-xs font-medium text-green-800 underline hover:text-green-900"
+          >
+            Go back to the standard wording
+          </button>
         )}
       </div>
 
