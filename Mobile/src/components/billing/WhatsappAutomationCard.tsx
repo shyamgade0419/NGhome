@@ -55,10 +55,12 @@ export function WhatsappAutomationCard() {
   let line: { text: string; color: string };
   if (!status) line = { text: 'Checking the WhatsApp connection…', color: colors.textSecondary };
   else if (!status.configured)
-    line = { text: 'WhatsApp is not connected yet. The platform owner links a phone once, in the web Platform console under Settings; until then nothing is sent.', color: colors.warning };
+    line = { text: 'WhatsApp has not been set up on the platform yet. The platform owner adds the gateway in the web Platform console; until then nothing is sent.', color: colors.warning };
+  else if (!status.hasSession)
+    line = { text: 'Your WhatsApp number is not linked yet. Link it in the web app: Settings → Billing Rules → WhatsApp → Connect a phone, and scan the QR code with the phone you want to send from.', color: colors.warning };
   else if (status.session === 'ready')
     line = {
-      text: `Connected${status.sendingFrom ? ` — sending from +${status.sendingFrom}` : ''}. ${status.sentToday} sent today, ${status.queued} waiting${status.failedThisWeek ? `, ${status.failedThisWeek} failed this week` : ''}.`,
+      text: `Connected${status.sendingFrom ? ` — sending from your number +${status.sendingFrom}` : ''}. ${status.sentToday} sent today, ${status.queued} waiting${status.failedThisWeek ? `, ${status.failedThisWeek} failed this week` : ''}.`,
       color: '#166534',
     };
   else line = { text: `WhatsApp is not ready (${status.session ?? status.problem ?? 'unknown'}). Messages wait and go out once it reconnects.`, color: colors.warning };
@@ -86,7 +88,7 @@ export function WhatsappAutomationCard() {
         <Switch
           value={shownEnabled}
           onValueChange={setEnabled}
-          disabled={!isAdmin || (status ? !status.configured || !status.allowed : false)}
+          disabled={!isAdmin || (status ? !status.configured || !status.allowed || !status.hasSession : false)}
           trackColor={{ false: colors.border, true: colors.primary }}
           accessibilityLabel="Send WhatsApp messages automatically"
         />
@@ -126,7 +128,7 @@ export function WhatsappAutomationCard() {
               label="Send test"
               onPress={() => test.mutate()}
               loading={test.isPending}
-              disabled={testPhone.replace(/\D/g, '').length < 8 || !status?.configured || !status?.allowed}
+              disabled={testPhone.replace(/\D/g, '').length < 8 || !status?.configured || !status?.allowed || !status?.hasSession}
               variant="outline"
             />
           </View>

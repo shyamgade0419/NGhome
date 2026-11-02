@@ -58,7 +58,7 @@ async function mount() {
 
 beforeEach(() => {
   mockIsAdmin = true;
-  mockStatus = { configured: true, allowed: true, enabled: false, reminderDays: [5, 10], session: 'ready', sendingFrom: '919000011111', problem: null, queued: 2, sentToday: 5, failedThisWeek: 1 };
+  mockStatus = { configured: true, allowed: true, hasSession: true, enabled: false, reminderDays: [5, 10], session: 'ready', sendingFrom: '919000011111', problem: null, queued: 2, sentToday: 5, failedThisWeek: 1 };
   mockSave.mockReset().mockResolvedValue(undefined);
   mockTest.mockReset().mockResolvedValue({ sent: true });
   jest.spyOn(Alert, 'alert').mockImplementation(() => {});
@@ -78,7 +78,7 @@ describe('WhatsApp automation card', () => {
   it('says it is connected, from which number, and what is waiting', async () => {
     const tree = await mount();
     const text = textOf(tree.root);
-    expect(text).toContain('Connected — sending from +919000011111');
+    expect(text).toContain('Connected — sending from your number +919000011111');
     expect(text).toContain('5 sent today, 2 waiting, 1 failed this week');
     expect(text).toContain('Reminder · +919876543210');
     expect(text).toContain('Late fine');
@@ -88,7 +88,7 @@ describe('WhatsApp automation card', () => {
   it('says plainly when the server has no WhatsApp connection, and will not let it be switched on', async () => {
     mockStatus = { ...mockStatus, configured: false, session: null, sendingFrom: null };
     const tree = await mount();
-    expect(textOf(tree.root)).toContain('WhatsApp is not connected yet');
+    expect(textOf(tree.root)).toContain('has not been set up on the platform yet');
     expect(tree.root.findByType(Switch).props.disabled).toBe(true);
   });
 
@@ -152,5 +152,16 @@ describe('a society the platform owner has not allowed', () => {
     mockStatus = { ...mockStatus, allowed: false, sendingFrom: null, session: 'ready' };
     const tree = await mount();
     expect(textOf(tree.root)).not.toContain('sending from');
+  });
+});
+
+describe('a society that has not linked its own number', () => {
+  it('is told where to link it, and cannot switch messages on or send a test yet', async () => {
+    mockStatus = { ...mockStatus, hasSession: false, session: null, sendingFrom: null };
+    const tree = await mount();
+    const text = textOf(tree.root);
+    expect(text).toContain('Your WhatsApp number is not linked yet');
+    expect(text).toContain('Connect a phone');
+    expect(tree.root.findByType(Switch).props.disabled).toBe(true);
   });
 });
