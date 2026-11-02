@@ -698,6 +698,15 @@ export default function HelpPage() {
               <a href="mailto:support@novagade.in" className="text-primary-600 hover:underline">
                 support@novagade.in
               </a>
+              , call{' '}
+              <a href="tel:+917569377741" className="text-primary-600 hover:underline">
+                +91 75693 77741
+              </a>
+              , or{' '}
+              <a href="https://wa.me/917569377741" target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline">
+                message us on WhatsApp
+              </a>
+              .
             </p>
           </div>
         </div>

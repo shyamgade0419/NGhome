@@ -556,12 +556,34 @@ export default function HelpScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.supportTitle}>Still need help?</Text>
             <Text style={styles.supportSub}>Contact NovaGade support</Text>
+            <Text style={styles.supportSub} selectable accessibilityLabel="Support phone number">+91 75693 77741</Text>
           </View>
           <TouchableOpacity
             style={styles.supportBtn}
             onPress={() => Linking.openURL('mailto:support@novagade.in')}
           >
             <Text style={styles.supportBtnText}>Email Us</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.supportBox}>
+          <Ionicons name="call-outline" size={20} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.supportTitle}>Talk to us</Text>
+            <Text style={styles.supportSub}>Call or message NovaGade support</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.supportBtn}
+            onPress={() => Linking.openURL('tel:+917569377741')}
+            accessibilityLabel="Call NovaGade support"
+          >
+            <Text style={styles.supportBtnText}>Call</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.supportBtn}
+            onPress={() => Linking.openURL('https://wa.me/917569377741')}
+            accessibilityLabel="Message NovaGade support on WhatsApp"
+          >
+            <Text style={styles.supportBtnText}>WhatsApp</Text>
           </TouchableOpacity>
         </View>
 
