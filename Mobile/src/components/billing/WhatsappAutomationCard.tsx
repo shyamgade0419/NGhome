@@ -54,16 +54,29 @@ export function WhatsappAutomationCard() {
 
   let line: { text: string; color: string };
   if (!status) line = { text: 'Checking the WhatsApp connection…', color: colors.textSecondary };
-  else if (!status.configured)
+  else if (!status.configured && status.provider !== 'CLOUD')
     line = { text: 'WhatsApp has not been set up on the platform yet. The platform owner adds the gateway in the web Platform console; until then nothing is sent.', color: colors.warning };
   else if (!status.hasSession)
-    line = { text: 'Your WhatsApp number is not linked yet. Link it in the web app: Settings → Billing Rules → WhatsApp → Connect a phone, and scan the QR code with the phone you want to send from.', color: colors.warning };
+    line = {
+      text:
+        status.provider === 'CLOUD'
+          ? 'Your WhatsApp Business account is not connected yet. Connect it in the web app: Settings → Billing Rules → WhatsApp → Official WhatsApp Business.'
+          : 'Your WhatsApp number is not linked yet. Link it in the web app: Settings → Billing Rules → WhatsApp → Connect a phone, and scan the QR code with the phone you want to send from.',
+      color: colors.warning,
+    };
   else if (status.session === 'ready')
     line = {
-      text: `Connected${status.sendingFrom ? ` — sending from your number +${status.sendingFrom}` : ''}. ${status.sentToday} sent today, ${status.queued} waiting${status.failedThisWeek ? `, ${status.failedThisWeek} failed this week` : ''}.`,
-      color: '#166534',
+      text: `Connected${status.sendingFrom ? ` — sending from your ${status.provider === 'CLOUD' ? 'WhatsApp Business number' : 'number'} +${status.sendingFrom}` : ''}. ${status.sentToday} sent today, ${status.queued} waiting${status.failedThisWeek ? `, ${status.failedThisWeek} failed this week` : ''}.${status.provider === 'CLOUD' && status.templatesReady === false ? ' Meta has not approved all four message templates yet, so messages wait until it does (check in the web app).' : ''}`,
+      color: status.provider === 'CLOUD' && status.templatesReady === false ? colors.warning : '#166534',
     };
-  else line = { text: `WhatsApp is not ready (${status.session ?? status.problem ?? 'unknown'}). Messages wait and go out once it reconnects.`, color: colors.warning };
+  else
+    line = {
+      text:
+        status.provider === 'CLOUD'
+          ? `Meta is not accepting your WhatsApp Business account right now (${status.problem ?? status.session ?? 'unknown'}). Messages wait and go out once it works again.`
+          : `WhatsApp is not ready (${status.session ?? status.problem ?? 'unknown'}). Messages wait and go out once it reconnects.`,
+      color: colors.warning,
+    };
 
   return (
     <View style={s.wrap}>
@@ -79,6 +92,12 @@ export function WhatsappAutomationCard() {
         </Text>
       )}
       <Text style={[s.status, { color: line.color }]} accessibilityLabel="WhatsApp connection status">{line.text}</Text>
+      {status?.provider === 'CLOUD' && (
+        <Text style={s.hint} accessibilityLabel="WhatsApp Business wording note">
+          Your society sends through its WhatsApp Business account, which can only send message templates that Meta approved. The
+          automatic reminder uses the approved template; your reminder wording above applies to WhatsApp links you send by hand.
+        </Text>
+      )}
 
       <View style={s.toggleRow}>
         <View style={{ flex: 1 }}>

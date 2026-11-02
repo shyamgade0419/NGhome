@@ -58,7 +58,7 @@ async function mount() {
 
 beforeEach(() => {
   mockIsAdmin = true;
-  mockStatus = { configured: true, allowed: true, hasSession: true, enabled: false, reminderDays: [5, 10], session: 'ready', sendingFrom: '919000011111', problem: null, queued: 2, sentToday: 5, failedThisWeek: 1 };
+  mockStatus = { configured: true, allowed: true, provider: 'OPENWA', templatesReady: null, hasSession: true, enabled: false, reminderDays: [5, 10], session: 'ready', sendingFrom: '919000011111', problem: null, queued: 2, sentToday: 5, failedThisWeek: 1 };
   mockSave.mockReset().mockResolvedValue(undefined);
   mockTest.mockReset().mockResolvedValue({ sent: true });
   jest.spyOn(Alert, 'alert').mockImplementation(() => {});
@@ -163,5 +163,37 @@ describe('a society that has not linked its own number', () => {
     expect(text).toContain('Your WhatsApp number is not linked yet');
     expect(text).toContain('Connect a phone');
     expect(tree.root.findByType(Switch).props.disabled).toBe(true);
+  });
+});
+
+describe('a society that sends through its own Meta WhatsApp Business account', () => {
+  it('says it is sending from its business number, and that the automatic reminder is the approved template', async () => {
+    mockStatus = { ...mockStatus, provider: 'CLOUD', templatesReady: true, sendingFrom: '919000022222', hasSession: true, session: 'ready' };
+    const tree = await mount();
+    const text = textOf(tree.root);
+    expect(text).toContain('Connected — sending from your WhatsApp Business number +919000022222');
+    expect(text).toContain('approved template');
+    expect(tree.root.findByType(Switch).props.disabled).toBe(false);
+  });
+
+  it('warns while Meta has not approved all four templates', async () => {
+    mockStatus = { ...mockStatus, provider: 'CLOUD', templatesReady: false, sendingFrom: '919000022222', hasSession: true, session: 'ready' };
+    const tree = await mount();
+    expect(textOf(tree.root)).toContain('Meta has not approved all four message templates yet');
+  });
+
+  it('does not need the platform gateway, and says where to connect when no account is connected', async () => {
+    mockStatus = { ...mockStatus, provider: 'CLOUD', configured: true, hasSession: false, session: null, sendingFrom: null };
+    const tree = await mount();
+    const text = textOf(tree.root);
+    expect(text).toContain('Your WhatsApp Business account is not connected yet');
+    expect(text).not.toContain('has not been set up on the platform');
+    expect(tree.root.findByType(Switch).props.disabled).toBe(true);
+  });
+
+  it('explains when Meta refuses the account', async () => {
+    mockStatus = { ...mockStatus, provider: 'CLOUD', templatesReady: null, hasSession: true, session: 'token_invalid', problem: 'Meta refused the access token' };
+    const tree = await mount();
+    expect(textOf(tree.root)).toContain('Meta is not accepting your WhatsApp Business account right now (Meta refused the access token)');
   });
 });

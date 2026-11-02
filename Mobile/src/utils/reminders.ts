@@ -49,8 +49,12 @@ export function validPaymentDate(value: string, today = new Date()): boolean {
 export interface WhatsappStatus {
   /** The server has a WhatsApp gateway set up. */
   configured: boolean;
-  /** This society has linked its own number (it pressed Connect at least once, on the web). */
+  /** How this society sends: a number it linked by QR code on the web (OPENWA), or its own Meta WhatsApp Business account (CLOUD). */
+  provider: 'OPENWA' | 'CLOUD';
+  /** This society has somewhere to send from by the way it chose (a linked number, or a connected Meta account), set up on the web. */
   hasSession: boolean;
+  /** Meta account only: all four message templates approved (null when it cannot be told). */
+  templatesReady: boolean | null;
   /** The platform owner has allowed this society to use WhatsApp. Without it the society cannot switch messages on. */
   allowed: boolean;
   enabled: boolean;
