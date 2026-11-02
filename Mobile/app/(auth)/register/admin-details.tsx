@@ -109,7 +109,8 @@ export default function AdminDetailsScreen() {
 
           <Text style={styles.sectionTitle}>Administrator Account</Text>
           <Text style={styles.sectionSubtitle}>
-            Create the primary admin account for your society
+            Create the primary admin account for your society. Already have an NG Home account? Use the same email and your
+            existing password, and this society is added to it.
           </Text>
 
           <View style={styles.form}>

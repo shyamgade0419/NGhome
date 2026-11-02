@@ -313,6 +313,15 @@ export class AuthService {
     );
   }
 
+  /**
+   * Create a society and make the caller its admin.
+   *
+   * A person who already has an account (a resident of another society, say, or the admin of one) can register another
+   * society with the same email: the supplied password must be that account's own, since this endpoint issues a session
+   * and would otherwise let anyone take over an account by knowing its email. The account keeps its name and phone; the
+   * name and phone typed on the form are used only for a brand-new account. A platform account is refused, because its
+   * permissions are a platform-level flag that a society membership does not mix with.
+   */
   async registerSociety(
     dto: RegisterSocietyDto,
     ipAddress?: string,
@@ -321,9 +330,23 @@ export class AuthService {
     const email = dto.admin.email.trim().toLowerCase();
 
     const existing = await this.prisma.user.findUnique({ where: { email } });
-    if (existing) throw new ConflictException('An account with this email already exists');
+    if (existing) {
+      // Proven by the account's own password, before anything else about the account is revealed.
+      const owns =
+        existing.isActive &&
+        !existing.deletedAt &&
+        (await argon2.verify(existing.passwordHash, dto.admin.password).catch(() => false));
+      if (!owns) {
+        throw new ConflictException(
+          'An account with this email already exists. Enter the password you already use for NG Home to create your society with it, or use Forgot password on the sign-in screen.',
+        );
+      }
+      if (existing.isPlatformAdmin) {
+        throw new ConflictException('A platform administrator account cannot also be a society admin. Use a different email for the society.');
+      }
+    }
 
-    const passwordHash = await argon2.hash(dto.admin.password);
+    const passwordHash = existing ? existing.passwordHash : await argon2.hash(dto.admin.password);
 
     const result = await this.prisma.$transaction(async (tx) => {
       // Create society — generate a unique join code for resident self-registration
@@ -345,18 +368,20 @@ export class AuthService {
         },
       });
 
-      // Create admin user
-      const user = await tx.user.create({
-        data: {
-          email,
-          phone: dto.admin.phone,
-          firstName: dto.admin.firstName,
-          lastName: dto.admin.lastName,
-          passwordHash,
-          isActive: true,
-          emailVerified: false,
-        },
-      });
+      // The admin: the account that already exists, or a new one
+      const user =
+        existing ??
+        (await tx.user.create({
+          data: {
+            email,
+            phone: dto.admin.phone,
+            firstName: dto.admin.firstName,
+            lastName: dto.admin.lastName,
+            passwordHash,
+            isActive: true,
+            emailVerified: false,
+          },
+        }));
 
       // Create membership
       const membership = await tx.societyMembership.create({
@@ -377,7 +402,7 @@ export class AuthService {
           action: AuditAction.USER_CREATED,
           entityType: 'Society',
           entityId: society.id,
-          newValues: { societyName: society.name, adminEmail: email } as Record<string, string>,
+          newValues: { societyName: society.name, adminEmail: email, ...(existing ? { existingAccount: true } : {}) } as Record<string, string | boolean>,
           ipAddress,
           userAgent,
         },

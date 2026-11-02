@@ -101,7 +101,7 @@ export const GUIDE: GuidePart[] = [
         blocks: [
           { type: 'p', text: 'Do these once, in this order. Each step is explained in full later in this guide.' },
           { type: 'steps', items: [
-            '**Register your society** on the web (the "Register your society" link on the sign-in page). You become its admin.',
+            '**Register your society** on the web (the "Register your society" link on the sign-in page). You become its admin. Already have an NG Home account, for example as a resident or as the admin of another society? Use the same email and your existing password and the new society is added to it; at sign-in you choose between your societies.',
             '**Settings → Society Settings:** check the name, address and contact details. They are printed on bills and statements.',
             '**Flats:** add each building and its flats (**Add Building**, **Add Flat**, or **Import CSV/Excel** for many at once). Give every flat its area if you will bill per square foot.',
             '**Accounts:** add the bank account your UPI ID pays into, and a Cash box. You cannot approve a payment until an account exists.',

@@ -267,6 +267,10 @@ function Step3({
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+      <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        Already have an NG Home account, as a resident or as the admin of another society? Use the same email and your
+        existing password, and this society is added to it. You then choose between your societies when you sign in.
+      </p>
       <div className="grid grid-cols-2 gap-4">
         <Input
           label="First Name *"
