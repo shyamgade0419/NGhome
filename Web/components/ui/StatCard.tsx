@@ -15,10 +15,11 @@ interface StatCardProps {
 
 export function StatCard({ label, value, icon: Icon, iconColor = 'text-primary-600', iconBg = 'bg-primary-50', sub, trend, href }: StatCardProps) {
   const inner = (
-    <div className="flex items-start justify-between">
-      <div>
+    // min-w-0 lets the text column shrink beside the icon: without it a long amount on a phone pushed the icon over the number.
+    <div className="flex items-start justify-between gap-2">
+      <div className="min-w-0 flex-1">
         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-        <p className="mt-1.5 text-2xl font-bold text-slate-900">{value}</p>
+        <p className="mt-1.5 text-xl font-bold tabular-nums text-slate-900 sm:text-2xl">{value}</p>
         {sub && <p className="mt-1 text-xs text-slate-500">{sub}</p>}
         {trend && (
           <p className={cn('mt-1 text-xs font-medium', trend.positive ? 'text-green-600' : 'text-red-600')}>
@@ -26,7 +27,7 @@ export function StatCard({ label, value, icon: Icon, iconColor = 'text-primary-6
           </p>
         )}
       </div>
-      <div className={cn('rounded-lg p-2.5', iconBg)}>
+      <div className={cn('shrink-0 rounded-lg p-2 sm:p-2.5', iconBg)}>
         <Icon size={20} className={iconColor} />
       </div>
     </div>
@@ -34,14 +35,14 @@ export function StatCard({ label, value, icon: Icon, iconColor = 'text-primary-6
 
   if (href) {
     return (
-      <Link href={href} className="block rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md hover:border-primary-200">
+      <Link href={href} className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow sm:p-5 hover:shadow-md hover:border-primary-200">
         {inner}
       </Link>
     );
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
       {inner}
     </div>
   );

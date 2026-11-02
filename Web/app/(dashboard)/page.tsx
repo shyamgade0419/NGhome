@@ -94,8 +94,10 @@ export default function DashboardPage() {
   const { data: expenseRaw } = useQuery({
     queryKey: ['expense-summary', selectedYear, selectedMonth],
     queryFn: () => {
-      const startDate = new Date(selectedYear, selectedMonth - 1, 1).toISOString().split('T')[0];
-      const endDate = new Date(selectedYear, selectedMonth, 0).toISOString().split('T')[0];
+      // Built from the parts: toISOString() on local midnight lands on the day before for anyone east of UTC (India).
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const startDate = `${selectedYear}-${pad(selectedMonth)}-01`;
+      const endDate = `${selectedYear}-${pad(selectedMonth)}-${pad(new Date(selectedYear, selectedMonth, 0).getDate())}`;
       return reportsApi
         .expenseSummary({ fromDate: startDate, toDate: endDate })
         .then((r: any) => r.data ?? r)

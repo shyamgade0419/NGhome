@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  PanResponder,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -45,10 +46,46 @@ export default function AdminDashboard() {
   const { user } = useAuth();
   const brand = useBranding();
 
-  const { data: summary, isLoading, refetch: refetchSummary, isRefetching } = useQuery({
-    queryKey: ['admin-dashboard'],
-    queryFn: billingApi.getDashboardSummary,
+  // The published billing periods, newest first: what the dashboard can show. It opens on the newest (the one in use)
+  // and steps back through older ones by arrow or swipe.
+  const { data: periodList, isLoading: periodsLoading, refetch: refetchPeriods } = useQuery({
+    queryKey: ['admin-dashboard-periods'],
+    queryFn: billingApi.listPublishedPeriods,
     staleTime: 60_000,
+  });
+  const periods = (periodList ?? []).filter((p) => p.kind !== 'OPENING');
+  const [picked, setPicked] = useState<{ year: number; month: number } | null>(null);
+  const now = new Date();
+  const chosen = picked ?? (periods[0] ? { year: periods[0].periodYear, month: periods[0].periodMonth } : { year: now.getFullYear(), month: now.getMonth() + 1 });
+  const index = periods.findIndex((p) => p.periodYear === chosen.year && p.periodMonth === chosen.month);
+  const shownPeriod = index >= 0 ? periods[index] : null;
+  const canOlder = index >= 0 && index < periods.length - 1;
+  const canNewer = index > 0;
+  const go = (dir: 'older' | 'newer') => {
+    const next = periods[dir === 'older' ? index + 1 : index - 1];
+    if (next) setPicked({ year: next.periodYear, month: next.periodMonth });
+  };
+  // Swiping right brings the earlier month into view, left the later one, like turning pages.
+  const goRef = useRef(go);
+  goRef.current = go;
+  const swipe = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 16 && Math.abs(g.dx) > Math.abs(g.dy) * 2,
+      onPanResponderRelease: (_e, g) => {
+        if (g.dx > 50) goRef.current('older');
+        else if (g.dx < -50) goRef.current('newer');
+      },
+    }),
+  ).current;
+
+  const { data: summary, isLoading, refetch: refetchSummary, isRefetching } = useQuery({
+    queryKey: ['admin-dashboard', chosen.year, chosen.month],
+    queryFn: () => billingApi.getDashboardSummary(chosen),
+    staleTime: 60_000,
+    // Not before the periods are known, or the first figures would be for the wrong month.
+    enabled: !periodsLoading,
+    // While another month loads, keep the one on screen rather than blanking the whole dashboard to a spinner.
+    placeholderData: (previous) => previous,
   });
 
   const { data: currentPeriod, refetch: refetchPeriod } = useQuery({
@@ -57,9 +94,9 @@ export default function AdminDashboard() {
     staleTime: 60_000,
   });
 
-  const refetch = () => { refetchSummary(); refetchPeriod(); };
+  const refetch = () => { refetchSummary(); refetchPeriod(); refetchPeriods(); };
 
-  if (isLoading) return <LoadingState fullscreen message="Loading dashboard..." />;
+  if (isLoading || periodsLoading) return <LoadingState fullscreen message="Loading dashboard..." />;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -98,23 +135,47 @@ export default function AdminDashboard() {
       >
         {/* Current period banner — tinted rather than another plain white
             card so it reads as the "headline" card of the dashboard. */}
-        {currentPeriod && (
+        <View {...swipe.panHandlers}>
+        {(shownPeriod ?? currentPeriod) && (
           <Card style={[styles.periodBanner, { backgroundColor: brand.tint, borderColor: brand.tint }]} padding="md">
             <View style={styles.periodRow}>
-              <View>
-                <Text style={styles.periodLabel}>Current Billing Period</Text>
-                <Text style={styles.periodName}>{billingPeriodName(currentPeriod)}</Text>
+              {periods.length > 1 && (
+                <TouchableOpacity
+                  onPress={() => go('older')}
+                  disabled={!canOlder}
+                  hitSlop={10}
+                  style={[styles.periodArrow, !canOlder && styles.periodArrowOff]}
+                  accessibilityLabel="Earlier billing period"
+                >
+                  <Ionicons name="chevron-back" size={20} color={colors.text} />
+                </TouchableOpacity>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.periodLabel}>{index === 0 || !shownPeriod ? 'Current Billing Period' : 'Billing Period'}</Text>
+                <Text style={styles.periodName}>{billingPeriodName((shownPeriod ?? currentPeriod) as NonNullable<typeof currentPeriod>)}</Text>
               </View>
               <StatusBadge
-                label={currentPeriod.status}
-                variant={billingStatusVariant(currentPeriod.status)}
+                label={(shownPeriod ?? currentPeriod)!.status}
+                variant={billingStatusVariant((shownPeriod ?? currentPeriod)!.status)}
               />
+              {periods.length > 1 && (
+                <TouchableOpacity
+                  onPress={() => go('newer')}
+                  disabled={!canNewer}
+                  hitSlop={10}
+                  style={[styles.periodArrow, !canNewer && styles.periodArrowOff]}
+                  accessibilityLabel="Later billing period"
+                >
+                  <Ionicons name="chevron-forward" size={20} color={colors.text} />
+                </TouchableOpacity>
+              )}
             </View>
+            {periods.length > 1 && <Text style={styles.periodHint}>Swipe, or tap the arrows, to see other months</Text>}
           </Card>
         )}
 
         {/* Stats grid — every tile drills into the report it summarizes */}
-        <SectionHeader title="Financial Overview" />
+        <SectionHeader title={shownPeriod ? `Financial Overview — ${billingPeriodName(shownPeriod)}` : 'Financial Overview'} />
         <View style={styles.statsGrid}>
           <StatCard
             label="Total Billed"
@@ -157,6 +218,7 @@ export default function AdminDashboard() {
             color="#7C3AED"
             onPress={() => router.push('/(app)/admin/accounts' as any)}
           />
+        </View>
         </View>
 
         {/* Pending approvals */}
@@ -249,6 +311,9 @@ const styles = StyleSheet.create({
   periodName: { ...typography.headingSmall, color: colors.text, marginTop: 2 },
   dueDate: { ...typography.bodySmall, color: colors.textSecondary, marginTop: spacing.xs },
 
+  periodArrow: { padding: 6, borderRadius: radius.md, marginHorizontal: spacing.xs },
+  periodArrowOff: { opacity: 0.3 },
+  periodHint: { ...typography.bodySmall, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.sm },
   statsGrid: {
     flexDirection: 'row',
     gap: spacing.md,

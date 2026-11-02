@@ -194,11 +194,19 @@ export const billingApi = {
 
   // ─── Admin: dashboard summary ──────────────────────────────────────────────
 
-  getDashboardSummary: async () => {
-    const currentYear = new Date().getFullYear();
-    const currentMonth = new Date().getMonth() + 1;
-    const monthStart = new Date(currentYear, currentMonth - 1, 1).toISOString().split('T')[0];
-    const today = new Date().toISOString().split('T')[0];
+  /**
+   * The headline figures for one billing month. With no month given it is the phone's calendar month, but the dashboard
+   * passes the billing period being looked at: on the 1st of a new month that month has no bills yet, so asking for the
+   * calendar month showed every figure as zero while the latest published period (the one in use) was the previous month.
+   */
+  getDashboardSummary: async (period?: { year: number; month: number }) => {
+    const now = new Date();
+    const currentYear = period?.year ?? now.getFullYear();
+    const currentMonth = period?.month ?? now.getMonth() + 1;
+    // Built from the parts, not toISOString(): local midnight converted to UTC lands on the day before in India.
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const monthStart = `${currentYear}-${pad(currentMonth)}-01`;
+    const today = `${currentYear}-${pad(currentMonth)}-${pad(new Date(currentYear, currentMonth, 0).getDate())}`;
 
     const [collectionRes, accountsRes, pendingRes, expenseRes, fundsRes] = await Promise.all([
       apiClient
