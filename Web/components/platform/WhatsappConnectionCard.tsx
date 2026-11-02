@@ -1,29 +1,35 @@
 'use client';
 
 /**
- * The WhatsApp connection, kept here instead of in the server's environment: where the gateway (OpenWA) is, its key, and
- * the phone linked to it by scanning a QR code. One WhatsApp number sends for every society, which is why this is a
- * platform setting and not one in a society's own settings. Saved settings win over the WHATSAPP_* variables; "Use the
- * server's settings" forgets them. The API never sends the key back, so the field stays empty and blank means "keep it".
+ * The WhatsApp gateway, kept here instead of in the server's environment: where it is (OpenWA) and its key. It is the
+ * platform's alone. Each society links its own number as its own session on this gateway, from its own settings
+ * (Settings → Billing Rules → WhatsApp), so one society's messages never go out from another's number. This card also shows
+ * which societies have linked a number and whether each is connected, since every session uses memory on the gateway.
+ * Saved settings win over the WHATSAPP_* variables; "Use the server's settings" forgets them. The API never sends the key
+ * back, so the field stays empty and blank means "keep it".
  */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, MessageCircle } from 'lucide-react';
+import { MessageCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { platformApi } from '@/lib/api/endpoints';
-import type { WhatsappConnection, WhatsappGatewayView } from '@/lib/reminders';
-import { Card, DButton, Loading } from './ui';
+import type { WhatsappGatewayView, WhatsappSessionsOverview } from '@/lib/reminders';
+import { Card, DButton, Loading, Pill } from './ui';
 
 const inputClass =
   'w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500';
-
-const LINKING = ['initializing', 'authenticating', 'qr_ready'];
 
 const errorText = (e: any, fallback: string) => {
   const m = e?.response?.data?.message;
   return Array.isArray(m) ? m.join(', ') : (m ?? fallback);
 };
+
+const statusTone = (status: string | null): 'green' | 'amber' | 'red' | 'slate' =>
+  status === 'ready' ? 'green' : status === 'qr_ready' || status === 'initializing' || status === 'authenticating' ? 'amber' : status === 'missing' || status === 'failed' ? 'red' : 'slate';
+
+const statusLabel = (status: string | null) =>
+  status === 'ready' ? 'Connected' : status === 'qr_ready' ? 'Waiting for QR scan' : status === 'missing' ? 'Gone from the gateway' : status === null ? '—' : status.replace(/_/g, ' ');
 
 export function WhatsappConnectionCard() {
   const qc = useQueryClient();
@@ -31,51 +37,28 @@ export function WhatsappConnectionCard() {
     queryKey: ['platform-whatsapp-gateway'],
     queryFn: () => platformApi.whatsappGateway().then((r: any) => (r.data ?? r) as WhatsappGatewayView),
   });
+  const { data: overview } = useQuery({
+    queryKey: ['platform-whatsapp-sessions'],
+    queryFn: () => platformApi.whatsappSessions().then((r: any) => (r.data ?? r) as WhatsappSessionsOverview),
+    refetchInterval: 20_000,
+  });
   const [url, setUrl] = useState<string | null>(null);
   const [key, setKey] = useState('');
-  const [linking, setLinking] = useState(false);
-
-  const { data: conn } = useQuery({
-    queryKey: ['platform-whatsapp-connection'],
-    queryFn: () => platformApi.whatsappConnection().then((r: any) => (r.data ?? r) as WhatsappConnection),
-    // quickly while a phone is being linked (so the QR code appears at once), slowly otherwise
-    refetchInterval: (q) => (linking || LINKING.includes((q.state.data as WhatsappConnection | undefined)?.status ?? '') ? 3_000 : 20_000),
-  });
-  useEffect(() => {
-    if (conn?.status === 'ready') setLinking(false);
-  }, [conn?.status]);
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['platform-whatsapp-gateway'] });
-    qc.invalidateQueries({ queryKey: ['platform-whatsapp-connection'] });
+    qc.invalidateQueries({ queryKey: ['platform-whatsapp-sessions'] });
   };
 
   const save = useMutation({
     mutationFn: () => platformApi.saveWhatsappGateway({ url: (url ?? gateway?.url ?? gateway?.environment.url ?? '').trim(), apiKey: key === '' ? null : key }),
     onSuccess: () => {
-      toast.success('Gateway saved. Now press Connect a phone.');
+      toast.success('Gateway saved. Each society can now link its own number.');
       setKey('');
       setUrl(null);
       refresh();
     },
     onError: (e: any) => toast.error(errorText(e, 'Could not save the gateway')),
-  });
-  const connect = useMutation({
-    mutationFn: () => platformApi.connectWhatsapp().then((r: any) => r.data ?? r),
-    onMutate: () => setLinking(true),
-    onSuccess: refresh,
-    onError: (e: any) => {
-      setLinking(false);
-      toast.error(errorText(e, 'Could not start linking'));
-    },
-  });
-  const disconnect = useMutation({
-    mutationFn: () => platformApi.disconnectWhatsapp().then((r: any) => r.data ?? r),
-    onSuccess: () => {
-      toast.success('Phone unlinked');
-      refresh();
-    },
-    onError: (e: any) => toast.error(errorText(e, 'Could not unlink the phone')),
   });
   const clear = useMutation({
     mutationFn: () => platformApi.clearWhatsappGateway().then((r: any) => r.data ?? r),
@@ -90,15 +73,16 @@ export function WhatsappConnectionCard() {
   if (!gateway) return <Loading />;
   const shownUrl = url ?? gateway.url ?? gateway.environment.url ?? '';
   const canSave = shownUrl.trim() !== '' && (gateway.hasKey || key.trim() !== '');
-  const status = conn?.status ?? null;
+  const linked = overview?.sessions.filter((s) => !s.deleted) ?? [];
 
   return (
     <Card title="WhatsApp messages" icon={MessageCircle}>
       <div className="space-y-5">
         <p className="text-sm text-gray-400">
-          One WhatsApp number sends bill, reminder, late-fine and payment messages for every society. Enter where the WhatsApp
-          gateway (OpenWA) is running and its key, then link the phone by scanning a QR code. Use a dedicated number, not a
-          personal one. A society can only use it once you allow it on the Societies page (every society starts Off); it then switches the messages on in its own Settings → Billing Rules → WhatsApp.
+          One WhatsApp gateway (OpenWA) serves every society, but <strong className="text-gray-200">each society links its own
+          number</strong> to it, from its own Settings → Billing Rules → WhatsApp, and its messages go out from that number only.
+          Enter where the gateway is running and its key here, once. A society can only link a number after you allow it on the
+          Societies page (every society starts Off).
         </p>
         {gateway.source === 'environment' && (
           <p className="rounded-lg bg-gray-800/60 px-3 py-2 text-xs text-gray-300">
@@ -106,7 +90,7 @@ export function WhatsappConnectionCard() {
           </p>
         )}
         {gateway.source === 'none' && (
-          <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-200">No WhatsApp gateway is set, so no WhatsApp message can be sent yet.</p>
+          <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-200">No WhatsApp gateway is set, so no society can link a number yet.</p>
         )}
         {gateway.keyUnreadable && (
           <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
@@ -131,7 +115,7 @@ export function WhatsappConnectionCard() {
               autoComplete="new-password"
               className={inputClass}
             />
-            <p className="mt-1 text-xs text-gray-500">OpenWA&apos;s admin key (shown once on its first start)</p>
+            <p className="mt-1 text-xs text-gray-500">OpenWA&apos;s admin key (the one you set as OPENWA_API_KEY)</p>
           </div>
         </div>
 
@@ -148,55 +132,47 @@ export function WhatsappConnectionCard() {
           </DButton>
         </div>
 
-        {gateway.source === 'console' && (
-          <div className="space-y-4 border-t border-gray-800 pt-4">
-            {conn?.problem && (
-              <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{conn.problem}</p>
-            )}
-
-            {status === 'ready' ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-emerald-500/10 px-3 py-3">
-                <p className="flex items-center gap-2 text-sm text-emerald-200">
-                  <CheckCircle2 size={16} />
-                  Linked{conn?.phone ? ` to +${conn.phone}` : ''}. It stays linked; you only scan again if you unlink it on the phone.
-                </p>
-                <DButton variant="outline" loading={disconnect.isPending} onClick={() => disconnect.mutate()}>
-                  Unlink this phone
-                </DButton>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex flex-wrap items-center gap-3">
-                  <DButton variant="primary" loading={connect.isPending} onClick={() => connect.mutate()}>
-                    {status === 'qr_ready' ? 'Get a fresh QR code' : 'Connect a phone'}
-                  </DButton>
-                  <span className="text-xs text-gray-400">
-                    {conn?.problem
-                      ? ''
-                      : status === 'qr_ready'
-                        ? 'Waiting for you to scan the code below.'
-                        : status === 'initializing' || status === 'authenticating' || linking
-                          ? 'Starting… the QR code appears in a moment.'
-                          : status
-                            ? `Not linked (${status}).`
-                            : 'Not linked yet.'}
-                  </span>
-                </div>
-                {conn?.qrCode && (
-                  <div className="flex flex-wrap items-center gap-5 rounded-lg border border-gray-800 bg-gray-900/60 p-4">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={conn.qrCode} alt="WhatsApp QR code to scan" className="h-52 w-52 rounded bg-white p-1" />
-                    <ol className="list-decimal space-y-1.5 pl-5 text-sm text-gray-300">
-                      <li>On the phone with the number you want to send from, open WhatsApp.</li>
-                      <li>Tap the menu, then <strong>Linked devices</strong>, then <strong>Link a device</strong>.</li>
-                      <li>Scan this code. It refreshes by itself every few seconds.</li>
-                    </ol>
-                  </div>
-                )}
-              </div>
+        {/* Who has linked a number */}
+        <div className="space-y-3 border-t border-gray-800 pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-gray-200">Linked numbers</h3>
+            {overview && (
+              <span className="text-xs text-gray-500">
+                {overview.configured ? (overview.reachable ? `${linked.length} ${linked.length === 1 ? 'society' : 'societies'} linked` : 'Gateway not reachable') : 'No gateway set'}
+              </span>
             )}
           </div>
-        )}
+          {overview?.problem && (
+            <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{overview.problem}</p>
+          )}
+          {overview?.configured && linked.length === 0 && !overview.problem && (
+            <p className="text-xs text-gray-500">No society has linked a number yet. Allow a society on the Societies page; its admin links the number from their own Settings.</p>
+          )}
+          {linked.length > 0 && (
+            <ul className="divide-y divide-gray-800 rounded-lg border border-gray-800 text-sm">
+              {linked.map((s) => (
+                <li key={s.societyId} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                  <span className="min-w-0 truncate text-gray-200">{s.name}</span>
+                  <span className="flex items-center gap-3 text-xs text-gray-400">
+                    {s.phone && <span className="font-mono">+{s.phone}</span>}
+                    {!s.allowed && <Pill tone="slate">Off</Pill>}
+                    <Pill tone={statusTone(s.status)}>{statusLabel(s.status)}</Pill>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {(overview?.orphans.length ?? 0) > 0 && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              {overview?.orphans.length} session{overview?.orphans.length === 1 ? '' : 's'} on the gateway belong{overview?.orphans.length === 1 ? 's' : ''} to no society
+              ({overview?.orphans.map((o) => o.name).join(', ')}). Each one uses memory for nothing; remove it in the OpenWA dashboard.
+            </div>
+          )}
+          <p className="text-xs text-gray-500">
+            Each linked number runs its own browser inside OpenWA and uses roughly 300–500 MB of memory. Allow only as many
+            societies as the server can carry.
+          </p>
+        </div>
       </div>
     </Card>
   );

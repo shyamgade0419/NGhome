@@ -4,20 +4,21 @@
  * WhatsApp, in one place under Settings → Billing Rules: the wording of the payment reminder, and the automatic
  * messages (switch, reminder days, a test, what was sent), saved together with one button.
  *
- * Linking the phone (the gateway's address and key, the QR code) is not here. One WhatsApp number serves every society,
- * so that is a platform setting, in the Platform console under Settings.
+ * Each society links its OWN WhatsApp number here (Connect a phone, scan the QR code), once the platform owner has allowed
+ * the society; its messages go out from that number only. The gateway's address and key are the platform's, set in the
+ * Platform console.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bell, Save } from 'lucide-react';
+import { Bell, CheckCircle2, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { billingApi, societyApi, whatsappApi } from '@/lib/api/endpoints';
 import {
   WHATSAPP_KIND_LABEL, parseReminderDays, previewReminder,
 } from '@/lib/reminders';
 import type {
-  ReminderTemplate, WhatsappMessageRow, WhatsappStatus,
+  ReminderTemplate, WhatsappConnection, WhatsappMessageRow, WhatsappStatus,
 } from '@/lib/reminders';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -116,6 +117,7 @@ export function WhatsappSection({ admin }: { admin: boolean }) {
 
   return (
     <div className="space-y-5">
+      {status?.allowed && status.configured && <ConnectionPanel admin={admin} onChanged={() => qc.invalidateQueries({ queryKey: ['whatsapp-status'] })} />}
 
       <Heading>Reminder wording</Heading>
       <div className="space-y-3 rounded-lg border border-green-100 bg-green-50 p-4">
@@ -171,12 +173,14 @@ export function WhatsappSection({ admin }: { admin: boolean }) {
             'Checking the WhatsApp connection…'
           ) : !status.configured ? (
             <span className="text-amber-700">
-              WhatsApp is not connected yet.{' '}
-              The platform owner links a phone once, in the Platform console under Settings; until then nothing is sent.
+              WhatsApp has not been set up on the platform yet. The platform owner adds the gateway in the Platform console; until
+              then nothing is sent.
             </span>
+          ) : !status.hasSession ? (
+            <span className="text-amber-700">Your WhatsApp number is not linked yet. Press Connect a phone above and scan the code.</span>
           ) : status.session === 'ready' ? (
             <span className="text-green-700">
-              Connected{status.sendingFrom ? ` — sending from +${status.sendingFrom}` : ''}. {status.sentToday} sent today,{' '}
+              Connected{status.sendingFrom ? ` — sending from your number +${status.sendingFrom}` : ''}. {status.sentToday} sent today,{' '}
               {status.queued} waiting{status.failedThisWeek > 0 ? `, ${status.failedThisWeek} failed this week` : ''}.
             </span>
           ) : (
@@ -192,7 +196,7 @@ export function WhatsappSection({ admin }: { admin: boolean }) {
             <p className="text-sm font-medium text-slate-800">Send WhatsApp messages automatically</p>
             <p className="text-xs text-slate-500">Off until you switch it on. Turning it off stops anything still waiting.</p>
           </div>
-          <Toggle checked={shownEnabled} onChange={setEnabled} disabled={!admin || (status ? !status.configured || !status.allowed : false)} />
+          <Toggle checked={shownEnabled} onChange={setEnabled} disabled={!admin || (status ? !status.configured || !status.allowed || !status.hasSession : false)} />
         </div>
 
         <div>
@@ -220,7 +224,7 @@ export function WhatsappSection({ admin }: { admin: boolean }) {
               variant="secondary"
               onClick={() => test.mutate()}
               loading={test.isPending}
-              disabled={testPhone.replace(/\D/g, '').length < 8 || !status?.configured || !status?.allowed}
+              disabled={testPhone.replace(/\D/g, '').length < 8 || !status?.configured || !status?.allowed || !status?.hasSession}
             >
               Send test
             </Button>
@@ -260,3 +264,104 @@ export function WhatsappSection({ admin }: { admin: boolean }) {
   );
 }
 
+
+/* ─── This society's own number ──────────────────────────────────────────────────────────────────────────────────── */
+
+const LINKING = ['initializing', 'authenticating', 'qr_ready'];
+
+function ConnectionPanel({ admin, onChanged }: { admin: boolean; onChanged: () => void }) {
+  const qc = useQueryClient();
+  const [linking, setLinking] = useState(false);
+
+  const { data: conn } = useQuery({
+    queryKey: ['whatsapp-connection'],
+    queryFn: () => whatsappApi.connection().then((r: any) => (r.data ?? r) as WhatsappConnection),
+    // quickly while the number is being linked (so the QR code appears at once), slowly otherwise
+    refetchInterval: (q) => (linking || LINKING.includes((q.state.data as WhatsappConnection | undefined)?.status ?? '') ? 3_000 : 20_000),
+  });
+  useEffect(() => {
+    if (conn?.status === 'ready') setLinking(false);
+  }, [conn?.status]);
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['whatsapp-connection'] });
+    onChanged();
+  };
+  const connect = useMutation({
+    mutationFn: () => whatsappApi.connect().then((r: any) => r.data ?? r),
+    onMutate: () => setLinking(true),
+    onSuccess: refresh,
+    onError: (e: any) => {
+      setLinking(false);
+      toast.error(errorText(e, 'Could not start linking'));
+    },
+  });
+  const disconnect = useMutation({
+    mutationFn: () => whatsappApi.disconnect().then((r: any) => r.data ?? r),
+    onSuccess: () => {
+      toast.success('Number unlinked');
+      refresh();
+    },
+    onError: (e: any) => toast.error(errorText(e, 'Could not unlink the number')),
+  });
+
+  const status = conn?.status ?? null;
+  return (
+    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+      <h4 className="text-sm font-semibold text-slate-800">Your WhatsApp number</h4>
+      <p className="text-xs text-slate-500">
+        Messages to your residents go out from a WhatsApp number that belongs to your society, not from anyone else&apos;s. Use a
+        dedicated number (an inexpensive SIM), not a personal one.
+      </p>
+      {conn?.problem && <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{conn.problem}</p>}
+
+      {status === 'ready' ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-green-50 px-3 py-3">
+          <p className="flex items-center gap-2 text-sm text-green-800">
+            <CheckCircle2 size={16} />
+            Linked{conn?.phone ? ` to +${conn.phone}` : ''}. It stays linked; you only scan again if you unlink it on the phone.
+          </p>
+          {admin && (
+            <Button size="sm" variant="outline" onClick={() => disconnect.mutate()} loading={disconnect.isPending}>
+              Unlink this number
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {admin && (
+              <Button size="sm" onClick={() => connect.mutate()} loading={connect.isPending}>
+                {status === 'qr_ready' ? 'Get a fresh QR code' : 'Connect a phone'}
+              </Button>
+            )}
+            <span className="text-xs text-slate-500">
+              {conn?.problem
+                ? ''
+                : status === 'qr_ready'
+                  ? 'Waiting for you to scan the code below.'
+                  : status === 'initializing' || status === 'authenticating' || linking
+                    ? 'Starting… the QR code appears in a moment.'
+                    : status
+                      ? `Not linked (${status}).`
+                      : admin
+                        ? 'Not linked yet.'
+                        : 'Not linked yet. Ask your society admin to connect it.'}
+            </span>
+          </div>
+          {conn?.qrCode && (
+            <div className="flex flex-wrap items-center gap-4 rounded-lg border border-slate-200 bg-white p-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={conn.qrCode} alt="WhatsApp QR code to scan" className="h-48 w-48 rounded bg-white" />
+              <ol className="list-decimal space-y-1 pl-5 text-xs text-slate-600">
+                <li>On the phone with the number you want to send from, open WhatsApp.</li>
+                <li>Tap the menu, then <strong>Linked devices</strong>, then <strong>Link a device</strong>.</li>
+                <li>Scan this code. It refreshes by itself every few seconds.</li>
+              </ol>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

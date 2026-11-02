@@ -40,8 +40,10 @@ export function previewReminder(template: string): string {
 
 /** What the settings screen shows about WhatsApp automation. */
 export interface WhatsappStatus {
-  /** The server has a WhatsApp gateway set up. */
+  /** The platform has a WhatsApp gateway set up. */
   configured: boolean;
+  /** This society has linked its own number (it pressed Connect at least once). */
+  hasSession: boolean;
   /** The platform owner has allowed this society to use WhatsApp. Without it the society cannot switch messages on. */
   allowed: boolean;
   enabled: boolean;
@@ -86,18 +88,30 @@ export interface WhatsappGatewayView {
   url: string | null;
   hasKey: boolean;
   keyUnreadable: boolean;
-  sessionId: string | null;
-  environment: { url: string | null; hasKey: boolean; sessionId: string | null };
+  environment: { url: string | null; hasKey: boolean };
   updatedAt: string | null;
 }
 
-/** Whether a phone is linked, and the QR code to scan while one is being linked. */
+/** A society's own WhatsApp number: whether it is linked, and the QR code to scan while it is being linked. */
 export interface WhatsappConnection {
+  /** The platform has a gateway set up. */
   hasGateway: boolean;
-  sessionId: string | null;
-  /** `ready` means a phone is linked and messages can go out. */
+  /** The platform owner has allowed this society to use WhatsApp. */
+  allowed: boolean;
+  /** This society has a session of its own on the gateway (it pressed Connect at least once). */
+  linked: boolean;
+  /** `ready` means the society's number is linked and messages can go out. */
   status: string | null;
   phone: string | null;
   qrCode: string | null;
   problem: string | null;
+}
+
+/** For the platform owner: every society that has linked a number, and any session on the gateway that belongs to none. */
+export interface WhatsappSessionsOverview {
+  configured: boolean;
+  reachable: boolean;
+  problem: string | null;
+  sessions: { societyId: string; name: string; allowed: boolean; deleted: boolean; status: string | null; phone: string | null }[];
+  orphans: { id: string; name: string; status: string; phone: string | null }[];
 }

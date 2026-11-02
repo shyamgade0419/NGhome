@@ -17,7 +17,7 @@ import type { SlotFor, SlotRow, SlotStatus, VehicleRow } from '@/lib/vehicles';
 import type { AttendanceStatus, DayRow, MonthDay, RosterRow, Shift, SummaryRow } from '@/lib/attendance';
 import type { OpeningBalances, OpeningInputRow, OpeningSaveResult } from '@/lib/openingBalances';
 import type { AdvanceCredits, FlatDiscount, FlatDiscountInput } from '@/lib/flatDiscounts';
-import type { BillReminder, ReminderTemplate, WhatsappConnection, WhatsappGatewayView, WhatsappMessageRow, WhatsappStatus } from '@/lib/reminders';
+import type { BillReminder, ReminderTemplate, WhatsappConnection, WhatsappGatewayView, WhatsappMessageRow, WhatsappSessionsOverview, WhatsappStatus } from '@/lib/reminders';
 
 // Dashboard — composites several report endpoints
 export const dashboardApi = {
@@ -161,6 +161,12 @@ export const billingRulesApi = {
 // WhatsApp automation (bill published, reminders, late fine, payment received)
 export const whatsappApi = {
   status: (): Promise<{ data: WhatsappStatus }> => api.get('/whatsapp/status'),
+  /** This society's own number: linked or not, and the QR code to scan while it is being linked. */
+  connection: (): Promise<{ data: WhatsappConnection }> => api.get('/whatsapp/connection'),
+  /** Starts linking this society's number: creates its own session and starts it, so a QR code appears (admin only). */
+  connect: (): Promise<{ data: WhatsappConnection }> => api.post('/whatsapp/connect'),
+  /** Unlinks this society's number (admin only). */
+  disconnect: (): Promise<{ data: WhatsappConnection }> => api.post('/whatsapp/disconnect'),
   messages: (limit = 30): Promise<{ data: WhatsappMessageRow[] }> => api.get('/whatsapp/messages', { params: { limit } }),
   /** Sends one message to a number to prove the connection works (admin only). */
   test: (phone: string): Promise<{ data: { sent: boolean; error?: string } }> => api.post('/whatsapp/test', { phone }),
@@ -697,13 +703,11 @@ export const platformApi = {
   checkMail: (): Promise<{ data: MailCheckResult }> => api.post('/platform/mail/check'),
   // The WhatsApp gateway (OpenWA) connection: saved here instead of in the server's environment.
   whatsappGateway: (): Promise<{ data: WhatsappGatewayView }> => api.get('/platform/whatsapp/settings'),
-  saveWhatsappGateway: (body: { url: string; apiKey?: string | null; sessionId?: string | null }): Promise<{ data: WhatsappGatewayView }> =>
+  saveWhatsappGateway: (body: { url: string; apiKey?: string | null }): Promise<{ data: WhatsappGatewayView }> =>
     api.put('/platform/whatsapp/settings', body),
   clearWhatsappGateway: (): Promise<{ data: WhatsappGatewayView }> => api.delete('/platform/whatsapp/settings'),
-  whatsappConnection: (): Promise<{ data: WhatsappConnection }> => api.get('/platform/whatsapp/connection'),
-  /** Starts linking a phone: finds or creates the session and starts it, so a QR code appears. */
-  connectWhatsapp: (): Promise<{ data: WhatsappConnection }> => api.post('/platform/whatsapp/connect'),
-  disconnectWhatsapp: (): Promise<{ data: WhatsappConnection }> => api.post('/platform/whatsapp/disconnect'),
+  /** Every society that has linked a number and whether it is connected, plus any session that belongs to no society. */
+  whatsappSessions: (): Promise<{ data: WhatsappSessionsOverview }> => api.get('/platform/whatsapp/sessions'),
 
   /** The mail login saved in the console (never the password) and where mail is sent from now. */
   mailSettings: (): Promise<{ data: MailSettingsView }> => api.get('/platform/mail/settings'),
