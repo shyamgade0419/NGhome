@@ -69,10 +69,10 @@ export class PlatformController {
     return this.mailSettings.clear(user.id);
   }
 
-  // The WhatsApp gateway (OpenWA) connection managed from the console. It wins over the WHATSAPP_* environment
-  // variables, so WhatsApp can be set up, and its phone linked, without touching the server.
+  // The WhatsApp gateway (OpenWA) address and key, managed from the console. It wins over the WHATSAPP_* environment
+  // variables. One gateway serves every society; each society links its own number as its own session on it.
   @Get('whatsapp/settings')
-  @ApiOperation({ summary: '[Platform Admin] The saved WhatsApp gateway address (never the key) and where the connection comes from now' })
+  @ApiOperation({ summary: '[Platform Admin] The saved WhatsApp gateway address (never the key) and where it comes from now' })
   getWhatsappSettings() {
     return this.whatsappSettings.view();
   }
@@ -89,26 +89,12 @@ export class PlatformController {
     return this.whatsappSettings.clear(user.id);
   }
 
-  @Get('whatsapp/connection')
-  @ApiOperation({ summary: '[Platform Admin] Is a phone linked, and the QR code to scan while one is being linked' })
-  getWhatsappConnection() {
-    return this.whatsappConnection.state();
-  }
-
-  @Post('whatsapp/connect')
-  @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @ApiOperation({ summary: '[Platform Admin] Start linking a phone: finds or creates the session and starts it' })
-  connectWhatsapp(@CurrentUser() user: AuthenticatedUser) {
-    return this.whatsappConnection.connect(user.id);
-  }
-
-  @Post('whatsapp/disconnect')
-  @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @ApiOperation({ summary: '[Platform Admin] Unlink the phone from the gateway' })
-  disconnectWhatsapp() {
-    return this.whatsappConnection.disconnect();
+  // Which societies have linked their own number, and whether each is connected: for the platform owner to see how many
+  // sessions the gateway is carrying (each one uses memory) and to spot any that belong to no society.
+  @Get('whatsapp/sessions')
+  @ApiOperation({ summary: '[Platform Admin] Every society that has linked a WhatsApp number, whether it is connected, and any session left behind' })
+  getWhatsappSessions() {
+    return this.whatsappConnection.overview();
   }
 
   // Logs in to the mail server and sends a real message to the admin asking, so

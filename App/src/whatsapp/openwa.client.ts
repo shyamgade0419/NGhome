@@ -171,3 +171,13 @@ export async function getQr(creds: GatewayCreds, sessionId: string): Promise<{ q
 export async function logoutSession(creds: GatewayCreds, sessionId: string): Promise<void> {
   await call(creds, 'POST', `/api/sessions/${encodeURIComponent(sessionId)}/logout`, undefined, 30_000);
 }
+
+/** Disconnects the session without unlinking the phone, to free the memory its browser uses. */
+export async function stopSession(creds: GatewayCreds, sessionId: string): Promise<void> {
+  await call(creds, 'POST', `/api/sessions/${encodeURIComponent(sessionId)}/stop`, undefined, 30_000);
+}
+
+/** Removes the session from the gateway altogether (and with it the link to the phone). */
+export async function deleteSession(creds: GatewayCreds, sessionId: string): Promise<void> {
+  await call(creds, 'DELETE', `/api/sessions/${encodeURIComponent(sessionId)}`, undefined, 30_000);
+}

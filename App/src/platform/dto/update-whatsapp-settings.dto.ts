@@ -12,10 +12,4 @@ export class UpdateWhatsappSettingsDto {
   @IsString()
   @MaxLength(500)
   apiKey?: string | null;
-
-  @ApiPropertyOptional({ nullable: true, description: 'An existing gateway session to use. Leave empty to let Connect create one.' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(200)
-  sessionId?: string | null;
 }

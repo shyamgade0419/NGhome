@@ -33,22 +33,41 @@ const RUN = String(Math.floor(10000 + Math.random() * 89999));
 const mobile = (n: number) => '8' + RUN + String(n).padStart(4, '0'); // 10 digits, starts 8 — a valid Indian mobile
 const autoPhone = (n: number) => '7' + RUN + String(n).padStart(4, '0'); // for people whose number does not matter
 const wa = (n: number) => '91' + mobile(n);
+const messageOf = (body: any) => String(body?.message ?? body?.error?.message ?? JSON.stringify(body));
 const D = (n: number | string) => new Prisma.Decimal(n);
 
 /** A stand-in for OpenWA: records what it is asked to send and can be told to misbehave. */
 function fakeGateway() {
-  const state = { session: 'ready', sendStatus: 201 as number, sendMessage: 'ok', sent: [] as { chatId: string; text: string; key: string; apiKey: string }[], attempts: 0 };
+  const state = {
+    // sess-1 belongs to the main test society; `session` is its state. Other sessions (one per other society) live in `others`.
+    session: 'ready',
+    others: {} as Record<string, { status: string; phone: string }>,
+    sendStatus: 201 as number,
+    sendMessage: 'ok',
+    sent: [] as { session: string; chatId: string; text: string; key: string; apiKey: string }[],
+    attempts: 0,
+  };
+  const lookup = (id: string) => (id === 'sess-1' ? { status: state.session, phone: '919000011111' } : (state.others[id] ?? null));
   const server = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on('data', (c) => chunks.push(c));
     req.on('end', () => {
       const send = (status: number, body: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
-      if (req.method === 'GET' && req.url === '/api/sessions/sess-1') return send(200, { id: 'sess-1', status: state.session, phone: '919000011111' });
-      if (req.method === 'POST' && req.url === '/api/sessions/sess-1/messages/send-text') {
+      const url = req.url ?? '';
+      const one = /^\/api\/sessions\/([^/]+)$/.exec(url);
+      if (req.method === 'GET' && one) {
+        const sess = lookup(one[1]);
+        return sess ? send(200, { id: one[1], ...sess }) : send(404, { message: 'Session not found' });
+      }
+      const sendText = /^\/api\/sessions\/([^/]+)\/messages\/send-text$/.exec(url);
+      if (req.method === 'POST' && sendText) {
         state.attempts += 1;
+        const sess = lookup(sendText[1]);
+        if (!sess) return send(404, { message: 'Session not found' });
         if (state.sendStatus !== 201) return send(state.sendStatus, { message: state.sendMessage });
+        if (sendText[1] !== 'sess-1' && sess.status !== 'ready') return send(409, { message: 'Session not ready' });
         const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
-        state.sent.push({ chatId: body.chatId, text: body.text, key: String(req.headers['idempotency-key']), apiKey: String(req.headers['x-api-key']) });
+        state.sent.push({ session: sendText[1], chatId: body.chatId, text: body.text, key: String(req.headers['idempotency-key']), apiKey: String(req.headers['x-api-key']) });
         return send(201, { messageId: `m${state.sent.length}` });
       }
       send(404, { message: 'no such route' });
@@ -84,7 +103,7 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
   /** Earlier tests leave overdue bills in this society; the fine tests must only see their own. */
   const settleOthers = () => prisma.maintenanceBill.updateMany({ where: { societyId, isPaid: false }, data: { isPaid: true, pendingAmount: 0 } });
   // All societies, not just this one: the daily cap counts every message sent from the one WhatsApp number.
-  const reset = async () => { await prisma.whatsappMessage.deleteMany({}); gw.state.sent.length = 0; gw.state.session = 'ready'; gw.state.sendStatus = 201; gw.state.attempts = 0; };
+  const reset = async () => { await prisma.whatsappMessage.deleteMany({}); gw.state.sent.length = 0; gw.state.session = 'ready'; gw.state.sendStatus = 201; gw.state.attempts = 0; for (const k of Object.keys(gw.state.others)) gw.state.others[k].status = 'ready'; };
 
   async function addPerson(flatId: string | null, role: SystemRole, residencyType: ResidencyType, over: { isPrimary?: boolean; phone?: string | null } = {}) {
     personNo += 1;
@@ -134,7 +153,7 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
     await new Promise<void>((r) => gw.server.listen(0, '127.0.0.1', r));
     process.env.WHATSAPP_API_URL = `http://127.0.0.1:${(gw.server.address() as AddressInfo).port}`;
     process.env.WHATSAPP_API_KEY = 'gw-key';
-    process.env.WHATSAPP_SESSION_ID = 'sess-1';
+    
 
     const moduleFixture: TestingModule = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(ThrottlerStorage)
@@ -159,7 +178,7 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
     admin = reg.body.data.accessToken;
     societyId = reg.body.data.memberships[0].societyId;
     // Only the platform owner can allow a society to use WhatsApp; done here directly, as the console would.
-    await prisma.society.update({ where: { id: societyId }, data: { whatsappAllowed: true } });
+    await prisma.society.update({ where: { id: societyId }, data: { whatsappAllowed: true, whatsappSessionId: 'sess-1' } });
     buildingId = (await http_().post('/api/v1/buildings').set(auth(admin)).send({ name: 'W', code: 'W' }).expect(201)).body.data.id;
     accountId = (await prisma.account.create({ data: { societyId, name: 'Main', accountType: 'CURRENT' } })).id;
     accountant = (await addPerson(null, SystemRole.SOCIETY_ACCOUNTANT, 'OWNER')).token;
@@ -172,7 +191,6 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
     await new Promise((r) => gw.server.close(r));
     delete process.env.WHATSAPP_API_URL;
     delete process.env.WHATSAPP_API_KEY;
-    delete process.env.WHATSAPP_SESSION_ID;
     delete process.env.WHATSAPP_DAILY_CAP;
   });
 
@@ -580,6 +598,165 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
       const [a, b] = await Promise.all([drain(), drain()]);
       expect(a.sent + b.sent).toBe(3);
       expect(gw.state.sent).toHaveLength(3);
+    });
+  });
+
+  describe('each society sends from its own number', () => {
+    interface Other { id: string; token: string; building: string; session: string }
+    let b: Other;
+    let bFlatNo = 0;
+    let bMonth = 0;
+
+    async function registerOther(label: string, session: string | null, phoneSeed: number): Promise<Other> {
+      const ph = '97' + RUN.slice(0, 5) + String(phoneSeed).padStart(3, '0');
+      const reg = await http_().post('/api/v1/auth/register-society').send({
+        society: { name: `E2E WA ${label} ${UNIQUE}`, address: '3 Street', city: 'Chennai', state: 'TN', pinCode: '600001', country: 'India', contactEmail: `soc-${label}-${UNIQUE}@test.example`, contactPhone: ph },
+        admin: { firstName: label, lastName: 'Admin', email: `admin-${label}-${UNIQUE}@test.example`, phone: ph, password: PASSWORD },
+      }).expect(201);
+      const id = reg.body.data.memberships[0].societyId as string;
+      const token = reg.body.data.accessToken as string;
+      await prisma.society.update({ where: { id }, data: { whatsappAllowed: true, ...(session ? { whatsappSessionId: session } : {}) } });
+      const building = (await http_().post('/api/v1/buildings').set(auth(token)).send({ name: label, code: label.slice(0, 3).toUpperCase() }).expect(201)).body.data.id as string;
+      if (session) gw.state.others[session] = { status: 'ready', phone: '9190000' + String(phoneSeed).padStart(5, '0') };
+      return { id, token, building, session: session ?? '' };
+    }
+
+    /** An unpaid published bill for a new flat of society B, whose resident has the given phone; returns the phone's chat id. */
+    async function bBill(owner: Other, phoneN: number): Promise<string> {
+      bFlatNo += 1;
+      const flat = (await http_().post('/api/v1/flats').set(auth(owner.token)).send({ buildingId: owner.building, unitNumber: `${bFlatNo}`, flatCode: `B-${bFlatNo}` }).expect(201)).body.data.id as string;
+      const phone = mobile(phoneN);
+      const user = await prisma.user.create({ data: { email: `b${phoneN}-${UNIQUE}@test.example`, firstName: 'Bres', lastName: 'Test', phone, passwordHash: await argon2.hash(PASSWORD), isActive: true, emailVerified: true } });
+      await prisma.societyMembership.create({ data: { societyId: owner.id, userId: user.id, flatId: flat, role: SystemRole.RESIDENT, residencyType: 'OWNER', status: 'ACTIVE', isPrimary: true } });
+      bMonth += 1;
+      const period = (await http_().post('/api/v1/billing/periods').set(auth(owner.token)).send({
+        periodYear: 2046, periodMonth: ((bMonth - 1) % 12) + 1, startDate: '2046-01-01', endDate: '2046-01-28', dueDate: '2046-01-10',
+      }).expect(201)).body.data.id as string;
+      await prisma.billingPeriod.update({ where: { id: period }, data: { status: 'REVIEW' } });
+      await prisma.maintenanceBill.create({
+        data: { societyId: owner.id, billingPeriodId: period, flatId: flat, invoiceNumber: `INV-B-${UNIQUE}-${phoneN}`, flatCode: `B-${bFlatNo}`, baseAmount: D(600), totalAmount: D(600), pendingAmount: D(600), dueDate: new Date('2046-01-10'), isPublished: false },
+      });
+      await http_().post(`/api/v1/billing/periods/${period}/publish`).set(auth(owner.token)).expect(201);
+      return `${wa(phoneN)}@c.us`;
+    }
+    const enableFor = (o: Other) => http_().patch('/api/v1/societies/my/config').set(auth(o.token)).send({ whatsappEnabled: true }).expect(200);
+
+    beforeAll(async () => { b = await registerOther('Bravo', 'sess-2', 901); });
+    afterAll(async () => {
+      await prisma.whatsappMessage.deleteMany({ where: { societyId: b.id } });
+      await prisma.society.update({ where: { id: b.id }, data: { deletedAt: new Date() } });
+    });
+
+    it('sends each society\'s messages through that society\'s own session', async () => {
+      await setConfig({ whatsappEnabled: true });
+      await enableFor(b);
+      const toB = await bBill(b, 910);
+      const f = await newFlat();
+      await addPerson(f, SystemRole.RESIDENT, 'OWNER', { isPrimary: true, phone: mobile(911) });
+      const p = await newPeriod('REVIEW');
+      await newBill(p, f, 700, `W-${flatNo}`, false);
+      await http_().post(`/api/v1/billing/periods/${p}/publish`).set(auth(admin)).expect(201);
+
+      const out = await drain();
+      expect(out.sent).toBe(2);
+      const viaA = gw.state.sent.filter((s) => s.session === 'sess-1');
+      const viaB = gw.state.sent.filter((s) => s.session === 'sess-2');
+      expect(viaA.map((s) => s.chatId)).toEqual([`${wa(911)}@c.us`]);
+      expect(viaB.map((s) => s.chatId)).toEqual([toB]);
+      // B's resident was never messaged from A's number, nor A's from B's
+      expect(viaA.some((s) => s.chatId === toB)).toBe(false);
+    });
+
+    it('one society whose number is not connected does not hold up another', async () => {
+      await setConfig({ whatsappEnabled: true });
+      await enableFor(b);
+      await bBill(b, 920);
+      const f = await newFlat();
+      await addPerson(f, SystemRole.RESIDENT, 'OWNER', { isPrimary: true, phone: mobile(921) });
+      const p = await newPeriod('REVIEW');
+      await newBill(p, f, 700, `W-${flatNo}`, false);
+      await http_().post(`/api/v1/billing/periods/${p}/publish`).set(auth(admin)).expect(201);
+
+      gw.state.others['sess-2'].status = 'qr_ready'; // B's phone is logged out
+      const out = await drain();
+      expect(out.sent).toBe(1); // A still sends
+      expect(gw.state.sent.map((s) => s.session)).toEqual(['sess-1']);
+      expect((await prisma.whatsappMessage.findMany({ where: { societyId: b.id } })).every((r) => r.status === 'PENDING')).toBe(true); // B waits, loses nothing
+
+      gw.state.others['sess-2'].status = 'ready';
+      expect(await drain()).toMatchObject({ sent: 1 }); // and goes out once B is connected again
+      expect(gw.state.sent.at(-1)?.session).toBe('sess-2');
+    });
+
+    it('the daily limit is per number', async () => {
+      process.env.WHATSAPP_DAILY_CAP = '1';
+      try {
+        await setConfig({ whatsappEnabled: true });
+        await enableFor(b);
+        for (const n of [930, 931]) await bBill(b, n);
+        for (const n of [932, 933]) {
+          const f = await newFlat();
+          await addPerson(f, SystemRole.RESIDENT, 'OWNER', { isPrimary: true, phone: mobile(n) });
+          const p = await newPeriod('REVIEW');
+          await newBill(p, f, 700, `W-${flatNo}`, false);
+          await http_().post(`/api/v1/billing/periods/${p}/publish`).set(auth(admin)).expect(201);
+        }
+        const out = await drain();
+        expect(out.sent).toBe(2); // one from each number, though four are waiting
+        expect(gw.state.sent.map((s) => s.session).sort()).toEqual(['sess-1', 'sess-2']);
+        expect(await drain()).toMatchObject({ sent: 0 });
+      } finally {
+        delete process.env.WHATSAPP_DAILY_CAP;
+      }
+    });
+
+    it('each society is shown its own number, and only its own', async () => {
+      const a = (await http_().get('/api/v1/whatsapp/status').set(auth(admin)).expect(200)).body.data;
+      const bs = (await http_().get('/api/v1/whatsapp/status').set(auth(b.token)).expect(200)).body.data;
+      expect(a).toMatchObject({ allowed: true, hasSession: true, session: 'ready', sendingFrom: '919000011111' });
+      expect(bs).toMatchObject({ allowed: true, hasSession: true, session: 'ready', sendingFrom: '9190000' + '00901' });
+      expect(JSON.stringify(a)).not.toContain('00901');
+      expect(JSON.stringify(bs)).not.toContain('919000011111');
+    });
+
+    it('a society sends its test message from its own number', async () => {
+      const res = (await http_().post('/api/v1/whatsapp/test').set(auth(b.token)).send({ phone: mobile(940) }).expect(200)).body.data;
+      expect(res.sent).toBe(true);
+      expect(gw.state.sent.at(-1)).toMatchObject({ session: 'sess-2', chatId: `${wa(940)}@c.us` });
+    });
+
+    it('a society that has not linked a number cannot switch it on, cannot test, and queues nothing', async () => {
+      const c = await registerOther('Charlie', null, 902);
+      try {
+        const res = await http_().patch('/api/v1/societies/my/config').set(auth(c.token)).send({ whatsappEnabled: true }).expect(400);
+        expect(messageOf(res.body)).toMatch(/Connect your WhatsApp number first/);
+        const test = (await http_().post('/api/v1/whatsapp/test').set(auth(c.token)).send({ phone: mobile(941) }).expect(200)).body.data;
+        expect(test).toMatchObject({ sent: false, error: 'Connect your WhatsApp number first.' });
+        expect(await whatsapp.enqueueReminders(c.id, new Date('2044-03-05T05:30:00Z'))).toBe(0);
+        expect(gw.state.sent).toHaveLength(0);
+        expect((await http_().get('/api/v1/whatsapp/status').set(auth(c.token)).expect(200)).body.data).toMatchObject({ allowed: true, hasSession: false, sendingFrom: null });
+      } finally {
+        await prisma.society.update({ where: { id: c.id }, data: { deletedAt: new Date() } });
+      }
+    });
+
+    it('stopping one society drops only its own queue', async () => {
+      await setConfig({ whatsappEnabled: true });
+      await enableFor(b);
+      await bBill(b, 950);
+      const f = await newFlat();
+      await addPerson(f, SystemRole.RESIDENT, 'OWNER', { isPrimary: true, phone: mobile(951) });
+      const p = await newPeriod('REVIEW');
+      await newBill(p, f, 700, `W-${flatNo}`, false);
+      await http_().post(`/api/v1/billing/periods/${p}/publish`).set(auth(admin)).expect(201);
+      await prisma.society.update({ where: { id: b.id }, data: { whatsappAllowed: false } });
+      try {
+        const out = await drain();
+        expect(out).toMatchObject({ sent: 1, failed: 1 });
+        expect(gw.state.sent.map((s) => s.session)).toEqual(['sess-1']);
+      } finally {
+        await prisma.society.update({ where: { id: b.id }, data: { whatsappAllowed: true } });
+      }
     });
   });
 

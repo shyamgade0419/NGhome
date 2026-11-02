@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuditAction, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { decryptSecret, encryptSecret } from '../mail/secret-box';
-import { GatewayConfig, GatewayCreds, readGatewayConfig } from './openwa.client';
+import { GatewayCreds } from './openwa.client';
 
 const SETTINGS_ID = 'singleton';
 /** How long a read of the settings is reused. Saving clears it at once on the server that saved. */
@@ -13,24 +13,20 @@ export interface WhatsappSettingsInput {
   url: string;
   /** Blank or missing keeps the saved key; required the first time. */
   apiKey?: string | null;
-  sessionId?: string | null;
 }
 
 /** What the console shows back. The key is never in here, only whether one is saved. */
 export interface WhatsappSettingsView {
-  /** Where the connection actually comes from right now. */
+  /** Where the gateway address and key actually come from right now. */
   source: 'console' | 'environment' | 'none';
   url: string | null;
   hasKey: boolean;
   /** A key is saved but cannot be read with the current secret, so it must be typed again. */
   keyUnreadable: boolean;
-  sessionId: string | null;
-  /** The server-environment connection, shown so it is clear what "use the environment" falls back to. */
-  environment: { url: string | null; hasKey: boolean; sessionId: string | null };
+  /** The server-environment gateway, shown so it is clear what "use the environment" falls back to. */
+  environment: { url: string | null; hasKey: boolean };
   updatedAt: Date | null;
 }
-
-const clean = (v: string | null | undefined) => (v?.trim() ? v.trim() : null);
 
 /** `http://openwa:2785/` → `http://openwa:2785`. Throws a plain-language error for anything that is not a web address. */
 export function normalizeGatewayUrl(raw: string): string {
@@ -49,13 +45,17 @@ export function normalizeGatewayUrl(raw: string): string {
 }
 
 /**
- * The WhatsApp gateway connection saved from the platform console. It wins over the WHATSAPP_* environment variables
- * when present, so WhatsApp can be set up, and fixed, without a redeploy; removing it falls back to them.
+ * The WhatsApp gateway's address and key, saved from the platform console. It wins over the WHATSAPP_API_URL and
+ * WHATSAPP_API_KEY environment variables when present, so the gateway can be set up, and fixed, without a redeploy;
+ * removing it falls back to them.
+ *
+ * It is the platform's alone: one gateway serves every society, but each society links its own number as its own
+ * session on it (Society.whatsappSessionId), so no society ever sees or uses another's number.
  */
 @Injectable()
 export class WhatsappSettingsStore {
   private readonly logger = new Logger(WhatsappSettingsStore.name);
-  private cache?: { at: number; creds: GatewayCreds | null; effective: GatewayConfig | null };
+  private cache?: { at: number; creds: GatewayCreds | null };
 
   constructor(
     private readonly prisma: PrismaService,
@@ -70,11 +70,11 @@ export class WhatsappSettingsStore {
     this.cache = undefined;
   }
 
-  private async resolve() {
-    if (this.cache && Date.now() - this.cache.at < CACHE_MS) return this.cache;
+  /** The gateway's address and key, or null when WhatsApp has not been set up on this platform. */
+  async creds(): Promise<GatewayCreds | null> {
+    if (this.cache && Date.now() - this.cache.at < CACHE_MS) return this.cache.creds;
     const row = await this.prisma.platformWhatsappSettings.findUnique({ where: { id: SETTINGS_ID } });
     let creds: GatewayCreds | null = null;
-    let effective: GatewayConfig | null = null;
     if (row) {
       const key = decryptSecret(row.apiKeyEnc, this.secret);
       if (key === null) {
@@ -84,26 +84,14 @@ export class WhatsappSettingsStore {
         );
       } else {
         creds = { url: row.url, key };
-        effective = row.sessionId ? { url: row.url, key, sessionId: row.sessionId } : null;
       }
     } else {
-      effective = readGatewayConfig();
       const url = process.env.WHATSAPP_API_URL?.trim().replace(/\/+$/, '');
       const key = process.env.WHATSAPP_API_KEY?.trim();
       creds = url && key ? { url, key } : null;
     }
-    this.cache = { at: Date.now(), creds, effective };
-    return this.cache;
-  }
-
-  /** The URL and key, whether or not a session has been chosen yet: what is needed to set a session up. */
-  async creds(): Promise<GatewayCreds | null> {
-    return (await this.resolve()).creds;
-  }
-
-  /** The full connection messages are sent through, or null when WhatsApp is not set up. */
-  async effective(): Promise<GatewayConfig | null> {
-    return (await this.resolve()).effective;
+    this.cache = { at: Date.now(), creds };
+    return creds;
   }
 
   async view(): Promise<WhatsappSettingsView> {
@@ -116,8 +104,7 @@ export class WhatsappSettingsStore {
       url: row?.url ?? null,
       hasKey: !!row,
       keyUnreadable,
-      sessionId: row?.sessionId ?? null,
-      environment: { url: envUrl, hasKey: !!envKey, sessionId: process.env.WHATSAPP_SESSION_ID?.trim() || null },
+      environment: { url: envUrl, hasKey: !!envKey },
       updatedAt: row?.updatedAt ?? null,
     };
   }
@@ -128,25 +115,12 @@ export class WhatsappSettingsStore {
     const typed = input.apiKey && input.apiKey.trim().length > 0 ? input.apiKey.trim() : null;
     if (!typed && !existing) throw new BadRequestException("Enter the gateway's API key.");
     const apiKeyEnc = typed ? encryptSecret(typed, this.secret) : (existing as { apiKeyEnc: string }).apiKeyEnc;
-    // The session belongs to one gateway: pointing at a different address forgets it, unless one is given with it.
-    const given = clean(input.sessionId);
-    const sessionId = given ?? (existing && existing.url === url ? existing.sessionId : null);
 
-    const data = { url, apiKeyEnc, sessionId, updatedById: actorId };
+    const data = { url, apiKeyEnc, updatedById: actorId };
     await this.prisma.platformWhatsappSettings.upsert({ where: { id: SETTINGS_ID }, create: { id: SETTINGS_ID, ...data }, update: data });
     this.invalidate();
-    await this.audit(actorId, existing ? { url: existing.url, sessionId: existing.sessionId } : null, { url, sessionId, keyChanged: !!typed });
+    await this.audit(actorId, existing ? { url: existing.url } : null, { url, keyChanged: !!typed });
     return this.view();
-  }
-
-  /** The session the console created (or found) on the gateway. */
-  async setSessionId(sessionId: string | null, actorId: string): Promise<void> {
-    const existing = await this.prisma.platformWhatsappSettings.findUnique({ where: { id: SETTINGS_ID } });
-    if (!existing) throw new BadRequestException('Save the gateway address and API key first.');
-    if (existing.sessionId === sessionId) return;
-    await this.prisma.platformWhatsappSettings.update({ where: { id: SETTINGS_ID }, data: { sessionId, updatedById: actorId } });
-    this.invalidate();
-    await this.audit(actorId, { sessionId: existing.sessionId }, { sessionId });
   }
 
   /** Forgets the console settings so WhatsApp goes back to the server's WHATSAPP_* environment variables. */
@@ -155,7 +129,7 @@ export class WhatsappSettingsStore {
     if (existing) {
       await this.prisma.platformWhatsappSettings.delete({ where: { id: SETTINGS_ID } });
       this.invalidate();
-      await this.audit(actorId, { url: existing.url, sessionId: existing.sessionId }, { removed: true });
+      await this.audit(actorId, { url: existing.url }, { removed: true });
     }
     return this.view();
   }

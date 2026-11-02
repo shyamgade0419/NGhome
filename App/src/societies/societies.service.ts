@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Optional } from '@nestjs/common';
+import { WhatsappConnectionService } from '../whatsapp/whatsapp-connection.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSocietyDto } from './dto/create-society.dto';
 import { UpdateSocietyDto } from './dto/update-society.dto';
@@ -11,7 +12,10 @@ import { Prisma, AuditAction } from '@prisma/client';
 
 @Injectable()
 export class SocietiesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly whatsappConnection?: WhatsappConnectionService,
+  ) {}
 
   async create(dto: CreateSocietyDto, creatorId: string) {
     return this.prisma.$transaction(async (tx) => {
@@ -382,6 +386,8 @@ export class SocietiesService {
         })
       ).count;
     }
+    // Free the memory its session uses; the link to the phone is kept, so allowing it again brings it back.
+    if (!allowed) await this.whatsappConnection?.release(id, 'stop');
     await this.prisma.auditLog.create({
       data: {
         societyId: id,
@@ -403,6 +409,7 @@ export class SocietiesService {
       where: { id },
       data: { isActive },
     });
+    if (!isActive) await this.whatsappConnection?.release(id, 'stop');
 
     await this.prisma.auditLog.create({
       data: {
@@ -441,6 +448,7 @@ export class SocietiesService {
       where: { id },
       data: { deletedAt },
     });
+    await this.whatsappConnection?.release(id, 'stop');
 
     await this.prisma.auditLog.create({
       data: {
@@ -477,6 +485,9 @@ export class SocietiesService {
     const society = await this.findOne(societyId);
     if ((dto as { whatsappEnabled?: boolean }).whatsappEnabled === true && !society.whatsappAllowed) {
       throw new ForbiddenException('WhatsApp messages are not switched on for your society. Ask the platform owner to allow them.');
+    }
+    if ((dto as { whatsappEnabled?: boolean }).whatsappEnabled === true && !society.whatsappSessionId) {
+      throw new BadRequestException('Connect your WhatsApp number first (Settings → Billing Rules → WhatsApp → Connect a phone).');
     }
 
     // upiId and waterBillingEnabled have no DB column; fold both into the

@@ -7,7 +7,7 @@ import { MONTH_NAMES, readReminderTemplate, renderReminder } from '../billing/re
 import { outstandingForFlat } from '../payments/settlement';
 import { fineMessage, paidMessage, publishedMessage } from './whatsapp-messages';
 import {
-  GatewayConfig, GatewayError, sendText, sessionStatus, startSession,
+  GatewayConfig, GatewayCreds, GatewayError, sendText, sessionStatus, startSession,
 } from './openwa.client';
 import {
   chatIdFor, inSendWindow, istDayStart, istParts, normalizePhone, readWhatsappSettings,
@@ -63,7 +63,8 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   private reminderTimer?: NodeJS.Timeout;
   private firstRun?: NodeJS.Timeout;
   private draining = false;
-  private lastRestartAt = 0;
+  /** When each society's session was last started again by the sender, so a stuck one is not restarted in a loop. */
+  private readonly restartedAt = new Map<string, number>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -85,9 +86,9 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     for (const t of [this.firstRun, this.drainTimer, this.reminderTimer]) if (t) clearTimeout(t);
   }
 
-  /** WhatsApp is set up: a gateway address, its key and a connected session are saved (console) or in the environment. */
+  /** The platform has a WhatsApp gateway set up (an address and a key, saved in the console or in the environment). */
   async isConfigured(): Promise<boolean> {
-    return (await this.settings.effective()) !== null;
+    return (await this.settings.creds()) !== null;
   }
 
   // ─── Who and what ───────────────────────────────────────────────────────────────────────────────
@@ -95,7 +96,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   private async settingsOf(societyId: string) {
     const [config, society] = await Promise.all([
       this.prisma.societyConfiguration.findUnique({ where: { societyId }, select: { additionalConfig: true } }),
-      this.prisma.society.findUnique({ where: { id: societyId }, select: { whatsappAllowed: true, isActive: true, deletedAt: true } }),
+      this.prisma.society.findUnique({ where: { id: societyId }, select: { whatsappAllowed: true, isActive: true, deletedAt: true, whatsappSessionId: true } }),
     ]);
     return {
       ...readWhatsappSettings(config?.additionalConfig),
@@ -103,6 +104,8 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       // The platform owner decides which societies may use the platform's WhatsApp number. A suspended or deleted
       // society never sends.
       allowed: !!society && society.whatsappAllowed && society.isActive && !society.deletedAt,
+      // The society's own session on the gateway, set when it linked its number.
+      sessionId: society?.whatsappSessionId ?? null,
     };
   }
 
@@ -150,7 +153,8 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   private async active(societyId: string) {
     if (!(await this.isConfigured())) return null;
     const s = await this.settingsOf(societyId);
-    return s.enabled && s.allowed ? s : null;
+    // A society that has not linked a number queues nothing: there is nowhere to send from.
+    return s.enabled && s.allowed && s.sessionId ? s : null;
   }
 
   // ─── Events ─────────────────────────────────────────────────────────────────────────────────────
@@ -306,15 +310,49 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
 
   // ─── Sending ────────────────────────────────────────────────────────────────────────────────────
 
+  /** The gateway connection for one society's own session. */
+  private cfgFor(creds: GatewayCreds, sessionId: string): GatewayConfig {
+    return { ...creds, sessionId };
+  }
+
   /**
-   * Send what is waiting, one message at a time with a pause between, in the daytime window only, stopping at the
-   * daily cap or the moment the gateway or the WhatsApp session is not usable. Safe to run from two servers at once:
-   * a message is claimed with a conditional update before it is sent.
+   * Whether a society's session can send right now: null when it is ready, otherwise why not. A session that has merely
+   * dropped (rather than needing a new QR scan) is started again, at most once every ten minutes, because the gateway
+   * does not always bring a linked phone back by itself after it restarts. Throws when the gateway itself cannot be
+   * reached, which stops the whole run.
+   */
+  private async sessionReason(cfg: GatewayConfig, now: Date): Promise<string | null> {
+    let session;
+    try {
+      session = await sessionStatus(cfg);
+    } catch (err) {
+      if (err instanceof GatewayError && err.status === 404) return 'its WhatsApp session no longer exists on the gateway';
+      throw err;
+    }
+    if (['disconnected', 'created', 'failed'].includes(session.status) && now.getTime() - (this.restartedAt.get(cfg.sessionId) ?? 0) > 10 * MINUTE_MS) {
+      this.restartedAt.set(cfg.sessionId, now.getTime());
+      this.logger.warn(`WhatsApp session ${cfg.sessionId} is ${session.status}; trying to start it again.`);
+      try {
+        await startSession(cfg, cfg.sessionId);
+        session = await sessionStatus(cfg);
+      } catch (e) {
+        this.logger.warn(`Starting WhatsApp session ${cfg.sessionId} again failed: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+    return session.status === 'ready' ? null : `the WhatsApp session is ${session.status}`;
+  }
+
+  /**
+   * Send what is waiting, one message at a time with a pause between, in the daytime window only. Each society sends
+   * through its own session, from its own number, with its own daily limit: a society whose session is not ready, or
+   * that has reached its limit, is skipped for this run without holding up the others. The run stops altogether only
+   * when the gateway itself cannot be used. Safe to run from two servers at once: a message is claimed with a conditional
+   * update before it is sent.
    */
   async drain(opts: DrainOptions = {}): Promise<{ sent: number; failed: number; stopped: string | null }> {
     const result = { sent: 0, failed: 0, stopped: null as string | null };
-    const cfg = await this.settings.effective();
-    if (!cfg) return { ...result, stopped: 'not configured' };
+    const creds = await this.settings.creds();
+    if (!creds) return { ...result, stopped: 'not configured' };
     if (this.draining) return { ...result, stopped: 'already running' };
     const now = opts.now ?? new Date();
     if (!opts.ignoreWindow && !inSendWindow(now)) return { ...result, stopped: 'outside the sending window' };
@@ -328,38 +366,69 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       const waiting = await this.prisma.whatsappMessage.count({ where: { status: 'PENDING', sendAfter: { lte: now } } });
       if (waiting === 0) return result;
 
-      try {
-        let session = await sessionStatus(cfg);
-        // The gateway does not always bring a linked phone back by itself after it restarts. A session that has
-        // merely dropped (rather than needing a new QR scan) comes back when it is started again, so try that —
-        // not more than once every ten minutes, and never while a scan is waiting.
-        if (['disconnected', 'created', 'failed'].includes(session.status) && now.getTime() - this.lastRestartAt > 10 * MINUTE_MS) {
-          this.lastRestartAt = now.getTime();
-          this.logger.warn(`The WhatsApp session is ${session.status}; trying to start it again.`);
-          try {
-            await startSession(cfg, cfg.sessionId);
-            session = await sessionStatus(cfg);
-          } catch (e) {
-            this.logger.warn(`Starting the WhatsApp session again failed: ${e instanceof Error ? e.message : e}`);
-          }
-        }
-        if (session.status !== 'ready') return { ...result, stopped: `the WhatsApp session is ${session.status}` };
-      } catch (err) {
-        return { ...result, stopped: err instanceof Error ? err.message : String(err) };
-      }
-
-      const sentToday = await this.prisma.whatsappMessage.count({ where: { status: 'SENT', sentAt: { gte: istDayStart(now) } } });
-      let budget = Math.min(opts.maxPerRun ?? 25, Math.max(0, dailyCap() - sentToday));
-      if (budget === 0) return { ...result, stopped: 'the daily limit is reached' };
-
-      const permitCache = new Map<string, { enabled: boolean; allowed: boolean }>();
+      // Societies whose messages cannot go this run: skipped, not failed, and tried again next run.
+      const blocked = new Map<string, string>();
+      const context = new Map<string, { enabled: boolean; allowed: boolean; sessionId: string | null }>();
+      const readiness = new Map<string, string | null>();
+      const sentToday = new Map<string, number>();
+      const dayStart = istDayStart(now);
       const gap = opts.gap ?? gapMs;
+      let budget = opts.maxPerRun ?? 25;
+
       while (budget > 0) {
         const next = await this.prisma.whatsappMessage.findFirst({
-          where: { status: 'PENDING', sendAfter: { lte: now } },
+          where: { status: 'PENDING', sendAfter: { lte: now }, ...(blocked.size ? { societyId: { notIn: [...blocked.keys()] } } : {}) },
           orderBy: { createdAt: 'asc' },
         });
         if (!next) break;
+
+        if (!context.has(next.societyId)) {
+          const p = await this.settingsOf(next.societyId);
+          context.set(next.societyId, { enabled: p.enabled, allowed: p.allowed, sessionId: p.sessionId });
+        }
+        const ctx = context.get(next.societyId) as { enabled: boolean; allowed: boolean; sessionId: string | null };
+
+        // Checked again at send time, not only when queued: the society, or the platform owner, may have switched it off since.
+        if (next.kind !== 'TEST' && (!ctx.allowed || !ctx.enabled)) {
+          const dropped = await this.prisma.whatsappMessage.updateMany({
+            where: { id: next.id, status: 'PENDING' },
+            data: {
+              status: 'FAILED',
+              lastError: ctx.allowed ? 'WhatsApp messages were switched off for this society.' : 'This society is not allowed to send WhatsApp messages.',
+            },
+          });
+          if (dropped.count === 1) result.failed += 1;
+          continue;
+        }
+
+        if (!ctx.sessionId) {
+          blocked.set(next.societyId, 'this society has not linked a WhatsApp number');
+          continue;
+        }
+        const cfg = this.cfgFor(creds, ctx.sessionId);
+
+        if (!readiness.has(ctx.sessionId)) {
+          try {
+            readiness.set(ctx.sessionId, await this.sessionReason(cfg, now));
+          } catch (err) {
+            result.stopped = err instanceof Error ? err.message : String(err);
+            break;
+          }
+        }
+        const notReady = readiness.get(ctx.sessionId);
+        if (notReady) {
+          blocked.set(next.societyId, notReady);
+          continue;
+        }
+
+        // The daily limit is per number: each society's own.
+        if (!sentToday.has(next.societyId)) {
+          sentToday.set(next.societyId, await this.prisma.whatsappMessage.count({ where: { societyId: next.societyId, status: 'SENT', sentAt: { gte: dayStart } } }));
+        }
+        if ((sentToday.get(next.societyId) as number) >= dailyCap()) {
+          blocked.set(next.societyId, 'the daily limit is reached');
+          continue;
+        }
 
         const claimed = await this.prisma.whatsappMessage.updateMany({
           where: { id: next.id, status: 'PENDING' },
@@ -367,35 +436,23 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
         });
         if (claimed.count !== 1) continue;
 
-        if (!permitCache.has(next.societyId)) {
-          const p = await this.settingsOf(next.societyId);
-          permitCache.set(next.societyId, { enabled: p.enabled, allowed: p.allowed });
-        }
-        const permit = permitCache.get(next.societyId) as { enabled: boolean; allowed: boolean };
-        // Checked again at send time, not only when queued: the society, or the platform owner, may have switched it off since.
-        if (next.kind !== 'TEST' && (!permit.allowed || !permit.enabled)) {
-          await this.prisma.whatsappMessage.update({
-            where: { id: next.id },
-            data: {
-              status: 'FAILED',
-              lastError: permit.allowed ? 'WhatsApp messages were switched off for this society.' : 'This society is not allowed to send WhatsApp messages.',
-            },
-          });
-          result.failed += 1;
-          continue;
-        }
-
         try {
           await sendText(cfg, chatIdFor(next.toPhone), next.body, `${next.societyId}:${next.dedupeKey}`);
           await this.prisma.whatsappMessage.update({ where: { id: next.id }, data: { status: 'SENT', sentAt: new Date(), lastError: null } });
           result.sent += 1;
           budget -= 1;
+          sentToday.set(next.societyId, (sentToday.get(next.societyId) as number) + 1);
         } catch (err) {
           const e = err instanceof GatewayError ? err : new GatewayError(err instanceof Error ? err.message : String(err));
           if (e.gatewayDown) {
-            // Not this message's fault: put it back as it was and stop for now.
+            // Not this message's fault: put it back as it was.
             await this.prisma.whatsappMessage.update({ where: { id: next.id }, data: { status: 'PENDING', attempts: { decrement: 1 }, lastError: e.message } });
-            result.stopped = e.message;
+            if (e.status === 409 || e.status === 503) {
+              // This society's session is not ready: skip that society, the others can still send.
+              blocked.set(next.societyId, e.message);
+              continue;
+            }
+            result.stopped = e.message; // the gateway itself: not reachable, refusing the key, rate limiting
             break;
           }
           const giveUp = e.permanent || next.attempts + 1 >= MAX_ATTEMPTS;
@@ -410,6 +467,8 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
         }
         await sleep(gap());
       }
+      // Nothing could be sent only because societies were skipped: say why, as the first of them.
+      if (!result.stopped && result.sent === 0 && result.failed === 0 && blocked.size > 0) result.stopped = [...blocked.values()][0];
       return result;
     } finally {
       this.draining = false;
@@ -418,15 +477,16 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
 
   // ─── For the admin ──────────────────────────────────────────────────────────────────────────────
 
-  /** What the settings screen shows: is it set up, is WhatsApp connected, what is waiting. */
+  /** What the settings screen shows: is it set up, is this society's number connected, what is waiting. */
   async status(societyId: string) {
     const settings = await this.settingsOf(societyId);
-    const cfg = await this.settings.effective();
+    const creds = await this.settings.creds();
     let session: { status: string; phone: string | null } | null = null;
     let problem: string | null = null;
-    if (cfg) {
+    // Only a society that may use WhatsApp, and has linked a number, is asked about its session.
+    if (creds && settings.allowed && settings.sessionId) {
       try {
-        session = await sessionStatus(cfg);
+        session = await sessionStatus(this.cfgFor(creds, settings.sessionId));
       } catch (err) {
         problem = err instanceof Error ? err.message : String(err);
       }
@@ -438,14 +498,17 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       this.prisma.whatsappMessage.count({ where: { societyId, status: 'FAILED', createdAt: { gte: new Date(Date.now() - 7 * 24 * HOUR_MS) } } }),
     ]);
     return {
-      configured: cfg !== null,
+      // The platform has a gateway set up.
+      configured: creds !== null,
       // Whether the platform owner has allowed this society to use WhatsApp at all.
       allowed: settings.allowed,
+      // This society has linked a number (pressed Connect at least once).
+      hasSession: !!settings.sessionId,
       enabled: settings.enabled,
       reminderDays: settings.reminderDays,
       session: session?.status ?? null,
-      // The platform's number is not shown to a society that may not use it.
-      sendingFrom: settings.allowed ? (session?.phone ?? null) : null,
+      // This society's own number.
+      sendingFrom: session?.phone ?? null,
       problem,
       queued,
       sentToday,
@@ -463,22 +526,24 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Send one message straight away to a number the admin types, to prove the connection works end to end. Goes
-   * through the queue's own sender, so it counts toward the daily cap and is logged like any other.
+   * Send one message straight away to a number the admin types, from the society's own number, to prove the connection
+   * works end to end. It is logged like any other message and counts toward the society's daily limit.
    */
   async sendTest(societyId: string, rawPhone: string): Promise<{ sent: boolean; error?: string }> {
-    const cfg: GatewayConfig | null = await this.settings.effective();
-    if (!cfg) return { sent: false, error: 'WhatsApp is not connected to this server yet (see the setup notes).' };
-    if (!(await this.settingsOf(societyId)).allowed) {
+    const creds = await this.settings.creds();
+    if (!creds) return { sent: false, error: 'WhatsApp has not been set up on this platform yet. Ask the platform owner.' };
+    const s = await this.settingsOf(societyId);
+    if (!s.allowed) {
       return { sent: false, error: 'WhatsApp messages are not switched on for your society. Ask the platform owner to allow them.' };
     }
+    if (!s.sessionId) return { sent: false, error: 'Connect your WhatsApp number first.' };
     const phone = normalizePhone(rawPhone);
     if (!phone) return { sent: false, error: 'That does not look like a mobile number.' };
     const society = await this.societyName(societyId);
     const key = `test:${phone}:${Date.now()}`;
     const body = `This is a test message from ${society} on NG Home. If you can read it, WhatsApp reminders are set up.`;
     try {
-      await sendText(cfg, chatIdFor(phone), body, `${societyId}:${key}`);
+      await sendText(this.cfgFor(creds, s.sessionId), chatIdFor(phone), body, `${societyId}:${key}`);
       await this.prisma.whatsappMessage.create({ data: { societyId, kind: 'TEST', dedupeKey: key, toPhone: phone, body, status: 'SENT', attempts: 1, sentAt: new Date() } });
       return { sent: true };
     } catch (err) {

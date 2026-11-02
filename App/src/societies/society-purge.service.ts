@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { WhatsappConnectionService } from '../whatsapp/whatsapp-connection.service';
 import { AuditAction, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SftpStorageService } from '../documents/sftp-storage.service';
@@ -34,6 +35,7 @@ export class SocietyPurgeService {
     private readonly prisma: PrismaService,
     private readonly storage: SftpStorageService,
     private readonly paths: StoragePathService,
+    @Optional() private readonly whatsappConnection?: WhatsappConnectionService,
   ) {}
 
   async purge(id: string, confirmName: string, actorId: string): Promise<PurgeResult> {
@@ -136,6 +138,9 @@ export class SocietyPurgeService {
     }
 
     void this.removeFiles(filesToRemove);
+
+    // The society's WhatsApp session on the gateway goes with it (it holds a browser in memory for nobody).
+    await this.whatsappConnection?.deleteSessionById(society.whatsappSessionId);
 
     return { id, name: shownName, ...result, filesQueued: filesToRemove.length };
   }

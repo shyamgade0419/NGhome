@@ -367,6 +367,9 @@ model Society {
   // it (Platform console → Societies). Off for every society until switched on, so one society's admin cannot use a
   // number that was linked for another.
   whatsappAllowed     Boolean   @default(false)
+  // The society's own WhatsApp session on the gateway (OpenWA): each society links its own number, so its messages
+  // never go out from another's. Set when the society presses Connect a phone; null until then.
+  whatsappSessionId   String?
   isActive            Boolean   @default(true)
   // Resident self-registration via join code
   joinCode            String?   @unique
