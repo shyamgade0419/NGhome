@@ -40,10 +40,14 @@ export function previewReminder(template: string): string {
 
 /** What the settings screen shows about WhatsApp automation. */
 export interface WhatsappStatus {
-  /** The platform has a WhatsApp gateway set up. */
+  /** What this society sends through is set up (the platform's gateway for a linked number; always true for a Meta account). */
   configured: boolean;
-  /** This society has linked its own number (it pressed Connect at least once). */
+  /** How this society sends: a number it linked by QR code (OPENWA), or its own Meta WhatsApp Business account (CLOUD). */
+  provider: 'OPENWA' | 'CLOUD';
+  /** This society has somewhere to send from by the way it chose: a linked number, or a connected Meta account. */
   hasSession: boolean;
+  /** Meta account only: all four message templates approved (null when it cannot be told). */
+  templatesReady: boolean | null;
   /** The platform owner has allowed this society to use WhatsApp. Without it the society cannot switch messages on. */
   allowed: boolean;
   enabled: boolean;
@@ -112,6 +116,33 @@ export interface WhatsappSessionsOverview {
   configured: boolean;
   reachable: boolean;
   problem: string | null;
-  sessions: { societyId: string; name: string; allowed: boolean; deleted: boolean; status: string | null; phone: string | null }[];
+  sessions: { societyId: string; name: string; allowed: boolean; deleted: boolean; provider: 'OPENWA' | 'CLOUD'; status: string | null; phone: string | null }[];
+  /** Societies that send through their own Meta account: nothing runs on the gateway for them. */
+  cloud: { societyId: string; name: string; allowed: boolean; deleted: boolean; phone: string | null }[];
   orphans: { id: string; name: string; status: string; phone: string | null }[];
+}
+
+/** One of the four message templates Meta must approve before a society's Meta account can send. */
+export interface WhatsappCloudTemplate {
+  kind: string;
+  name: string;
+  /** APPROVED | PENDING | REJECTED | PAUSED | DISABLED | NOT_SUBMITTED | UNKNOWN */
+  status: string;
+  reason: string | null;
+}
+
+/** A society's own Meta WhatsApp Business (Cloud API) account. The access token is never sent back. */
+export interface WhatsappCloud {
+  allowed: boolean;
+  provider: 'OPENWA' | 'CLOUD';
+  linked: boolean;
+  phoneNumberId: string | null;
+  wabaId: string | null;
+  displayPhone: string | null;
+  verifiedName: string | null;
+  /** `ready` when Meta accepts the token, `token_invalid` when it does not, `error` when Meta could not be asked. */
+  status: 'ready' | 'token_invalid' | 'error' | null;
+  problem: string | null;
+  templates: WhatsappCloudTemplate[];
+  templatesReady: boolean | null;
 }

@@ -73,16 +73,20 @@ export function WhatsappConnectionCard() {
   if (!gateway) return <Loading />;
   const shownUrl = url ?? gateway.url ?? gateway.environment.url ?? '';
   const canSave = shownUrl.trim() !== '' && (gateway.hasKey || key.trim() !== '');
-  const linked = overview?.sessions.filter((s) => !s.deleted) ?? [];
+  // A society that moved to its Meta account keeps its linked number stopped; it is listed once, as a Meta account.
+  const viaMeta = overview?.cloud.filter((s) => !s.deleted) ?? [];
+  const linked = (overview?.sessions.filter((s) => !s.deleted && s.provider !== 'CLOUD') ?? []).length;
+  const numbers = overview?.sessions.filter((s) => !s.deleted && s.provider !== 'CLOUD') ?? [];
 
   return (
     <Card title="WhatsApp messages" icon={MessageCircle}>
       <div className="space-y-5">
         <p className="text-sm text-gray-400">
-          One WhatsApp gateway (OpenWA) serves every society, but <strong className="text-gray-200">each society links its own
-          number</strong> to it, from its own Settings → Billing Rules → WhatsApp, and its messages go out from that number only.
-          Enter where the gateway is running and its key here, once. A society can only link a number after you allow it on the
-          Societies page (every society starts Off).
+          One WhatsApp gateway (OpenWA) serves every society that links a number, but <strong className="text-gray-200">each society
+          uses its own number</strong>: it links it from its own Settings → Billing Rules → WhatsApp, or connects its own Meta WhatsApp
+          Business account there instead, and its messages go out from that number only. Enter where the gateway is running and its key
+          here, once (only needed for linked numbers). A society can use WhatsApp either way only after you allow it on the Societies
+          page (every society starts Off).
         </p>
         {gateway.source === 'environment' && (
           <p className="rounded-lg bg-gray-800/60 px-3 py-2 text-xs text-gray-300">
@@ -138,19 +142,29 @@ export function WhatsappConnectionCard() {
             <h3 className="text-sm font-semibold text-gray-200">Linked numbers</h3>
             {overview && (
               <span className="text-xs text-gray-500">
-                {overview.configured ? (overview.reachable ? `${linked.length} ${linked.length === 1 ? 'society' : 'societies'} linked` : 'Gateway not reachable') : 'No gateway set'}
+                {overview.configured ? (overview.reachable ? `${linked} linked, ${viaMeta.length} on Meta` : 'Gateway not reachable') : `No gateway set, ${viaMeta.length} on Meta`}
               </span>
             )}
           </div>
           {overview?.problem && (
             <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{overview.problem}</p>
           )}
-          {overview?.configured && linked.length === 0 && !overview.problem && (
+          {overview?.configured && numbers.length === 0 && viaMeta.length === 0 && !overview.problem && (
             <p className="text-xs text-gray-500">No society has linked a number yet. Allow a society on the Societies page; its admin links the number from their own Settings.</p>
           )}
-          {linked.length > 0 && (
+          {(numbers.length > 0 || viaMeta.length > 0) && (
             <ul className="divide-y divide-gray-800 rounded-lg border border-gray-800 text-sm">
-              {linked.map((s) => (
+              {viaMeta.map((s) => (
+                <li key={`meta-${s.societyId}`} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                  <span className="min-w-0 truncate text-gray-200">{s.name}</span>
+                  <span className="flex items-center gap-3 text-xs text-gray-400">
+                    {s.phone && <span className="font-mono">+{s.phone}</span>}
+                    {!s.allowed && <Pill tone="slate">Off</Pill>}
+                    <Pill tone="green">Meta WhatsApp Business</Pill>
+                  </span>
+                </li>
+              ))}
+              {numbers.map((s) => (
                 <li key={s.societyId} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
                   <span className="min-w-0 truncate text-gray-200">{s.name}</span>
                   <span className="flex items-center gap-3 text-xs text-gray-400">
@@ -169,8 +183,9 @@ export function WhatsappConnectionCard() {
             </div>
           )}
           <p className="text-xs text-gray-500">
-            Each linked number runs its own browser inside OpenWA and uses roughly 300–500 MB of memory. Allow only as many
-            societies as the server can carry.
+            Each linked number runs its own browser inside OpenWA and uses roughly 300–500 MB of memory, so allow only as many
+            of those as the server can carry. A society on its own Meta WhatsApp Business account uses nothing on the gateway
+            and pays Meta directly; the same Allowed switch governs both ways.
           </p>
         </div>
       </div>

@@ -17,7 +17,7 @@ import type { SlotFor, SlotRow, SlotStatus, VehicleRow } from '@/lib/vehicles';
 import type { AttendanceStatus, DayRow, MonthDay, RosterRow, Shift, SummaryRow } from '@/lib/attendance';
 import type { OpeningBalances, OpeningInputRow, OpeningSaveResult } from '@/lib/openingBalances';
 import type { AdvanceCredits, FlatDiscount, FlatDiscountInput } from '@/lib/flatDiscounts';
-import type { BillReminder, ReminderTemplate, WhatsappConnection, WhatsappGatewayView, WhatsappMessageRow, WhatsappSessionsOverview, WhatsappStatus } from '@/lib/reminders';
+import type { BillReminder, ReminderTemplate, WhatsappCloud, WhatsappConnection, WhatsappGatewayView, WhatsappMessageRow, WhatsappSessionsOverview, WhatsappStatus } from '@/lib/reminders';
 
 // Dashboard — composites several report endpoints
 export const dashboardApi = {
@@ -167,6 +167,15 @@ export const whatsappApi = {
   connect: (): Promise<{ data: WhatsappConnection }> => api.post('/whatsapp/connect'),
   /** Unlinks this society's number (admin only). */
   disconnect: (): Promise<{ data: WhatsappConnection }> => api.post('/whatsapp/disconnect'),
+  /** This society's own Meta WhatsApp Business account: connected or not, and the state of its four message templates. */
+  cloud: (): Promise<{ data: WhatsappCloud }> => api.get('/whatsapp/cloud'),
+  /** Connects the society's Meta account (checked with Meta first) and sends through it. A blank token keeps the saved one (admin only). */
+  connectCloud: (body: { phoneNumberId: string; accessToken?: string; wabaId?: string }): Promise<{ data: WhatsappCloud }> => api.put('/whatsapp/cloud', body),
+  disconnectCloud: (): Promise<{ data: WhatsappCloud }> => api.delete('/whatsapp/cloud'),
+  /** Submits NG Home's four message templates to Meta for approval (admin only). */
+  submitCloudTemplates: (): Promise<{ data: WhatsappCloud & { submitted: string[]; failed: { name: string; error: string }[] } }> => api.post('/whatsapp/cloud/templates'),
+  /** Chooses how messages are sent: a linked number or the Meta account (admin only). */
+  setProvider: (provider: 'OPENWA' | 'CLOUD'): Promise<{ data: WhatsappCloud }> => api.put('/whatsapp/provider', { provider }),
   messages: (limit = 30): Promise<{ data: WhatsappMessageRow[] }> => api.get('/whatsapp/messages', { params: { limit } }),
   /** Sends one message to a number to prove the connection works (admin only). */
   test: (phone: string): Promise<{ data: { sent: boolean; error?: string } }> => api.post('/whatsapp/test', { phone }),
