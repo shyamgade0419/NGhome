@@ -9,6 +9,9 @@ import { fineMessage, paidMessage, publishedMessage } from './whatsapp-messages'
 import {
   GatewayConfig, GatewayCreds, GatewayError, sendText, sessionStatus, startSession,
 } from './openwa.client';
+import { CLOUD_LANGUAGE, TEST_TEMPLATE, orderedParams, renderTemplate, templateOf } from './whatsapp-cloud-templates';
+import { sendTemplate } from './whatsapp-cloud.client';
+import { WhatsappCloudService, WhatsappProvider } from './whatsapp-cloud.service';
 import {
   chatIdFor, inSendWindow, istDayStart, istParts, normalizePhone, readWhatsappSettings,
 } from './whatsapp-settings';
@@ -28,6 +31,8 @@ const gapMs = () => {
   const max = Math.max(min, Number(process.env.WHATSAPP_SEND_GAP_MAX_MS ?? 14_000));
   return Math.round(min + Math.random() * (max - min));
 };
+/** The official API has no ban to avoid, so its pause is only to stay polite to Meta. */
+const cloudGapMs = () => Number(process.env.WHATSAPP_CLOUD_GAP_MS ?? 250);
 const dailyCap = () => Number(process.env.WHATSAPP_DAILY_CAP ?? 250);
 const sleep = (ms: number) => (ms > 0 ? new Promise<void>((r) => setTimeout(r, ms)) : Promise.resolve());
 
@@ -69,6 +74,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly settings: WhatsappSettingsStore,
+    private readonly cloud: WhatsappCloudService,
   ) {}
 
   onModuleInit() {
@@ -94,19 +100,35 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   // ─── Who and what ───────────────────────────────────────────────────────────────────────────────
 
   private async settingsOf(societyId: string) {
-    const [config, society] = await Promise.all([
+    const [config, society, cloudLinked] = await Promise.all([
       this.prisma.societyConfiguration.findUnique({ where: { societyId }, select: { additionalConfig: true } }),
-      this.prisma.society.findUnique({ where: { id: societyId }, select: { whatsappAllowed: true, isActive: true, deletedAt: true, whatsappSessionId: true } }),
+      this.prisma.society.findUnique({ where: { id: societyId }, select: { whatsappAllowed: true, isActive: true, deletedAt: true, whatsappSessionId: true, whatsappProvider: true } }),
+      this.cloud.isLinked(societyId),
     ]);
+    const provider: WhatsappProvider = society?.whatsappProvider === 'CLOUD' ? 'CLOUD' : 'OPENWA';
     return {
       ...readWhatsappSettings(config?.additionalConfig),
       additionalConfig: config?.additionalConfig,
-      // The platform owner decides which societies may use the platform's WhatsApp number. A suspended or deleted
+      // The platform owner decides which societies may use WhatsApp at all, by either way. A suspended or deleted
       // society never sends.
       allowed: !!society && society.whatsappAllowed && society.isActive && !society.deletedAt,
+      provider,
       // The society's own session on the gateway, set when it linked its number.
       sessionId: society?.whatsappSessionId ?? null,
+      // The society connected its own Meta WhatsApp Business account.
+      cloudLinked,
+      // Somewhere to send from, by the way the society chose.
+      linked: provider === 'CLOUD' ? cloudLinked : !!society?.whatsappSessionId,
     };
+  }
+
+  /**
+   * The text of a message and the values it was written from. A society on the official API sends an approved template,
+   * so its history shows the template's wording; a society on a linked number sends the free text.
+   */
+  private compose(provider: WhatsappProvider, kind: Exclude<WhatsappKind, 'TEST'>, values: Record<string, string>, text: string) {
+    const t = templateOf(kind);
+    return provider === 'CLOUD' && t ? { body: renderTemplate(t, values), params: values } : { body: text, params: values };
   }
 
   private async societyName(societyId: string): Promise<string> {
@@ -137,10 +159,16 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Add one message to the outbox. A second add for the same event is ignored. Returns whether a row was added. */
-  private async enqueue(societyId: string, kind: WhatsappKind, dedupeKey: string, to: Recipient, body: string): Promise<boolean> {
+  private async enqueue(
+    societyId: string,
+    kind: WhatsappKind,
+    dedupeKey: string,
+    to: Recipient,
+    message: { body: string; params?: Record<string, string> },
+  ): Promise<boolean> {
     try {
       await this.prisma.whatsappMessage.create({
-        data: { societyId, kind, dedupeKey, recipientUserId: to.userId, toPhone: to.phone, body },
+        data: { societyId, kind, dedupeKey, recipientUserId: to.userId, toPhone: to.phone, body: message.body, ...(message.params ? { params: message.params } : {}) },
       });
       return true;
     } catch (err) {
@@ -151,17 +179,19 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
 
   /** Whether events should produce messages for this society at all. */
   private async active(societyId: string) {
-    if (!(await this.isConfigured())) return null;
     const s = await this.settingsOf(societyId);
-    // A society that has not linked a number queues nothing: there is nowhere to send from.
-    return s.enabled && s.allowed && s.sessionId ? s : null;
+    if (!s.enabled || !s.allowed) return null;
+    // A society with nowhere to send from queues nothing. A linked number needs the platform's gateway; a Meta account does not.
+    if (s.provider === 'CLOUD') return s.cloudLinked ? s : null;
+    return s.sessionId && (await this.isConfigured()) ? s : null;
   }
 
   // ─── Events ─────────────────────────────────────────────────────────────────────────────────────
 
   /** The bills of a period were published: tell each flat's contact what is due and by when. */
   async enqueuePublished(societyId: string, periodId: string): Promise<number> {
-    if (!(await this.active(societyId))) return 0;
+    const settings = await this.active(societyId);
+    if (!settings) return 0;
     const period = await this.prisma.billingPeriod.findFirst({ where: { id: periodId, societyId } });
     if (!period) return 0;
     const bills = await this.prisma.maintenanceBill.findMany({
@@ -176,33 +206,32 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     for (const b of bills) {
       const to = contacts.get(b.flatId);
       if (!to) continue;
-      const body = publishedMessage({ name: to.name, flat: b.flatCode, month, pending: b.pendingAmount.toString(), dueDate, society });
-      if (await this.enqueue(societyId, 'BILL_PUBLISHED', `published:${b.id}`, to, body)) added += 1;
+      const text = publishedMessage({ name: to.name, flat: b.flatCode, month, pending: b.pendingAmount.toString(), dueDate, society });
+      const message = this.compose(settings.provider, 'BILL_PUBLISHED', { name: to.name, month, flat: b.flatCode, amount: amountOf(b.pendingAmount), dueDate, society }, text);
+      if (await this.enqueue(societyId, 'BILL_PUBLISHED', `published:${b.id}`, to, message)) added += 1;
     }
     return added;
   }
 
   /** A late fine was added to a bill: tell the flat's contact, with the new amount due. */
   async enqueueFine(societyId: string, billId: string): Promise<boolean> {
-    if (!(await this.active(societyId))) return false;
+    const settings = await this.active(societyId);
+    if (!settings) return false;
     const bill = await this.prisma.maintenanceBill.findFirst({ where: { id: billId, societyId }, include: { billingPeriod: true } });
     if (!bill || bill.lateFee.lessThanOrEqualTo(0)) return false;
     const to = (await this.contactsOf(societyId, [bill.flatId])).get(bill.flatId);
     if (!to) return false;
-    const body = fineMessage({
-      name: to.name,
-      flat: bill.flatCode,
-      month: `${MONTH_NAMES[bill.billingPeriod.periodMonth] ?? ''} ${bill.billingPeriod.periodYear}`.trim(),
-      fee: bill.lateFee.toString(),
-      pending: bill.pendingAmount.toString(),
-      society: await this.societyName(societyId),
-    });
-    return this.enqueue(societyId, 'FINE_IMPOSED', `fine:${bill.id}`, to, body);
+    const month = `${MONTH_NAMES[bill.billingPeriod.periodMonth] ?? ''} ${bill.billingPeriod.periodYear}`.trim();
+    const society = await this.societyName(societyId);
+    const text = fineMessage({ name: to.name, flat: bill.flatCode, month, fee: bill.lateFee.toString(), pending: bill.pendingAmount.toString(), society });
+    const message = this.compose(settings.provider, 'FINE_IMPOSED', { name: to.name, month, flat: bill.flatCode, fee: amountOf(bill.lateFee), amount: amountOf(bill.pendingAmount), society }, text);
+    return this.enqueue(societyId, 'FINE_IMPOSED', `fine:${bill.id}`, to, message);
   }
 
   /** A payment was approved (or recorded by the admin): thank the person and say what is still due. */
   async enqueuePaid(societyId: string, paymentId: string): Promise<boolean> {
-    if (!(await this.active(societyId))) return false;
+    const settings = await this.active(societyId);
+    if (!settings) return false;
     const payment = await this.prisma.paymentSubmission.findFirst({
       where: { id: paymentId, societyId, status: 'APPROVED' },
       include: { user: { select: { firstName: true, lastName: true, phone: true } }, flat: { select: { flatCode: true } } },
@@ -215,15 +244,11 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     else to = (await this.contactsOf(societyId, [payment.flatId])).get(payment.flatId);
     if (!to) return false;
     const balance = await outstandingForFlat(this.prisma, societyId, payment.flatId);
-    const body = paidMessage({
-      name: to.name,
-      flat: payment.flat.flatCode,
-      amount: payment.amount.toString(),
-      paidOn: dueLabel(payment.paymentDate),
-      balance: balance.toString(),
-      society: await this.societyName(societyId),
-    });
-    return this.enqueue(societyId, 'PAYMENT_RECEIVED', `paid:${payment.id}`, to, body);
+    const society = await this.societyName(societyId);
+    const paidOn = dueLabel(payment.paymentDate);
+    const text = paidMessage({ name: to.name, flat: payment.flat.flatCode, amount: payment.amount.toString(), paidOn, balance: balance.toString(), society });
+    const message = this.compose(settings.provider, 'PAYMENT_RECEIVED', { name: to.name, amount: amountOf(payment.amount), flat: payment.flat.flatCode, paidOn, balance: amountOf(balance), society }, text);
+    return this.enqueue(societyId, 'PAYMENT_RECEIVED', `paid:${payment.id}`, to, message);
   }
 
   /**
@@ -269,25 +294,28 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     for (const [flatId, { latest, owed }] of perFlat) {
       const to = contacts.get(flatId);
       if (!to || awaiting.has(flatId)) continue;
-      const body = renderReminder(template, {
+      const month = `${MONTH_NAMES[latest.billingPeriod.periodMonth] ?? ''} ${latest.billingPeriod.periodYear}`.trim();
+      const dueDate = dueLabel(latest.dueDate);
+      // The society's own wording is for a linked number; the official API sends its approved template instead.
+      const text = renderReminder(template, {
         name: to.name,
         flat: latest.flatCode,
-        month: `${MONTH_NAMES[latest.billingPeriod.periodMonth] ?? ''} ${latest.billingPeriod.periodYear}`.trim(),
+        month,
         amount: money(owed),
         total: money(latest.totalAmount),
-        dueDate: dueLabel(latest.dueDate),
+        dueDate,
         invoice: latest.invoiceNumber,
         society,
         upi,
       });
-      if (await this.enqueue(societyId, 'REMINDER', `reminder:${flatId}:${date}`, to, body)) added += 1;
+      const message = this.compose(settings.provider, 'REMINDER', { name: to.name, flat: latest.flatCode, month, amount: money(owed), dueDate, society }, text);
+      if (await this.enqueue(societyId, 'REMINDER', `reminder:${flatId}:${date}`, to, message)) added += 1;
     }
     return added;
   }
 
   /** Every society that has automation switched on: queue today's reminders if today is one of its reminder days. */
   async remindersPass(now = new Date()): Promise<{ societies: number; queued: number }> {
-    if (!(await this.isConfigured())) return { societies: 0, queued: 0 };
     // Not before the sending window opens: the queue would only hold them, and a society that switches the
     // setting off in the morning should not have the day's reminders already queued.
     if (!inSendWindow(now)) return { societies: 0, queued: 0 };
@@ -343,16 +371,17 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Send what is waiting, one message at a time with a pause between, in the daytime window only. Each society sends
-   * through its own session, from its own number, with its own daily limit: a society whose session is not ready, or
-   * that has reached its limit, is skipped for this run without holding up the others. The run stops altogether only
-   * when the gateway itself cannot be used. Safe to run from two servers at once: a message is claimed with a conditional
-   * update before it is sent.
+   * Send what is waiting, one message at a time, in the daytime window only. A society sends the way it chose: through its
+   * own linked number on the gateway (paced, with a daily limit, because an unofficial number that bursts is banned), or
+   * through its own Meta account (approved templates, no pacing worries). A society that cannot send right now (its session
+   * is not ready, its token was refused, it reached its limit) is skipped for this run without holding up the others. The
+   * run stops altogether only when the OpenWA gateway itself cannot be used. Safe to run from two servers at once: a message
+   * is claimed with a conditional update before it is sent.
    */
   async drain(opts: DrainOptions = {}): Promise<{ sent: number; failed: number; stopped: string | null }> {
     const result = { sent: 0, failed: 0, stopped: null as string | null };
+    // The gateway is only needed by societies that send through a linked number; one that sends through Meta does not.
     const creds = await this.settings.creds();
-    if (!creds) return { ...result, stopped: 'not configured' };
     if (this.draining) return { ...result, stopped: 'already running' };
     const now = opts.now ?? new Date();
     if (!opts.ignoreWindow && !inSendWindow(now)) return { ...result, stopped: 'outside the sending window' };
@@ -368,12 +397,15 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
 
       // Societies whose messages cannot go this run: skipped, not failed, and tried again next run.
       const blocked = new Map<string, string>();
-      const context = new Map<string, { enabled: boolean; allowed: boolean; sessionId: string | null }>();
+      const context = new Map<string, { enabled: boolean; allowed: boolean; provider: WhatsappProvider; sessionId: string | null }>();
       const readiness = new Map<string, string | null>();
+      const cloudCreds = new Map<string, Awaited<ReturnType<WhatsappCloudService['creds']>>>();
       const sentToday = new Map<string, number>();
       const dayStart = istDayStart(now);
       const gap = opts.gap ?? gapMs;
+      const cloudGap = opts.gap ?? cloudGapMs;
       let budget = opts.maxPerRun ?? 25;
+      let noGateway = false;
 
       while (budget > 0) {
         const next = await this.prisma.whatsappMessage.findFirst({
@@ -384,9 +416,9 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
 
         if (!context.has(next.societyId)) {
           const p = await this.settingsOf(next.societyId);
-          context.set(next.societyId, { enabled: p.enabled, allowed: p.allowed, sessionId: p.sessionId });
+          context.set(next.societyId, { enabled: p.enabled, allowed: p.allowed, provider: p.provider, sessionId: p.sessionId });
         }
-        const ctx = context.get(next.societyId) as { enabled: boolean; allowed: boolean; sessionId: string | null };
+        const ctx = context.get(next.societyId) as { enabled: boolean; allowed: boolean; provider: WhatsappProvider; sessionId: string | null };
 
         // Checked again at send time, not only when queued: the society, or the platform owner, may have switched it off since.
         if (next.kind !== 'TEST' && (!ctx.allowed || !ctx.enabled)) {
@@ -401,33 +433,51 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
           continue;
         }
 
-        if (!ctx.sessionId) {
-          blocked.set(next.societyId, 'this society has not linked a WhatsApp number');
-          continue;
-        }
-        const cfg = this.cfgFor(creds, ctx.sessionId);
-
-        if (!readiness.has(ctx.sessionId)) {
-          try {
-            readiness.set(ctx.sessionId, await this.sessionReason(cfg, now));
-          } catch (err) {
-            result.stopped = err instanceof Error ? err.message : String(err);
-            break;
+        // How this message goes out: a template through the society's Meta account, or text through its linked number.
+        const viaCloud = ctx.provider === 'CLOUD';
+        let cfg: GatewayConfig | null = null;
+        let meta: Awaited<ReturnType<WhatsappCloudService['creds']>> = null;
+        if (viaCloud) {
+          if (!cloudCreds.has(next.societyId)) cloudCreds.set(next.societyId, await this.cloud.creds(next.societyId));
+          meta = cloudCreds.get(next.societyId) ?? null;
+          if (!meta) {
+            blocked.set(next.societyId, 'this society has not connected its Meta WhatsApp Business account');
+            continue;
           }
-        }
-        const notReady = readiness.get(ctx.sessionId);
-        if (notReady) {
-          blocked.set(next.societyId, notReady);
-          continue;
-        }
+        } else {
+          if (!ctx.sessionId) {
+            blocked.set(next.societyId, 'this society has not linked a WhatsApp number');
+            continue;
+          }
+          if (!creds) {
+            noGateway = true;
+            blocked.set(next.societyId, 'not configured');
+            continue;
+          }
+          cfg = this.cfgFor(creds, ctx.sessionId);
 
-        // The daily limit is per number: each society's own.
-        if (!sentToday.has(next.societyId)) {
-          sentToday.set(next.societyId, await this.prisma.whatsappMessage.count({ where: { societyId: next.societyId, status: 'SENT', sentAt: { gte: dayStart } } }));
-        }
-        if ((sentToday.get(next.societyId) as number) >= dailyCap()) {
-          blocked.set(next.societyId, 'the daily limit is reached');
-          continue;
+          if (!readiness.has(ctx.sessionId)) {
+            try {
+              readiness.set(ctx.sessionId, await this.sessionReason(cfg, now));
+            } catch (err) {
+              result.stopped = err instanceof Error ? err.message : String(err);
+              break;
+            }
+          }
+          const notReady = readiness.get(ctx.sessionId);
+          if (notReady) {
+            blocked.set(next.societyId, notReady);
+            continue;
+          }
+
+          // The daily limit protects an unofficial number from a ban: per number, each society's own. Meta has its own limits.
+          if (!sentToday.has(next.societyId)) {
+            sentToday.set(next.societyId, await this.prisma.whatsappMessage.count({ where: { societyId: next.societyId, status: 'SENT', sentAt: { gte: dayStart } } }));
+          }
+          if ((sentToday.get(next.societyId) as number) >= dailyCap()) {
+            blocked.set(next.societyId, 'the daily limit is reached');
+            continue;
+          }
         }
 
         const claimed = await this.prisma.whatsappMessage.updateMany({
@@ -437,18 +487,20 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
         if (claimed.count !== 1) continue;
 
         try {
-          await sendText(cfg, chatIdFor(next.toPhone), next.body, `${next.societyId}:${next.dedupeKey}`);
+          if (viaCloud) await this.sendThroughMeta(meta as NonNullable<typeof meta>, next);
+          else await sendText(cfg as GatewayConfig, chatIdFor(next.toPhone), next.body, `${next.societyId}:${next.dedupeKey}`);
           await this.prisma.whatsappMessage.update({ where: { id: next.id }, data: { status: 'SENT', sentAt: new Date(), lastError: null } });
           result.sent += 1;
           budget -= 1;
-          sentToday.set(next.societyId, (sentToday.get(next.societyId) as number) + 1);
+          sentToday.set(next.societyId, (sentToday.get(next.societyId) ?? 0) + 1);
         } catch (err) {
           const e = err instanceof GatewayError ? err : new GatewayError(err instanceof Error ? err.message : String(err));
           if (e.gatewayDown) {
             // Not this message's fault: put it back as it was.
             await this.prisma.whatsappMessage.update({ where: { id: next.id }, data: { status: 'PENDING', attempts: { decrement: 1 }, lastError: e.message } });
-            if (e.status === 409 || e.status === 503) {
-              // This society's session is not ready: skip that society, the others can still send.
+            if (e.societyOnly || e.status === 409 || e.status === 503) {
+              // This society's connection cannot send right now (session not ready, token refused, template not approved): skip that society, the others can still send.
+              if (viaCloud) this.cloud.invalidate(next.societyId); // so its settings screen shows the problem at once
               blocked.set(next.societyId, e.message);
               continue;
             }
@@ -465,14 +517,24 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
           if (giveUp) result.failed += 1;
           budget -= 1;
         }
-        await sleep(gap());
+        await sleep((viaCloud ? cloudGap : gap)());
       }
       // Nothing could be sent only because societies were skipped: say why, as the first of them.
-      if (!result.stopped && result.sent === 0 && result.failed === 0 && blocked.size > 0) result.stopped = [...blocked.values()][0];
+      if (!result.stopped && result.sent === 0 && result.failed === 0 && blocked.size > 0) result.stopped = noGateway ? 'not configured' : [...blocked.values()][0];
       return result;
     } finally {
       this.draining = false;
     }
+  }
+
+  /** One queued message through a society's Meta account: the approved template for its kind, filled with the values it was written from. */
+  private async sendThroughMeta(meta: NonNullable<Awaited<ReturnType<WhatsappCloudService['creds']>>>, message: { kind: string; toPhone: string; params: unknown }): Promise<void> {
+    const t = templateOf(message.kind);
+    if (!t) throw new GatewayError(`There is no WhatsApp template for ${message.kind} messages.`, undefined, false, true);
+    const values = (message.params ?? null) as Record<string, unknown> | null;
+    // A message queued before the society switched to Meta has no values to fill the template with.
+    if (!values) throw new GatewayError('This message was written for a linked number and cannot be sent as a template.', undefined, false, true);
+    await sendTemplate(meta, message.toPhone, { name: t.name, language: CLOUD_LANGUAGE }, orderedParams(t, values));
   }
 
   // ─── For the admin ──────────────────────────────────────────────────────────────────────────────
@@ -483,8 +545,15 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     const creds = await this.settings.creds();
     let session: { status: string; phone: string | null } | null = null;
     let problem: string | null = null;
-    // Only a society that may use WhatsApp, and has linked a number, is asked about its session.
-    if (creds && settings.allowed && settings.sessionId) {
+    let templates: boolean | null = null;
+    if (settings.allowed && settings.provider === 'CLOUD' && settings.cloudLinked) {
+      // The society's own Meta account: is the token accepted, and are the four templates approved.
+      const meta = await this.cloud.state(societyId);
+      session = meta.status === 'ready' ? { status: 'ready', phone: meta.displayPhone } : { status: meta.status ?? 'error', phone: meta.displayPhone };
+      problem = meta.status === 'ready' ? meta.problem : meta.problem;
+      templates = meta.templatesReady;
+    } else if (creds && settings.allowed && settings.sessionId && settings.provider === 'OPENWA') {
+      // Only a society that may use WhatsApp, and has linked a number, is asked about its session.
       try {
         session = await sessionStatus(this.cfgFor(creds, settings.sessionId));
       } catch (err) {
@@ -498,17 +567,22 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       this.prisma.whatsappMessage.count({ where: { societyId, status: 'FAILED', createdAt: { gte: new Date(Date.now() - 7 * 24 * HOUR_MS) } } }),
     ]);
     return {
-      // The platform has a gateway set up.
-      configured: creds !== null,
+      // What this society sends through is set up: the platform's gateway for a linked number (the platform owner's job),
+      // or its own Meta account (always the platform's to allow, never to configure).
+      configured: settings.provider === 'CLOUD' ? true : creds !== null,
       // Whether the platform owner has allowed this society to use WhatsApp at all.
       allowed: settings.allowed,
-      // This society has linked a number (pressed Connect at least once).
-      hasSession: !!settings.sessionId,
+      // OPENWA: a number linked to the platform's gateway. CLOUD: the society's own Meta WhatsApp Business account.
+      provider: settings.provider,
+      // The society has somewhere to send from by the way it chose: a linked number, or a connected Meta account.
+      hasSession: settings.linked,
       enabled: settings.enabled,
       reminderDays: settings.reminderDays,
       session: session?.status ?? null,
       // This society's own number.
       sendingFrom: session?.phone ?? null,
+      // CLOUD only: all four message templates approved by Meta (null when it cannot be told).
+      templatesReady: templates,
       problem,
       queued,
       sentToday,
@@ -526,18 +600,33 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Send one message straight away to a number the admin types, from the society's own number, to prove the connection
-   * works end to end. It is logged like any other message and counts toward the society's daily limit.
+   * Send one test message straight away to a number the admin types, the way the society chose, to prove the connection
+   * works end to end. It is logged like any other message. Through Meta it is Meta's own pre-approved `hello_world`
+   * template, because a business may only send an approved template to someone who has not messaged it first.
    */
   async sendTest(societyId: string, rawPhone: string): Promise<{ sent: boolean; error?: string }> {
-    const creds = await this.settings.creds();
-    if (!creds) return { sent: false, error: 'WhatsApp has not been set up on this platform yet. Ask the platform owner.' };
     const s = await this.settingsOf(societyId);
     if (!s.allowed) {
       return { sent: false, error: 'WhatsApp messages are not switched on for your society. Ask the platform owner to allow them.' };
     }
-    if (!s.sessionId) return { sent: false, error: 'Connect your WhatsApp number first.' };
     const phone = normalizePhone(rawPhone);
+    if (s.provider === 'CLOUD') {
+      const meta = await this.cloud.creds(societyId);
+      if (!meta) return { sent: false, error: 'Connect your Meta WhatsApp Business account first.' };
+      if (!phone) return { sent: false, error: 'That does not look like a mobile number.' };
+      const key = `test:${phone}:${Date.now()}`;
+      const body = `Test message "${TEST_TEMPLATE.name}" sent from ${await this.societyName(societyId)} through its WhatsApp Business account.`;
+      try {
+        await sendTemplate(meta, phone, TEST_TEMPLATE, []);
+        await this.prisma.whatsappMessage.create({ data: { societyId, kind: 'TEST', dedupeKey: key, toPhone: phone, body, status: 'SENT', attempts: 1, sentAt: new Date() } });
+        return { sent: true };
+      } catch (err) {
+        return { sent: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+    const creds = await this.settings.creds();
+    if (!creds) return { sent: false, error: 'WhatsApp has not been set up on this platform yet. Ask the platform owner.' };
+    if (!s.sessionId) return { sent: false, error: 'Connect your WhatsApp number first.' };
     if (!phone) return { sent: false, error: 'That does not look like a mobile number.' };
     const society = await this.societyName(societyId);
     const key = `test:${phone}:${Date.now()}`;
@@ -550,6 +639,11 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       return { sent: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
+}
+
+/** An amount as the templates show it, without the rupee sign (the template has it): 2500 → "2,500". */
+function amountOf(d: Prisma.Decimal | number | string): string {
+  return Number(d).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 }
 
 /** "10 Nov 2026" for a date stored as a calendar day. */

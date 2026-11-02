@@ -22,6 +22,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { LateFeeService } from '../src/billing/late-fee.service';
 import { WhatsappService } from '../src/whatsapp/whatsapp.service';
 import { WhatsappSettingsStore } from '../src/whatsapp/whatsapp-settings.store';
+import { CLOUD_TEMPLATES } from '../src/whatsapp/whatsapp-cloud-templates';
 
 jest.setTimeout(120_000);
 
@@ -853,4 +854,255 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
       await http_().get('/api/v1/whatsapp/messages').set(auth(resident)).expect(403);
     });
   });
+
+  /* ─────────────────── a society that sends through its own Meta account ─────────────────── */
+
+  describe('a society that sends through its own Meta WhatsApp Business account', () => {
+    const TOKEN = 'EAAG-secret-token-123';
+    const PHONE_ID = '109876543210987';
+    const WABA = '208765432109876';
+    const graph = fakeGraph(TOKEN, PHONE_ID, WABA);
+    let base: string;
+
+    const connectCloud = (body: Record<string, unknown> = { phoneNumberId: PHONE_ID, accessToken: TOKEN, wabaId: WABA }, token = admin) =>
+      http_().put('/api/v1/whatsapp/cloud').set(auth(token)).send(body);
+    const resetGraph = () => {
+      graph.state.sent.length = 0; graph.state.fail = null; graph.state.validToken = TOKEN;
+      graph.state.templates = CLOUD_TEMPLATES.map((t) => ({ name: t.name, status: 'APPROVED', language: 'en' }));
+    };
+
+    beforeAll(async () => {
+      await new Promise<void>((r) => graph.server.listen(0, '127.0.0.1', r));
+      base = `http://127.0.0.1:${(graph.server.address() as AddressInfo).port}`;
+      process.env.WHATSAPP_CLOUD_API_BASE = base;
+    });
+    afterAll(async () => {
+      await http_().delete('/api/v1/whatsapp/cloud').set(auth(admin));
+      await prisma.societyWhatsappCloud.deleteMany({ where: { societyId } });
+      await new Promise((r) => graph.server.close(r));
+      delete process.env.WHATSAPP_CLOUD_API_BASE;
+    });
+    beforeEach(resetGraph);
+
+    it('checks the details with Meta before saving them, and refuses wrong ones in Meta\'s words', async () => {
+      const bad = await connectCloud({ phoneNumberId: PHONE_ID, accessToken: 'wrong', wabaId: WABA }).expect(400);
+      expect(messageOf(bad.body)).toMatch(/Meta did not accept/);
+      expect(await prisma.societyWhatsappCloud.count({ where: { societyId } })).toBe(0);
+      await connectCloud({ phoneNumberId: 'abc', accessToken: TOKEN }).expect(400);
+      await connectCloud({ phoneNumberId: PHONE_ID }).expect(400); // the first time a token is needed
+    });
+
+    it('is for the society admin only, and only once the platform owner has allowed it', async () => {
+      await connectCloud(undefined, accountant).expect(403);
+      await connectCloud(undefined, resident).expect(403);
+      await prisma.society.update({ where: { id: societyId }, data: { whatsappAllowed: false } });
+      try {
+        expect(messageOf((await connectCloud().expect(403)).body)).toMatch(/not switched on/);
+      } finally {
+        await prisma.society.update({ where: { id: societyId }, data: { whatsappAllowed: true } });
+      }
+    });
+
+    it('saves the token encrypted, never sends it back, and starts sending through Meta', async () => {
+      const res = (await connectCloud().expect(200)).body.data;
+      expect(res).toMatchObject({ provider: 'CLOUD', linked: true, status: 'ready', displayPhone: '919000022222', verifiedName: 'Sunrise Residency', phoneNumberId: PHONE_ID, wabaId: WABA, templatesReady: true });
+      expect(JSON.stringify(res)).not.toContain(TOKEN);
+      const row = await prisma.societyWhatsappCloud.findFirstOrThrow({ where: { societyId } });
+      expect(row.accessTokenEnc.startsWith('v1.')).toBe(true);
+      expect(row.accessTokenEnc).not.toContain(TOKEN);
+      expect(JSON.stringify(await prisma.auditLog.findMany({ where: { entityType: 'SocietyWhatsappCloud' } }))).not.toContain(TOKEN);
+      expect((await prisma.society.findUniqueOrThrow({ where: { id: societyId } })).whatsappProvider).toBe('CLOUD');
+      // A blank token keeps the saved one.
+      await connectCloud({ phoneNumberId: PHONE_ID, accessToken: '', wabaId: WABA }).expect(200);
+    });
+
+    it('queues a published bill as the approved template, filled in, and sends exactly that', async () => {
+      await connectCloud().expect(200);
+      await setConfig({ whatsappEnabled: true });
+      const f = await newFlat(); const code = `W-${flatNo}`;
+      await addPerson(f, SystemRole.RESIDENT, 'OWNER', { isPrimary: true, phone: mobile(751) });
+      const p = await newPeriod('REVIEW');
+      await newBill(p, f, 3500, code, false);
+      await http_().post(`/api/v1/billing/periods/${p}/publish`).set(auth(admin)).expect(201);
+
+      const queued = await rows({ kind: 'BILL_PUBLISHED' });
+      expect(queued).toHaveLength(1);
+      expect(queued[0].toPhone).toBe(wa(751));
+      expect(queued[0].params).toMatchObject({ flat: code, amount: '3,500' });
+      // What the history shows is the template's wording, not the free text a linked number would send.
+      expect(queued[0].body).toContain(`maintenance bill for Flat ${code} is ready. Amount due: ₹3,500.`);
+      expect(queued[0].body).not.toContain('*');
+
+      expect(await drain()).toMatchObject({ sent: 1, failed: 0, stopped: null });
+      expect(gw.state.sent).toHaveLength(0); // nothing went through the linked-number gateway
+      expect(graph.state.sent).toHaveLength(1);
+      const sent = graph.state.sent[0];
+      expect(sent).toMatchObject({ phoneId: PHONE_ID, auth: `Bearer ${TOKEN}`, to: wa(751), template: 'ng_bill_published', language: 'en' });
+      expect(sent.params).toHaveLength(6);
+      expect(sent.params[2]).toBe(code);
+      expect(sent.params[3]).toBe('3,500');
+      expect((await rows({ kind: 'BILL_PUBLISHED' }))[0].status).toBe('SENT');
+    });
+
+    it('sends a reminder, a late fine and a payment receipt as their own templates', async () => {
+      await connectCloud().expect(200);
+      await setConfig({ whatsappEnabled: true });
+      await settleOthers();
+      const f = await newFlat(); const code = `W-${flatNo}`;
+      const person = await addPerson(f, SystemRole.RESIDENT, 'OWNER', { isPrimary: true, phone: mobile(752) });
+      const p = await newPeriod('PUBLISHED', '2030-01-10');
+      const bill = await newBill(p, f, 2000, code);
+
+      // The society's own reminder wording is for a linked number; Meta gets the approved template.
+      await setConfig({ reminderTemplate: 'MY OWN WORDING {name}' });
+      expect(await whatsapp.enqueueReminders(societyId, new Date('2044-03-05T06:00:00Z'))).toBe(1);
+      await prisma.maintenanceBill.update({ where: { id: bill.id }, data: { lateFee: D(150), pendingAmount: D(2150) } });
+      expect(await whatsapp.enqueueFine(societyId, bill.id)).toBe(true);
+      const pay = await prisma.paymentSubmission.create({
+        data: { societyId, flatId: f, userId: person.userId, maintenanceBillId: bill.id, amount: D(2150), paymentDate: new Date('2044-03-06'), paymentMethod: 'UPI', status: 'APPROVED' },
+      });
+      expect(await whatsapp.enqueuePaid(societyId, pay.id)).toBe(true);
+
+      expect((await rows({ kind: 'REMINDER' }))[0].body).not.toContain('MY OWN WORDING');
+      expect(await drain()).toMatchObject({ sent: 3, failed: 0 });
+      expect(graph.state.sent.map((m) => m.template).sort()).toEqual(['ng_late_fine', 'ng_payment_received', 'ng_payment_reminder']);
+      const fine = graph.state.sent.find((m) => m.template === 'ng_late_fine') as { params: string[] };
+      expect(fine.params).toEqual([expect.any(String), expect.any(String), code, '150', '2,150', expect.any(String)]);
+      await setConfig({ reminderTemplate: '' });
+    });
+
+    it('holds a society\'s messages when Meta refuses its token, while another society still sends', async () => {
+      await connectCloud().expect(200);
+      await prisma.whatsappMessage.create({ data: { societyId, kind: 'PAYMENT_RECEIVED', dedupeKey: `tok-${UNIQUE}`, sendAfter: new Date(Date.now() - 5_000), toPhone: wa(43), body: 'b', params: { name: 'A', amount: '1', flat: 'F', paidOn: 'd', balance: '0', society: 'S' } } });
+      graph.state.validToken = 'rotated';
+      const out = await drain();
+      expect(out.sent).toBe(0);
+      expect(out.stopped).toMatch(/Meta refused the access token/);
+      const row = (await rows({ dedupeKey: `tok-${UNIQUE}` }))[0];
+      expect(row).toMatchObject({ status: 'PENDING', attempts: 0 }); // not blamed on the message
+      expect((await http_().get('/api/v1/whatsapp/cloud').set(auth(admin)).expect(200)).body.data).toMatchObject({ status: 'token_invalid' });
+      graph.state.validToken = TOKEN;
+      expect(await drain()).toMatchObject({ sent: 1 });
+    });
+
+    it('holds messages when a template is not approved, and fails one for a number that cannot receive', async () => {
+      await connectCloud().expect(200);
+      const params = { name: 'A', amount: '1', flat: 'F', paidOn: 'd', balance: '0', society: 'S' };
+      await prisma.whatsappMessage.create({ data: { societyId, kind: 'PAYMENT_RECEIVED', dedupeKey: `tpl-${UNIQUE}`, sendAfter: new Date(Date.now() - 5_000), toPhone: wa(44), body: 'b', params } });
+      graph.state.fail = { status: 400, code: 132001, message: 'Template name does not exist in the translation' };
+      const held = await drain();
+      expect(held.stopped).toMatch(/template is not ready/);
+      expect((await rows({ dedupeKey: `tpl-${UNIQUE}` }))[0]).toMatchObject({ status: 'PENDING', attempts: 0 });
+
+      graph.state.fail = { status: 400, code: 131026, message: 'Message undeliverable' };
+      expect(await drain()).toMatchObject({ sent: 0, failed: 1 });
+      expect((await rows({ dedupeKey: `tpl-${UNIQUE}` }))[0]).toMatchObject({ status: 'FAILED' });
+    });
+
+    it('fails what was queued for a linked number rather than sending it as a template', async () => {
+      await connectCloud().expect(200);
+      await prisma.whatsappMessage.create({ data: { societyId, kind: 'REMINDER', dedupeKey: `old-${UNIQUE}`, sendAfter: new Date(Date.now() - 5_000), toPhone: wa(45), body: 'free text' } });
+      expect(await drain()).toMatchObject({ sent: 0, failed: 1 });
+      expect(graph.state.sent).toHaveLength(0);
+    });
+
+    it('sends a test with Meta\'s own hello_world template', async () => {
+      await connectCloud().expect(200);
+      const ok = await http_().post('/api/v1/whatsapp/test').set(auth(admin)).send({ phone: `+91 ${mobile(46)}` }).expect(200);
+      expect(ok.body.data).toEqual({ sent: true });
+      expect(graph.state.sent.at(-1)).toMatchObject({ template: 'hello_world', language: 'en_US', to: wa(46), params: [] });
+      graph.state.fail = { status: 400, code: 131030, message: 'Recipient phone number not in allowed list' };
+      const no = (await http_().post('/api/v1/whatsapp/test').set(auth(admin)).send({ phone: mobile(47) }).expect(200)).body.data;
+      expect(no).toMatchObject({ sent: false });
+      expect(no.error).toMatch(/not in allowed list/);
+    });
+
+    it('submits the four templates that are missing, and leaves existing ones alone', async () => {
+      await connectCloud().expect(200);
+      graph.state.templates = [{ name: 'ng_late_fine', status: 'PENDING', language: 'en' }];
+      const res = (await http_().post('/api/v1/whatsapp/cloud/templates').set(auth(admin)).expect(200)).body.data;
+      expect(res.submitted.sort()).toEqual(['ng_bill_published', 'ng_payment_received', 'ng_payment_reminder']);
+      expect(graph.state.created.map((c) => c.name).sort()).toEqual(res.submitted.sort());
+      expect(graph.state.created[0]).toMatchObject({ language: 'en', category: 'UTILITY' });
+      expect(graph.state.created[0].components[0].example.body_text[0].length).toBe(graph.state.created[0].components[0].text.match(/\{\{\d+\}\}/g).length);
+      expect(res.templates.find((t: any) => t.name === 'ng_late_fine').status).toBe('PENDING');
+      expect(res.templatesReady).toBe(false);
+      await http_().post('/api/v1/whatsapp/cloud/templates').set(auth(accountant)).expect(403);
+    });
+
+    it('shows the admin and the mobile app whether it is connected and sending from its own business number', async () => {
+      await connectCloud().expect(200);
+      const res = (await http_().get('/api/v1/whatsapp/status').set(auth(accountant)).expect(200)).body.data;
+      expect(res).toMatchObject({ provider: 'CLOUD', configured: true, allowed: true, hasSession: true, session: 'ready', sendingFrom: '919000022222', templatesReady: true });
+    });
+
+    it('can be switched back to a linked number, which drops what was waiting for the other way', async () => {
+      await connectCloud().expect(200);
+      await prisma.whatsappMessage.create({ data: { societyId, kind: 'REMINDER', dedupeKey: `sw-${UNIQUE}`, sendAfter: new Date(Date.now() - 5_000), toPhone: wa(48), body: 'b', params: {} } });
+      const res = (await http_().put('/api/v1/whatsapp/provider').set(auth(admin)).send({ provider: 'OPENWA' }).expect(200)).body.data;
+      expect(res.provider).toBe('OPENWA');
+      expect((await rows({ dedupeKey: `sw-${UNIQUE}` }))[0]).toMatchObject({ status: 'FAILED' });
+      // And back again without re-entering anything: the account is still saved.
+      expect((await http_().put('/api/v1/whatsapp/provider').set(auth(admin)).send({ provider: 'CLOUD' }).expect(200)).body.data.provider).toBe('CLOUD');
+      await http_().put('/api/v1/whatsapp/provider').set(auth(admin)).send({ provider: 'FAX' }).expect(400);
+      await http_().put('/api/v1/whatsapp/provider').set(auth(accountant)).send({ provider: 'OPENWA' }).expect(403);
+    });
+
+    it('stops sending when the platform owner switches the society off, even with a valid account', async () => {
+      await connectCloud().expect(200);
+      await prisma.whatsappMessage.create({ data: { societyId, kind: 'PAYMENT_RECEIVED', dedupeKey: `off-${UNIQUE}`, sendAfter: new Date(Date.now() - 5_000), toPhone: wa(49), body: 'b', params: {} } });
+      await prisma.society.update({ where: { id: societyId }, data: { whatsappAllowed: false } });
+      try {
+        expect(await drain()).toMatchObject({ sent: 0, failed: 1 });
+        expect(graph.state.sent).toHaveLength(0);
+        expect((await http_().get('/api/v1/whatsapp/status').set(auth(admin)).expect(200)).body.data).toMatchObject({ allowed: false });
+      } finally {
+        await prisma.society.update({ where: { id: societyId }, data: { whatsappAllowed: true } });
+      }
+    });
+
+    it('forgets the account on disconnect and goes back to the linked number', async () => {
+      await connectCloud().expect(200);
+      const res = (await http_().delete('/api/v1/whatsapp/cloud').set(auth(admin)).expect(200)).body.data;
+      expect(res).toMatchObject({ provider: 'OPENWA', linked: false });
+      expect(await prisma.societyWhatsappCloud.count({ where: { societyId } })).toBe(0);
+      expect((await http_().put('/api/v1/whatsapp/provider').set(auth(admin)).send({ provider: 'CLOUD' }).expect(400)).body).toBeDefined();
+    });
+  });
 });
+
+/** A stand-in for Meta's Graph API: the phone number, message templates, and sending a template. */
+function fakeGraph(token: string, phoneId: string, wabaId: string) {
+  const state = {
+    validToken: token,
+    sent: [] as { phoneId: string; auth: string; to: string; template: string; language: string; params: string[] }[],
+    created: [] as any[],
+    templates: [] as { name: string; status: string; language: string }[],
+    fail: null as null | { status: number; code: number; message: string },
+  };
+  const server = http.createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      const send = (status: number, body: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+      const error = (status: number, code: number, message: string) => send(status, { error: { message, code, type: 'OAuthException' } });
+      if (req.headers.authorization !== `Bearer ${state.validToken}`) return error(401, 190, 'Invalid OAuth access token.');
+      const url = new URL(req.url ?? '', 'http://x');
+      const parts = url.pathname.split('/').filter(Boolean); // [version, id, ...]
+      const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : {};
+      if (req.method === 'GET' && parts.length === 2 && parts[1] === phoneId) return send(200, { id: phoneId, display_phone_number: '+91 90000 22222', verified_name: 'Sunrise Residency' });
+      if (req.method === 'POST' && parts[1] === phoneId && parts[2] === 'messages') {
+        if (state.fail) return error(state.fail.status, state.fail.code, state.fail.message);
+        const t = body.template;
+        state.sent.push({ phoneId, auth: String(req.headers.authorization), to: body.to, template: t.name, language: t.language.code, params: (t.components?.[0]?.parameters ?? []).map((p: any) => p.text) });
+        return send(200, { messaging_product: 'whatsapp', messages: [{ id: `wamid.${state.sent.length}` }] });
+      }
+      if (parts[1] === wabaId && parts[2] === 'message_templates') {
+        if (req.method === 'GET') return send(200, { data: state.templates });
+        if (req.method === 'POST') { state.created.push(body); state.templates.push({ name: body.name, status: 'PENDING', language: body.language }); return send(200, { id: '1', status: 'PENDING', category: body.category }); }
+      }
+      return error(404, 100, 'Unsupported request');
+    });
+  });
+  return { state, server };
+}

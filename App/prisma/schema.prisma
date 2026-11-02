@@ -370,6 +370,9 @@ model Society {
   // The society's own WhatsApp session on the gateway (OpenWA): each society links its own number, so its messages
   // never go out from another's. Set when the society presses Connect a phone; null until then.
   whatsappSessionId   String?
+  // How this society sends WhatsApp messages: OPENWA (its own number linked to the platform's gateway) or CLOUD (its own
+  // Meta WhatsApp Business Cloud API account, see SocietyWhatsappCloud). Chosen by the society.
+  whatsappProvider    String    @default("OPENWA")
   isActive            Boolean   @default(true)
   // Resident self-registration via join code
   joinCode            String?   @unique
@@ -2041,6 +2044,9 @@ model WhatsappMessage {
   recipientUserId String?
   toPhone         String
   body            String
+  // The values the message was written from (name, flat, month, ...). The Cloud API sends an approved template filled with
+  // these, not free text; `body` is what the recipient reads, kept for the history.
+  params          Json?
   // PENDING | SENDING | SENT | FAILED
   status          String    @default("PENDING")
   attempts        Int       @default(0)
@@ -2068,4 +2074,23 @@ model PlatformWhatsappSettings {
   updatedAt   DateTime @updatedAt
 
   @@map("platform_whatsapp_settings")
+}
+
+/// A society's own Meta WhatsApp Business Cloud API account: the official way to send WhatsApp messages. One row per
+/// society, created when its admin connects it. The access token is encrypted (AES-256-GCM) and never sent back to
+/// any client. No foreign keys, like the message log: the row goes with its society through the schema-derived purge.
+model SocietyWhatsappCloud {
+  id             String   @id @default(uuid())
+  societyId      String   @unique
+  phoneNumberId  String
+  // The WhatsApp Business Account id; needed only to create and list message templates.
+  wabaId         String?
+  accessTokenEnc String
+  displayPhone   String?
+  verifiedName   String?
+  updatedById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("society_whatsapp_cloud")
 }

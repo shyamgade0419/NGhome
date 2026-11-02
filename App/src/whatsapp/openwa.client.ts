@@ -32,6 +32,8 @@ export class GatewayError extends Error {
     readonly gatewayDown = false,
     /** This message can never be delivered (the number is not on WhatsApp): do not retry. */
     readonly permanent = false,
+    /** With `gatewayDown`: only this society's connection is unusable (its token, its template), so the others can still send. */
+    readonly societyOnly = false,
   ) {
     super(message);
   }

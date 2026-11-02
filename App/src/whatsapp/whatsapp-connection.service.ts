@@ -156,16 +156,33 @@ export class WhatsappConnectionService {
 
   /**
    * For the platform owner: every society that has linked a number, whether it is connected, and any session on the
-   * gateway that belongs to no society (left behind, using memory for nothing).
+   * gateway that belongs to no society (left behind, using memory for nothing). Societies that send through their own
+   * Meta account are listed too, marked `cloud`: they use nothing on the gateway.
    */
   async overview() {
     const creds = await this.settings.creds();
     const societies = await this.prisma.society.findMany({
       where: { whatsappSessionId: { not: null } },
-      select: { id: true, name: true, displayName: true, whatsappAllowed: true, whatsappSessionId: true, deletedAt: true },
+      select: { id: true, name: true, displayName: true, whatsappAllowed: true, whatsappSessionId: true, whatsappProvider: true, deletedAt: true },
       orderBy: { createdAt: 'asc' },
     });
-    if (!creds) return { configured: false, reachable: false, problem: null as string | null, sessions: [], orphans: [] };
+    const cloudRows = await this.prisma.societyWhatsappCloud.findMany({ select: { societyId: true, displayPhone: true } });
+    const cloudSocieties = (
+      await this.prisma.society.findMany({
+        where: { id: { in: cloudRows.map((c) => c.societyId) }, whatsappProvider: 'CLOUD' },
+        select: { id: true, name: true, displayName: true, whatsappAllowed: true, deletedAt: true },
+        orderBy: { createdAt: 'asc' },
+      })
+    ).map((c) => ({
+      societyId: c.id,
+      name: c.displayName ?? c.name,
+      allowed: c.whatsappAllowed,
+      deleted: !!c.deletedAt,
+      provider: 'CLOUD' as const,
+      status: 'cloud' as string | null,
+      phone: cloudRows.find((r) => r.societyId === c.id)?.displayPhone ?? null,
+    }));
+    if (!creds) return { configured: false, reachable: false, problem: null as string | null, sessions: [], cloud: cloudSocieties, orphans: [] };
     let live: Awaited<ReturnType<typeof listSessions>> = [];
     let problem: string | null = null;
     try {
@@ -184,9 +201,12 @@ export class WhatsappConnectionService {
         name: s.displayName ?? s.name,
         allowed: s.whatsappAllowed,
         deleted: !!s.deletedAt,
+        // A society that moved to its Meta account keeps its linked number (stopped) but sends through Meta.
+        provider: s.whatsappProvider === 'CLOUD' ? ('CLOUD' as const) : ('OPENWA' as const),
         status: problem ? null : (byId.get(s.whatsappSessionId as string)?.status ?? 'missing'),
         phone: byId.get(s.whatsappSessionId as string)?.phone ?? null,
       })),
+      cloud: cloudSocieties,
       orphans: live.filter((s) => !owned.has(s.id)).map((s) => ({ id: s.id, name: s.name, status: s.status, phone: s.phone })),
     };
   }

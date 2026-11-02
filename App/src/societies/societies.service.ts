@@ -486,8 +486,14 @@ export class SocietiesService {
     if ((dto as { whatsappEnabled?: boolean }).whatsappEnabled === true && !society.whatsappAllowed) {
       throw new ForbiddenException('WhatsApp messages are not switched on for your society. Ask the platform owner to allow them.');
     }
-    if ((dto as { whatsappEnabled?: boolean }).whatsappEnabled === true && !society.whatsappSessionId) {
-      throw new BadRequestException('Connect your WhatsApp number first (Settings → Billing Rules → WhatsApp → Connect a phone).');
+    if ((dto as { whatsappEnabled?: boolean }).whatsappEnabled === true) {
+      if (society.whatsappProvider === 'CLOUD') {
+        if ((await this.prisma.societyWhatsappCloud.count({ where: { societyId } })) === 0) {
+          throw new BadRequestException('Connect your Meta WhatsApp Business account first (Settings → Billing Rules → WhatsApp).');
+        }
+      } else if (!society.whatsappSessionId) {
+        throw new BadRequestException('Connect your WhatsApp number first (Settings → Billing Rules → WhatsApp → Connect a phone).');
+      }
     }
 
     // upiId and waterBillingEnabled have no DB column; fold both into the

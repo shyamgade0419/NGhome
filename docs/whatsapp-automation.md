@@ -11,9 +11,19 @@ NG Home can send WhatsApp messages by itself:
 
 A flat's contact is its **tenant**, or its **owner** if there is no tenant (among the people who have a phone number).
 
-**Each society uses its own WhatsApp number.** The platform runs one WhatsApp gateway (OpenWA); every society links its own
-number to it as its own session, and its messages go out from that number only. One society never sends from another's number
-and never sees it.
+**Each society uses its own WhatsApp number**, in one of two ways that the society chooses between (Settings → Billing Rules →
+WhatsApp → *How your messages are sent*):
+
+| | Link my own number (OpenWA) | Official WhatsApp Business (Meta Cloud API) |
+| --- | --- | --- |
+| What it is | the society scans a QR code with a dedicated SIM; the platform's OpenWA gateway runs it | the society's own Meta WhatsApp Business account |
+| Cost | free (the server's memory: 300–500 MB per number) | Meta bills the society's own account per delivered message; NG Home adds nothing |
+| Ban risk | yes, it is unofficial, so sending is slow, daytime-only, capped | none |
+| Wording | the society's own reminder wording; fixed wording for the other three | four fixed templates Meta must approve first |
+| Needs the platform's gateway | yes | no |
+
+Either way, one society never sends from another's number and never sees it, and the platform owner's **Allowed** switch on
+Platform console → Societies governs both.
 
 ## Who does what
 
@@ -22,7 +32,8 @@ and never sees it.
 | **Platform owner** | Coolify | runs the OpenWA gateway (once) |
 | **Platform owner** | Platform console → Settings → WhatsApp messages | saves the gateway's address and key (once) |
 | **Platform owner** | Platform console → Societies → **WhatsApp** pill | allows a society to use WhatsApp (every society starts **Off**) |
-| **Society admin** | Settings → Billing Rules → WhatsApp → **Your WhatsApp number** | presses **Connect a phone** and scans the QR code with the society's own number |
+| **Society admin** | Settings → Billing Rules → WhatsApp → **Link my own number** | presses **Connect a phone** and scans the QR code with the society's own number |
+| **Society admin** | Settings → Billing Rules → WhatsApp → **Official WhatsApp Business** | instead of the QR code: enters the Meta phone number ID, access token and (optionally) Business Account ID, then sends the four templates to Meta |
 | **Society admin** | Settings → Billing Rules → WhatsApp | writes the reminder wording, picks the reminder days, sends a test, switches the messages on |
 
 ## How it works
@@ -102,3 +113,41 @@ Settings → Billing Rules → WhatsApp shows whether the society's number is co
 many failed. If it says the number needs a QR code, press **Connect a phone** again. Queued messages then go out by themselves.
 
 A ban or a logout affects only the society whose number it is.
+
+## The official WhatsApp Business option (Meta Cloud API)
+
+A society that wants no QR code and no ban risk connects its own Meta WhatsApp Business account. It is the society's account,
+so the society pays Meta directly and the platform owner has nothing to set up.
+
+**What the society needs from Meta:** a business account with a WhatsApp number registered to the Cloud API, a payment method
+in WhatsApp Manager, the **Phone number ID**, a **token** (a system-user token with `whatsapp_business_messaging` and
+`whatsapp_business_management`, because the 24-hour test token expires), and, so NG Home can create the templates for it, the
+**WhatsApp Business Account ID**.
+
+**Templates.** WhatsApp lets a business send free text only within 24 hours of the person messaging it, so every automatic
+message goes as a template Meta approved beforehand. NG Home has four, in the UTILITY category: `ng_bill_published`,
+`ng_payment_reminder`, `ng_late_fine` and `ng_payment_received`. **Send the missing templates to Meta** creates them on the
+society's account, and the panel shows each one's verdict (Waiting for Meta, Approved, Rejected). Approval usually takes minutes
+to a day. Until all four are approved, messages wait in the queue. The wording is fixed once approved, so the society's own
+reminder wording applies only to WhatsApp links sent by hand. The templates are defined in
+`App/src/whatsapp/whatsapp-cloud-templates.ts`.
+
+**How it behaves.**
+
+- Connecting checks the details with Meta first, so a wrong id or token is refused with Meta's own explanation. The token is
+  stored encrypted and never shown again; a blank token field keeps the saved one.
+- The same outbox, the same rules about who gets a message (tenant, else owner), the same reminder days, once per event, and
+  the same 9 am to 8 pm window. There is no 250-a-day cap of our own and the 6 to 14 second gap is only 0.25 s, because Meta
+  has its own limits and nothing here can get the number banned.
+- If Meta refuses the token, the account is limited, or a template is not approved, only that society's messages wait (the
+  others still send) and its settings screen says why. A number that is not on WhatsApp, or not on the account's test list,
+  fails that one message.
+- **Send test** sends Meta's own pre-approved `hello_world` template, since a test to a number that never messaged the business
+  has to be a template too.
+- Choosing the other way, or disconnecting, drops what was waiting, because it was written for the other way. Moving to Meta also
+  stops the society's OpenWA session to free the gateway's memory; the link to the phone is kept.
+- Not built: Meta's webhook for delivery receipts (a message shows Sent once Meta accepts it, not Delivered or Read), and
+  replies from residents are not read.
+
+Environment (optional): `WHATSAPP_CLOUD_API_VERSION` (default `v21.0`), `WHATSAPP_CLOUD_API_BASE` (default
+`https://graph.facebook.com`), `WHATSAPP_CLOUD_GAP_MS` (default 250).
