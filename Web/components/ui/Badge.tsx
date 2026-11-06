@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { Tone, deepen, tint, tones } from '@/lib/tones';
 import { HTMLAttributes } from 'react';
 
 type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'muted';
@@ -16,16 +17,23 @@ const variants: Record<BadgeVariant, string> = {
   muted: 'bg-slate-50 text-slate-500',
 };
 
-export function Badge({ className, variant = 'default', children, ...props }: BadgeProps) {
+// Success, warning and info carry the app's accent colours: a soft tint behind a dot and text in that colour, darkened.
+const TONED: Partial<Record<BadgeVariant, Tone>> = { success: 'green', warning: 'amber', info: 'blue' };
+
+export function Badge({ className, variant = 'default', children, style, ...props }: BadgeProps) {
+  const tone = TONED[variant];
+  const color = tone ? tones[tone] : null;
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
-        variants[variant],
+        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium',
+        !color && variants[variant],
         className,
       )}
+      style={color ? { backgroundColor: tint(color, 0.86), color: deepen(color, 0.45), ...style } : style}
       {...props}
     >
+      <span aria-hidden="true" className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ backgroundColor: color ?? 'currentColor' }} />
       {children}
     </span>
   );

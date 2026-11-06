@@ -17,12 +17,17 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusBadge, paymentStatusVariant } from '@/components/ui/StatusBadge';
+import { IconChip } from '@/components/ui/IconChip';
+import { SummaryStrip } from '@/components/home/SummaryStrip';
+import type { Tone } from '@/theme/tones';
 import { colors, spacing, typography, radius } from '@/theme';
 import { PaymentSubmission } from '@/types/billing.types';
 import { inr } from '@/utils/format';
 
 const STATUS_FILTERS = ['ALL', 'PENDING', 'UNDER_REVIEW', 'APPROVED', 'REJECTED'] as const;
 type Filter = (typeof STATUS_FILTERS)[number];
+
+const STATUS_TONE: Record<string, Tone> = { PENDING: 'amber', UNDER_REVIEW: 'blue', APPROVED: 'green', REJECTED: 'coral' };
 
 export default function AdminPaymentsScreen() {
   const router = useRouter();
@@ -36,6 +41,13 @@ export default function AdminPaymentsScreen() {
         limit: 50,
       }),
   });
+
+  // How many are waiting in each state, for the strip at the top. Each is a tiny request that only reads the total.
+  const useCount = (status: string) =>
+    useQuery({ queryKey: ['admin-payments-count', status], queryFn: () => paymentsApi.getAllPayments({ status, limit: 1 }).then((r) => r?.meta?.total ?? 0), staleTime: 30_000 });
+  const { data: toReview = 0 } = useCount('PENDING');
+  const { data: underReview = 0 } = useCount('UNDER_REVIEW');
+  const { data: approved = 0 } = useCount('APPROVED');
 
   const openWhatsApp = (phone: string | null | undefined) => {
     if (!phone) return;
@@ -51,6 +63,7 @@ export default function AdminPaymentsScreen() {
       activeOpacity={0.8}
     >
       <View style={styles.cardTop}>
+        <IconChip tone={STATUS_TONE[item.status] ?? 'blue'} text={item.flat?.flatCode ?? '#'} />
         <View style={styles.flatInfo}>
           <Text style={styles.flatNumber}>
             {item.flat?.flatCode ?? item.flatId}
@@ -89,6 +102,14 @@ export default function AdminPaymentsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScreenHeader title="Payment Approvals" />
+
+      <SummaryStrip
+        tiles={[
+          { key: 'p', tone: 'amber', icon: 'time-outline', label: 'To review', value: String(toReview), onPress: () => setFilter('PENDING') },
+          { key: 'u', tone: 'blue', icon: 'eye-outline', label: 'Under review', value: String(underReview), onPress: () => setFilter('UNDER_REVIEW') },
+          { key: 'a', tone: 'green', icon: 'checkmark-circle-outline', label: 'Approved', value: String(approved), onPress: () => setFilter('APPROVED') },
+        ]}
+      />
 
       <View style={styles.filterRow}>
         <FlatList
@@ -160,14 +181,14 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     gap: spacing.md,
   },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   cardTopRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   waBtn: { padding: 2 },
-  flatInfo: {},
+  flatInfo: { flex: 1 },
   flatNumber: { ...typography.headingSmall, color: colors.text },
   submittedAt: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },
   cardBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  amount: { ...typography.headingMedium, color: colors.primary },
+  amount: { ...typography.headingMedium, color: colors.text },
   method: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },
   ref: { ...typography.bodySmall, color: colors.textSecondary, fontFamily: 'monospace' },
 });

@@ -21,7 +21,9 @@ import { Card } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
-import { formatCurrency, formatDate, formatDateTime, EXPENSE_CATEGORIES } from '@/lib/utils';
+import { formatCurrency, formatDate, formatDateTime, EXPENSE_CATEGORIES, parseDecimalLike } from '@/lib/utils';
+import { StatCard } from '@/components/ui/StatCard';
+import { Clock, List } from 'lucide-react';
 import {
   changedFields, describeChanges, editValuesOf, paidAmountEffect, validateEdit,
   type ExpenseEditValues, type HistoryEntry,
@@ -209,6 +211,13 @@ export default function ExpensesPage() {
         }
       />
       <PageContainer className="space-y-4">
+        {!!data?.data?.length && (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <StatCard label="Total shown" value={formatCurrency((data.data as any[]).reduce((sum, e) => sum + parseDecimalLike(e.amount), 0))} icon={Wallet} tone="coral" />
+            <StatCard label="Expenses" value={String(data.data.length)} icon={List} tone="blue" />
+            <StatCard label="To approve" value={String((data.data as any[]).filter((e) => e.status === 'PENDING').length)} icon={Clock} tone="amber" />
+          </div>
+        )}
         <div className="flex gap-3">
           <Select
             options={CATEGORY_OPTIONS}

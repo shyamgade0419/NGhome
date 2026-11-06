@@ -17,6 +17,8 @@ import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
+import { StatCard } from '@/components/ui/StatCard';
+import { CheckCircle2, Eye } from 'lucide-react';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
@@ -39,6 +41,14 @@ function PaymentsContent() {
         .then((r) => r.data),
   });
 
+  // How many are in each state, for the tiles at the top. Each is a tiny request that only reads the total.
+  const useCount = (s: string) =>
+    useQuery({ queryKey: ['payments-count', s], queryFn: () => paymentsApi.list({ status: s, limit: 1 }).then((r) => (r.data as any)?.meta?.total ?? 0), staleTime: 30_000 });
+  const { data: pendingCount = 0 } = useCount('PENDING');
+  const { data: reviewCount = 0 } = useCount('UNDER_REVIEW');
+  const { data: approvedCount = 0 } = useCount('APPROVED');
+  const pick = (s: string) => { setStatus(status === s ? '' : s); setPage(1); };
+
   return (
     <>
       <Header
@@ -46,6 +56,12 @@ function PaymentsContent() {
         subtitle="Payment verification & history"
       />
       <PageContainer className="space-y-4">
+        <div className="grid grid-cols-3 gap-3">
+          <StatCard label="To review" value={String(pendingCount)} icon={Clock} compact tone="amber" onClick={() => pick('PENDING')} selected={status === 'PENDING'} />
+          <StatCard label="Under review" value={String(reviewCount)} icon={Eye} compact tone="blue" onClick={() => pick('UNDER_REVIEW')} selected={status === 'UNDER_REVIEW'} />
+          <StatCard label="Approved" value={String(approvedCount)} icon={CheckCircle2} compact tone="green" onClick={() => pick('APPROVED')} selected={status === 'APPROVED'} />
+        </div>
+
         <div className="flex gap-3">
           <Select
             options={STATUS_OPTIONS}

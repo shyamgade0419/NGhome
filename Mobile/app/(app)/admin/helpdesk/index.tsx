@@ -10,6 +10,7 @@ import { helpdeskApi, MaintenanceRequest } from '@/api/endpoints/helpdesk.api';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { SummaryStrip } from '@/components/home/SummaryStrip';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { RequestThread } from '@/components/helpdesk/RequestThread';
@@ -176,11 +177,29 @@ export default function AdminHelpdeskScreen() {
   });
 
   const requests: MaintenanceRequest[] = data?.data ?? [];
+  // The counts are of every request, whichever filter is chosen below, so they read the unfiltered list (the same
+  // query as the "All" filter, so it costs nothing extra when All is chosen).
+  const { data: everything } = useQuery({
+    queryKey: ['helpdesk-admin', ''],
+    queryFn: () => helpdeskApi.list({ status: undefined, limit: 100 }),
+  });
+  const all: MaintenanceRequest[] = everything?.data ?? [];
+  const countOf = (status: string) => all.filter((r) => r.status === status).length;
   const open = requests.filter(r => r.status === 'OPEN').length;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScreenHeader title="Helpdesk" />
+
+      {all.length > 0 && (
+        <SummaryStrip
+          tiles={[
+            { key: 'o', tone: 'amber', icon: 'alert-circle-outline', label: 'Open', value: String(countOf('OPEN')), onPress: () => setFilterStatus('OPEN') },
+            { key: 'i', tone: 'blue', icon: 'build-outline', label: 'In progress', value: String(countOf('IN_PROGRESS')), onPress: () => setFilterStatus('IN_PROGRESS') },
+            { key: 'r', tone: 'green', icon: 'checkmark-circle-outline', label: 'Resolved', value: String(countOf('RESOLVED')), onPress: () => setFilterStatus('RESOLVED') },
+          ]}
+        />
+      )}
 
       {/* Summary + filter */}
       <View style={styles.filterBar}>

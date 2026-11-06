@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { ButtonHTMLAttributes, forwardRef } from 'react';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'success';
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
 }
@@ -14,6 +14,8 @@ const variants = {
   outline: 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus:ring-slate-400',
   ghost: 'text-slate-600 hover:bg-slate-100 focus:ring-slate-400',
   danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
+  // Dark enough for white text (5:1): the colour of approving and paying.
+  success: 'bg-emerald-700 text-white hover:bg-emerald-800 focus:ring-emerald-500',
 };
 
 const sizes = {
@@ -28,7 +30,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       ref={ref}
       disabled={disabled || loading}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors',
+        'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-[color,background-color,border-color,transform]',
+        'motion-safe:active:scale-[0.97]',
         'focus:outline-none focus:ring-2 focus:ring-offset-1',
         'disabled:pointer-events-none disabled:opacity-50',
         variants[variant],

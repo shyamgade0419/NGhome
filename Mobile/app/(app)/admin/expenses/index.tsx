@@ -24,11 +24,13 @@ import { useIsSocietyAdmin } from '@/hooks/useAuth';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { IconChip } from '@/components/ui/IconChip';
+import { SummaryStrip } from '@/components/home/SummaryStrip';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { colors, spacing, typography, radius } from '@/theme';
-import { inr } from '@/utils/format';
+import { inr, toNum } from '@/utils/format';
 import { expensesApi } from '@/api/endpoints/expenses.api';
 import { ReceiptPicker } from '@/components/expenses/ReceiptPicker';
 import { ExpenseReceipts } from '@/components/expenses/ExpenseReceipts';
@@ -365,6 +367,10 @@ export default function ExpensesScreen() {
       Alert.alert('Error', e?.response?.data?.message ?? 'Failed to reject.'),
   });
 
+  const shown = data?.data ?? [];
+  const shownTotal = shown.reduce((sum, e) => sum + toNum(e.amount), 0);
+  const shownPending = shown.filter((e) => e.status === 'PENDING').length;
+
   const { data: accounts } = useQuery({ queryKey: ['accounts'], queryFn: accountsApi.list });
   // Funds the expense can be paid out of (the corpus, a festival fund). Optional: most are paid from general money.
   const { data: funds } = useQuery({ queryKey: ['funds'], queryFn: fundsApi.list });
@@ -448,6 +454,7 @@ export default function ExpensesScreen() {
   const renderItem = ({ item }: { item: Expense }) => (
     <Card style={styles.card}>
       <View style={styles.cardTop}>
+        <IconChip tone={item.status === 'PAID' ? 'green' : item.status === 'REJECTED' ? 'coral' : 'amber'} icon="wallet-outline" />
         <View style={styles.cardLeft}>
           <Text style={styles.category}>{(item.category?.name ?? item.categoryName)?.replace(/_/g, ' ')}</Text>
           <Text style={styles.description} numberOfLines={1}>{item.description}</Text>
@@ -580,6 +587,15 @@ export default function ExpensesScreen() {
         ))}
       </ScrollView>
 
+      {shown.length > 0 && (
+        <SummaryStrip
+          tiles={[
+            { key: 't', tone: 'coral', icon: 'wallet-outline', label: 'Total shown', value: inr(shownTotal) },
+            { key: 'n', tone: 'blue', icon: 'list-outline', label: 'Expenses', value: String(shown.length) },
+            { key: 'w', tone: 'amber', icon: 'time-outline', label: 'To approve', value: String(shownPending) },
+          ]}
+        />
+      )}
       {isLoading ? (
         <LoadingState message="Loading expenses…" />
       ) : (

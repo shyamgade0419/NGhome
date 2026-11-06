@@ -1,4 +1,6 @@
 'use client';
+import { areaForPath } from '@/lib/areas';
+import { tint, tones } from '@/lib/tones';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -164,8 +166,9 @@ export function Sidebar() {
                     ? 'bg-primary-50 text-primary-700'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
                 )}
+                style={active && areaForPath(href) ? { backgroundColor: tint(tones[areaForPath(href)!.tone], 0.88) } : undefined}
               >
-                <Icon size={18} className={active ? 'text-primary-600' : ''} />
+                <Icon size={18} style={{ color: areaForPath(href)?.tone ? tones[areaForPath(href)!.tone] : undefined }} />
                 {label}
               </Link>
             );

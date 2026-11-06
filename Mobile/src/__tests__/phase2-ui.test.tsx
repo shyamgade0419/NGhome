@@ -40,7 +40,12 @@ async function render(el: React.ReactElement) {
   return tree;
 }
 afterEach(async () => { mockAnimate = false; await act(async () => { trees.splice(0).forEach((t) => t.unmount()); }); });
-const wait = (ms: number) => act(async () => { await new Promise((r) => setTimeout(r, ms)); });
+// Waits for a condition, however slow the machine is, instead of a fixed pause the animation might not beat.
+const until = async (cond: () => boolean, ms = 8000) => {
+  const start = Date.now();
+  while (!cond() && Date.now() - start < ms) await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+  expect(cond()).toBe(true);
+};
 
 describe('the count-up figure', () => {
   const rupees = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
@@ -61,11 +66,9 @@ describe('the count-up figure', () => {
     mockAnimate = true;
     const t = await render(<CountUp value={1000} format={rupees} duration={80} />);
     expect(textOf(t.root)).toBe('₹0'); // starts from nothing
-    await wait(300);
-    expect(textOf(t.root)).toBe('₹1,000');
+    await until(() => textOf(t.root) === '₹1,000');
     await act(async () => { t.update(<CountUp value={4000} format={rupees} duration={80} />); });
-    await wait(300);
-    expect(textOf(t.root)).toBe('₹4,000');
+    await until(() => textOf(t.root) === '₹4,000');
   });
 });
 

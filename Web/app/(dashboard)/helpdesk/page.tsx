@@ -18,6 +18,8 @@ import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { formatDate, formatDateTime, cn } from '@/lib/utils';
+import { StatCard } from '@/components/ui/StatCard';
+import { Hammer } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthContext';
 
 const CATEGORIES = [
@@ -382,8 +384,15 @@ export default function HelpdeskPage() {
 
   const requests: any[] = Array.isArray(data) ? data : (data?.data ?? []);
 
-  const open = requests.filter(r => r.status === 'OPEN').length;
-  const inProgress = requests.filter(r => r.status === 'IN_PROGRESS').length;
+  const { data: everything } = useQuery({
+    queryKey: ['helpdesk', '', ''],
+    queryFn: () => helpdeskApi.list({ status: undefined, category: undefined, limit: 100 }).then((r: any) => r.data ?? r),
+  });
+  const all: any[] = Array.isArray(everything) ? everything : (everything?.data ?? []);
+
+  const open = all.filter(r => r.status === 'OPEN').length;
+  const inProgress = all.filter(r => r.status === 'IN_PROGRESS').length;
+  const resolved = all.filter(r => r.status === 'RESOLVED').length;
 
   return (
     <>
@@ -402,16 +411,11 @@ export default function HelpdeskPage() {
       />
       <PageContainer>
         {/* Summary row (admin only) */}
-        {isAdmin && !filterStatus && !filterCategory && (
-          <div className="mb-4 flex gap-3">
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm">
-              <span className="font-semibold text-amber-700">{open}</span>
-              <span className="text-amber-600 ml-1">Open</span>
-            </div>
-            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm">
-              <span className="font-semibold text-blue-700">{inProgress}</span>
-              <span className="text-blue-600 ml-1">In Progress</span>
-            </div>
+        {isAdmin && (
+          <div className="mb-4 grid grid-cols-3 gap-3">
+            <StatCard label="Open" value={String(open)} icon={AlertCircle} compact tone="amber" onClick={() => setFilterStatus(filterStatus === 'OPEN' ? '' : 'OPEN')} selected={filterStatus === 'OPEN'} />
+            <StatCard label="In progress" value={String(inProgress)} icon={Hammer} compact tone="blue" onClick={() => setFilterStatus(filterStatus === 'IN_PROGRESS' ? '' : 'IN_PROGRESS')} selected={filterStatus === 'IN_PROGRESS'} />
+            <StatCard label="Resolved" value={String(resolved)} icon={CheckCircle2} compact tone="green" onClick={() => setFilterStatus(filterStatus === 'RESOLVED' ? '' : 'RESOLVED')} selected={filterStatus === 'RESOLVED'} />
           </div>
         )}
 

@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import apiClient from '@/api/client';
 import { colors, typography } from '@/theme';
+import { TabIcon } from '@/components/nav/TabIcon';
 
 export default function AdminLayout() {
   // Water tab is hidden when the society has turned off water billing
@@ -51,7 +52,7 @@ export default function AdminLayout() {
         options={{
           title: 'Dashboard',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'grid' : 'grid-outline'} size={22} color={color} />
+            <TabIcon name={focused ? 'grid' : 'grid-outline'} tone="teal" focused={focused} color={color} />
           ),
         }}
       />
@@ -60,7 +61,7 @@ export default function AdminLayout() {
         options={{
           title: 'Billing',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'receipt' : 'receipt-outline'} size={22} color={color} />
+            <TabIcon name={focused ? 'receipt' : 'receipt-outline'} tone="blue" focused={focused} color={color} />
           ),
         }}
       />
@@ -70,7 +71,7 @@ export default function AdminLayout() {
           title: 'Water',
           href: waterEnabled ? undefined : null,
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'water' : 'water-outline'} size={22} color={color} />
+            <TabIcon name={focused ? 'water' : 'water-outline'} tone="teal" focused={focused} color={color} />
           ),
         }}
       />
@@ -79,7 +80,7 @@ export default function AdminLayout() {
         options={{
           title: 'Payments',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'card' : 'card-outline'} size={22} color={color} />
+            <TabIcon name={focused ? 'card' : 'card-outline'} tone="green" focused={focused} color={color} />
           ),
         }}
       />
@@ -88,7 +89,7 @@ export default function AdminLayout() {
         options={{
           title: 'Expenses',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'wallet' : 'wallet-outline'} size={22} color={color} />
+            <TabIcon name={focused ? 'wallet' : 'wallet-outline'} tone="coral" focused={focused} color={color} />
           ),
         }}
       />
@@ -97,7 +98,7 @@ export default function AdminLayout() {
         options={{
           title: 'Community',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'megaphone' : 'megaphone-outline'} size={22} color={color} />
+            <TabIcon name={focused ? 'megaphone' : 'megaphone-outline'} tone="violet" focused={focused} color={color} />
           ),
         }}
       />

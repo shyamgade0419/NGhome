@@ -1,16 +1,18 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { colors, spacing, radius, typography } from '@/theme';
+import { deepen, tint, tones } from '@/theme/tones';
 
 type BadgeVariant = 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'primary';
 
-const variantConfig: Record<BadgeVariant, { bg: string; text: string }> = {
-  success: { bg: colors.successLight, text: colors.success },
-  warning: { bg: colors.warningLight, text: '#B45309' },
-  error: { bg: colors.errorLight, text: colors.error },
-  info: { bg: colors.infoLight, text: colors.info },
-  neutral: { bg: colors.surfaceSecondary, text: colors.textSecondary },
-  primary: { bg: colors.primaryLight, text: colors.primary },
+// A soft tint of the status colour behind a dot in the colour itself and text darkened for contrast.
+const variantConfig: Record<BadgeVariant, { bg: string; text: string; dot: string }> = {
+  success: { bg: tint(tones.green, 0.86), text: deepen(tones.green, 0.45), dot: tones.green },
+  warning: { bg: tint(tones.amber, 0.86), text: deepen(tones.amber, 0.4), dot: tones.amber },
+  error: { bg: colors.errorLight, text: colors.error, dot: colors.error },
+  info: { bg: tint(tones.blue, 0.88), text: deepen(tones.blue, 0.3), dot: tones.blue },
+  neutral: { bg: colors.surfaceSecondary, text: colors.textSecondary, dot: colors.textTertiary },
+  primary: { bg: colors.primaryLight, text: colors.primary, dot: colors.primary },
 };
 
 interface StatusBadgeProps {
@@ -23,6 +25,7 @@ export function StatusBadge({ label, variant = 'neutral', size = 'md' }: StatusB
   const config = variantConfig[variant];
   return (
     <View style={[styles.badge, { backgroundColor: config.bg }, size === 'sm' && styles.sm]}>
+      <View style={[styles.dot, { backgroundColor: config.dot }]} />
       <Text numberOfLines={1} style={[styles.label, { color: config.text }, size === 'sm' && styles.smLabel]}>
         {label}
       </Text>
@@ -57,11 +60,15 @@ export function billingStatusVariant(status: string): BadgeVariant {
 
 const styles = StyleSheet.create({
   badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     paddingHorizontal: spacing.md,
     paddingVertical: 3,
     borderRadius: radius.full,
     alignSelf: 'flex-start',
   },
+  dot: { width: 6, height: 6, borderRadius: 3 },
   sm: {
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,

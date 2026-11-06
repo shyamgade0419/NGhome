@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Animated,
   TouchableOpacity,
   Text,
   ActivityIndicator,
@@ -8,6 +9,9 @@ import {
   TextStyle,
 } from 'react-native';
 import { colors, spacing, radius, typography } from '@/theme';
+import { usePressScale } from '@/components/motion/usePressScale';
+
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
 type Variant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
@@ -38,10 +42,13 @@ export function Button({
   icon,
 }: ButtonProps) {
   const isDisabled = disabled || loading;
+  const press = usePressScale(0.97);
 
   return (
-    <TouchableOpacity
+    <AnimatedTouchable
       onPress={onPress}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
       disabled={isDisabled}
       activeOpacity={0.75}
       style={[
@@ -51,6 +58,7 @@ export function Button({
         fullWidth && styles.fullWidth,
         isDisabled && styles.disabled,
         style,
+        press.style,
       ]}
     >
       {loading ? (
@@ -77,7 +85,7 @@ export function Button({
           </Text>
         </>
       )}
-    </TouchableOpacity>
+    </AnimatedTouchable>
   );
 }
 

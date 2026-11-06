@@ -2,6 +2,7 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography } from '@/theme';
+import { TabIcon } from '@/components/nav/TabIcon';
 
 export default function ResidentLayout() {
   // Android 15+ (targetSdk 35+, which Play Store now requires) forces
@@ -38,7 +39,7 @@ export default function ResidentLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
+            <TabIcon name={focused ? 'home' : 'home-outline'} tone="teal" focused={focused} color={color} />
           ),
         }}
       />
@@ -47,7 +48,7 @@ export default function ResidentLayout() {
         options={{
           title: 'My Bills',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'receipt' : 'receipt-outline'} size={22} color={color} />
+            <TabIcon name={focused ? 'receipt' : 'receipt-outline'} tone="blue" focused={focused} color={color} />
           ),
         }}
       />
@@ -56,7 +57,7 @@ export default function ResidentLayout() {
         options={{
           title: 'Payments',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'card' : 'card-outline'} size={22} color={color} />
+            <TabIcon name={focused ? 'card' : 'card-outline'} tone="green" focused={focused} color={color} />
           ),
         }}
       />
@@ -65,7 +66,7 @@ export default function ResidentLayout() {
         options={{
           title: 'Helpdesk',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'construct' : 'construct-outline'} size={22} color={color} />
+            <TabIcon name={focused ? 'construct' : 'construct-outline'} tone="amber" focused={focused} color={color} />
           ),
         }}
       />
@@ -74,7 +75,7 @@ export default function ResidentLayout() {
         options={{
           title: 'Community',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'megaphone' : 'megaphone-outline'} size={22} color={color} />
+            <TabIcon name={focused ? 'megaphone' : 'megaphone-outline'} tone="violet" focused={focused} color={color} />
           ),
         }}
       />
@@ -83,11 +84,7 @@ export default function ResidentLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? 'person-circle' : 'person-circle-outline'}
-              size={22}
-              color={color}
-            />
+            <TabIcon name={focused ? 'person-circle' : 'person-circle-outline'} tone="blue" focused={focused} color={color} />
           ),
         }}
       />

@@ -22,11 +22,13 @@ import { billingApi } from '@/api/endpoints/billing.api';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { IconChip } from '@/components/ui/IconChip';
+import { SummaryStrip } from '@/components/home/SummaryStrip';
 import { StatusBadge, billingStatusVariant } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius } from '@/theme';
 import { BillingPeriod, billingPeriodName } from '@/types/billing.types';
-import { inr } from '@/utils/format';
+import { inr, inrCompact } from '@/utils/format';
 
 /** Last calendar day of a month — handles 28/29/30/31 without a lookup table
  *  (day 0 of the *next* month is the last day of this one). */
@@ -211,6 +213,9 @@ export default function MaintenanceScreen() {
     onError: () => Alert.alert('Error', 'Failed to publish period.'),
   });
 
+  // The newest period, for the figures at the top.
+  const latest: BillingPeriod | undefined = data?.data?.[0];
+
   const renderItem = ({ item }: { item: BillingPeriod }) => (
     <TouchableOpacity
       style={styles.card}
@@ -223,6 +228,7 @@ export default function MaintenanceScreen() {
         <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} />
       </View>
       <View style={styles.cardHeader}>
+        <IconChip tone="blue" icon="receipt-outline" />
         <View style={styles.cardTitle}>
           <Text style={styles.periodName}>{billingPeriodName(item)}</Text>
           <Text style={styles.periodDue}>
@@ -297,6 +303,15 @@ export default function MaintenanceScreen() {
           </TouchableOpacity>
         }
       />
+      {latest && (
+        <SummaryStrip
+          tiles={[
+            { key: 'b', tone: 'blue', icon: 'receipt-outline', label: 'Billed', value: inrCompact(latest.totalBilled), subtitle: billingPeriodName(latest) },
+            { key: 'c', tone: 'green', icon: 'trending-up-outline', label: 'Collected', value: inrCompact(latest.totalCollected) },
+            { key: 'o', tone: 'amber', icon: 'alert-circle-outline', label: 'Outstanding', value: inrCompact(latest.totalPending) },
+          ]}
+        />
+      )}
       {isLoading ? (
         <LoadingState message="Loading billing periods..." />
       ) : (
@@ -349,7 +364,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
-  cardTitle: { flex: 1, marginRight: spacing.md },
+  cardTitle: { flex: 1, marginHorizontal: spacing.md },
   periodName: { ...typography.headingSmall, color: colors.text },
   periodDue: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },
   amountsRow: { flexDirection: 'row', gap: spacing.md },

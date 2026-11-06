@@ -3,6 +3,8 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { colors, spacing, typography, shadow } from '@/theme';
+import { Area, areaForTitle } from '@/theme/areas';
+import { tint, tones } from '@/theme/tones';
 
 interface ScreenHeaderProps {
   title: string;
@@ -10,6 +12,8 @@ interface ScreenHeaderProps {
   showBack?: boolean;
   onBack?: () => void;
   rightAction?: React.ReactNode;
+  /** The colour and icon of the part of the app this screen belongs to. Chosen from the title when not given; null for none. */
+  area?: Area | null;
 }
 
 export function ScreenHeader({
@@ -18,8 +22,10 @@ export function ScreenHeader({
   showBack = false,
   onBack,
   rightAction,
+  area: areaProp,
 }: ScreenHeaderProps) {
   const router = useRouter();
+  const area = areaProp === undefined ? areaForTitle(title) : areaProp;
 
   const handleBack = () => {
     if (onBack) {
@@ -30,7 +36,7 @@ export function ScreenHeader({
   };
 
   return (
-    <View style={styles.header}>
+    <View style={[styles.header, area && { borderBottomWidth: 2, borderBottomColor: tint(tones[area.tone], 0.55) }]}>
       <View style={styles.left}>
         {showBack && (
           <TouchableOpacity onPress={handleBack} style={styles.backButton} hitSlop={8}>
@@ -42,9 +48,16 @@ export function ScreenHeader({
       </View>
 
       <View style={styles.center}>
-        <Text style={styles.title} numberOfLines={1}>
-          {title}
-        </Text>
+        <View style={styles.titleRow}>
+          {area && (
+            <View style={[styles.areaChip, { backgroundColor: tint(tones[area.tone], 0.84) }]}>
+              <Ionicons name={area.icon} size={15} color={tones[area.tone]} />
+            </View>
+          )}
+          <Text style={[styles.title, styles.titleText]} numberOfLines={1}>
+            {title}
+          </Text>
+        </View>
         {subtitle && (
           <Text style={styles.subtitle} numberOfLines={1}>
             {subtitle}
@@ -97,6 +110,9 @@ const styles = StyleSheet.create({
   backButton: {
     padding: spacing.xs,
   },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, maxWidth: '100%' },
+  areaChip: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  titleText: { flexShrink: 1 },
   title: {
     ...typography.headingSmall,
     color: colors.text,

@@ -22,6 +22,8 @@ import { Input } from '@/components/ui/Input';
 import { PageSpinner, Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { StatCard } from '@/components/ui/StatCard';
+import { IndianRupee, TrendingUp, AlertCircle } from 'lucide-react';
 
 const createPeriodSchema = z.object({
   periodYear: z.coerce.number().min(2020).max(2099),
@@ -107,6 +109,13 @@ export default function BillingPage() {
         }
       />
       <PageContainer className="space-y-4">
+        {data?.data?.[0] && (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <StatCard label="Billed" value={formatCurrency(data.data[0].totalBilled)} sub={billingPeriodLabel(data.data[0])} icon={IndianRupee} tone="blue" />
+            <StatCard label="Collected" value={formatCurrency(data.data[0].totalCollected)} icon={TrendingUp} tone="green" />
+            <StatCard label="Outstanding" value={formatCurrency(data.data[0].totalPending)} icon={AlertCircle} tone="amber" />
+          </div>
+        )}
         <Card padding="none">
           {isLoading ? (
             <div className="flex justify-center py-16"><Spinner /></div>
