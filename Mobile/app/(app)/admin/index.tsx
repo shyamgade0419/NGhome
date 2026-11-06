@@ -17,7 +17,9 @@ import { societiesApi } from '@/api/endpoints/societies.api';
 import { eventsApi } from '@/api/endpoints/events.api';
 import { billingPeriodName } from '@/types/billing.types';
 import { useAuth } from '@/hooks/useAuth';
-import { LoadingState } from '@/components/ui/LoadingState';
+import { HomeSkeleton } from '@/components/motion/Skeleton';
+import { FadeInUp } from '@/components/motion/FadeInUp';
+import { CountUp } from '@/components/motion/CountUp';
 import { SectionHeader } from '@/components/ui/Card';
 import { NotificationBell } from '@/components/ui/NotificationBell';
 import { BrandMark } from '@/components/ui/BrandMark';
@@ -28,6 +30,7 @@ import { ActionGrid, ActionItem } from '@/components/home/ActionGrid';
 import { UpdatesCarousel, UpdateItem } from '@/components/home/UpdatesCarousel';
 import { useBranding } from '@/hooks/useBranding';
 import { colors, spacing, typography, radius } from '@/theme';
+import { fonts } from '@/theme/typography';
 import { inr, inrCompact, toNum } from '@/utils/format';
 
 /** Compact rupees; tolerates the API sending numbers, decimal strings or nothing. */
@@ -129,7 +132,7 @@ export default function AdminDashboard() {
     refetchEvents();
   };
 
-  if (isLoading || periodsLoading) return <LoadingState fullscreen message="Loading dashboard..." />;
+  if (isLoading || periodsLoading) return <HomeSkeleton message="Loading dashboard..." />;
 
   const billed = toNum(summary?.totalBilled);
   const collected = toNum(summary?.totalCollected);
@@ -227,6 +230,7 @@ export default function AdminDashboard() {
         }
       >
         {/* Hero: the billing month in view, what is still to collect, and how much is in. Swipe it to change month. */}
+        <FadeInUp>
         <View {...swipe.panHandlers}>
           {banner && (
             <HeroCard>
@@ -262,7 +266,7 @@ export default function AdminDashboard() {
                 )}
               </View>
 
-              <Text style={styles.heroAmount}>{inr(summary?.totalOutstanding)} pending</Text>
+              <CountUp value={toNum(summary?.totalOutstanding)} format={inr} suffix=" pending" style={styles.heroAmount} />
               <Text style={styles.heroSub}>of {inr(summary?.totalBilled)} billed this month</Text>
 
               <View style={styles.heroBottom}>
@@ -286,17 +290,19 @@ export default function AdminDashboard() {
             </HeroCard>
           )}
         </View>
+        </FadeInUp>
 
         {/* What is happening: swipe sideways */}
         {updates.length > 0 && (
-          <>
+          <FadeInUp delay={90}>
             <SectionHeader title="What's Happening" />
             <UpdatesCarousel items={updates} />
-          </>
+          </FadeInUp>
         )}
 
         {/* Figures for the month in view — every tile drills into the report it summarizes */}
         <SectionHeader title={shownPeriod ? `Financial Overview — ${billingPeriodName(shownPeriod)}` : 'Financial Overview'} />
+        <FadeInUp delay={180}>
         <View {...swipe.panHandlers}>
           <View style={styles.statsGrid}>
             <TintStatTile tone="blue" icon="receipt-outline" label="Total Billed" value={formatCurrency(summary?.totalBilled)} onPress={() => router.push('/(app)/admin/reports' as any)} />
@@ -311,10 +317,13 @@ export default function AdminDashboard() {
             <TintStatTile tone="violet" icon="diamond-outline" label="Corpus Fund" value={formatCurrency(summary?.corpusBalance)} onPress={() => router.push('/(app)/admin/accounts' as any)} />
           </View>
         </View>
+        </FadeInUp>
 
         {/* Quick actions */}
-        <SectionHeader title="Quick Actions" />
-        <ActionGrid items={QUICK_ACTIONS} onOpen={(route) => router.push(route as any)} />
+        <FadeInUp delay={270}>
+          <SectionHeader title="Quick Actions" />
+          <ActionGrid items={QUICK_ACTIONS} onOpen={(route) => router.push(route as any)} />
+        </FadeInUp>
 
         <View style={styles.bottomPad} />
       </ScrollView>
@@ -371,7 +380,7 @@ const styles = StyleSheet.create({
   heroBottom: { flexDirection: 'row', alignItems: 'center', gap: spacing.base, marginTop: spacing.md },
   heroMini: { flex: 1, flexDirection: 'row', gap: spacing.sm },
   heroMiniBox: { flex: 1, backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 14, paddingVertical: 8, paddingHorizontal: 10 },
-  heroMiniValue: { ...typography.headingSmall, color: '#FFFFFF', fontWeight: '800' },
+  heroMiniValue: { ...typography.headingSmall, fontFamily: fonts.extrabold, color: '#FFFFFF' },
   heroMiniLabel: { ...typography.labelSmall, color: 'rgba(255,255,255,0.85)' },
   heroHint: { ...typography.bodySmall, color: 'rgba(255,255,255,0.75)', textAlign: 'center', marginTop: spacing.sm },
 

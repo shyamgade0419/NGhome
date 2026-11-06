@@ -25,7 +25,7 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
         </button>
 
         <div className="min-w-0">
-          <h1 className="truncate text-base font-semibold text-slate-900 lg:text-lg">{title}</h1>
+          <h1 className="truncate font-display text-base font-bold text-slate-900 lg:text-lg">{title}</h1>
           {subtitle && (
             <p className="truncate text-xs text-slate-500 leading-none mt-0.5 hidden sm:block">
               {subtitle}

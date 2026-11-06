@@ -83,6 +83,14 @@ const config: Config = {
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
+        display: ['var(--font-display)', 'system-ui', 'sans-serif'],
+      },
+      keyframes: {
+        'fade-up': { from: { opacity: '0', transform: 'translateY(14px)' }, to: { opacity: '1', transform: 'none' } },
+      },
+      animation: {
+        // Used as motion-safe:animate-fade-up, so a device set to reduce motion shows everything at once.
+        'fade-up': 'fade-up 420ms cubic-bezier(0.22, 0.61, 0.36, 1) both',
       },
     },
   },

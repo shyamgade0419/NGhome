@@ -1,7 +1,11 @@
 import type { Metadata, Viewport } from 'next';
+import { Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 import { Providers } from '@/components/Providers';
 import { PwaRegister } from '@/components/PwaRegister';
+
+// Headings and big figures are set in Plus Jakarta Sans (the same face as the phone app); body text stays as it was.
+const display = Plus_Jakarta_Sans({ subsets: ['latin'], weight: ['600', '700', '800'], variable: '--font-display', display: 'swap' });
 
 export const metadata: Metadata = {
   title: { default: 'NG Home', template: '%s | NG Home' },
@@ -41,7 +45,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={display.variable}>
       <body>
         <Providers>{children}</Providers>
         <PwaRegister />

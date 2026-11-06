@@ -15,7 +15,9 @@ import { billingApi } from '@/api/endpoints/billing.api';
 import { societiesApi } from '@/api/endpoints/societies.api';
 import { eventsApi } from '@/api/endpoints/events.api';
 import { useAuth } from '@/hooks/useAuth';
-import { LoadingState } from '@/components/ui/LoadingState';
+import { HomeSkeleton } from '@/components/motion/Skeleton';
+import { FadeInUp } from '@/components/motion/FadeInUp';
+import { CountUp } from '@/components/motion/CountUp';
 import { SectionHeader } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { NotificationBell } from '@/components/ui/NotificationBell';
@@ -90,7 +92,7 @@ export default function ResidentDashboard() {
     refetchEvents();
   };
 
-  if (isLoading) return <LoadingState fullscreen message="Loading your account..." />;
+  if (isLoading) return <HomeSkeleton message="Loading your account..." />;
 
   const outstanding = myBill ? toNum(myBill.pendingAmount) : 0;
   const total = myBill ? toNum(myBill.totalAmount) : 0;
@@ -195,6 +197,7 @@ export default function ResidentDashboard() {
         <PendingVisitorBanner />
 
         {/* Current bill hero card */}
+        <FadeInUp>
         <HeroCard>
           <View style={styles.heroTop}>
             <Text style={styles.heroLabel}>{periodLabel}</Text>
@@ -210,7 +213,7 @@ export default function ResidentDashboard() {
             <>
               <View style={styles.heroMain}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.heroAmount}>{inr(myBill.totalAmount)}</Text>
+                  <CountUp value={total} format={inr} style={styles.heroAmount} />
                   {!isPaid && (
                     <Text style={styles.heroDue}>
                       Outstanding: ₹{outstanding.toLocaleString('en-IN')} · Due{' '}
@@ -257,10 +260,11 @@ export default function ResidentDashboard() {
             <Text style={styles.noBill}>No pending bill. You&apos;re all caught up!</Text>
           )}
         </HeroCard>
+        </FadeInUp>
 
         {/* Quick stats: each on a soft card of its own colour, so what kind of figure it is shows before the digits are read. */}
         {myBill && (
-          <View style={styles.statsRow}>
+          <FadeInUp delay={90} style={styles.statsRow}>
             <TintStatTile tone="blue" icon="receipt-outline" label="Total Bill" value={inr(myBill.totalAmount)} />
             <TintStatTile tone="green" icon="checkmark-circle-outline" label="Paid" value={inr(myBill.paidAmount)} progress={paidFraction} />
             <TintStatTile
@@ -269,26 +273,28 @@ export default function ResidentDashboard() {
               label="Due"
               value={`₹${outstanding.toLocaleString('en-IN')}`}
             />
-          </View>
+          </FadeInUp>
         )}
 
         {/* What is happening: swipe sideways */}
         {updates.length > 0 && (
-          <>
+          <FadeInUp delay={180}>
             <SectionHeader
               title="What's Happening"
               action="Announcements"
               onAction={() => router.push('/(app)/resident/announcements')}
             />
             <UpdatesCarousel items={updates} />
-          </>
+          </FadeInUp>
         )}
 
         {/* Quick links — Maintenance Sheet, Documents and Finances existed
             only inside Profile's menu before, which several residents never
             found, so they sit here with the community and gate shortcuts. */}
-        <SectionHeader title="Quick Links" />
-        <ActionGrid items={QUICK_LINKS} onOpen={(route) => router.push(route as any)} />
+        <FadeInUp delay={270}>
+          <SectionHeader title="Quick Links" />
+          <ActionGrid items={QUICK_LINKS} onOpen={(route) => router.push(route as any)} />
+        </FadeInUp>
 
         <View style={{ height: spacing['3xl'] }} />
       </ScrollView>

@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as SplashScreen from 'expo-splash-screen';
+import { useFonts, PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold, PlusJakartaSans_800ExtraBold } from '@expo-google-fonts/plus-jakarta-sans';
 import * as Notifications from 'expo-notifications';
 import { AuthProvider } from '@/auth/AuthContext';
 import { BackHandler, Platform, StyleSheet } from 'react-native';
@@ -31,9 +32,12 @@ const queryClient = new QueryClient({
 });
 
 export default function RootLayout() {
+  // The heading font is bundled with the app; the splash screen stays up for the instant it takes to register it, so no
+  // screen ever draws first in the system font. If it cannot load, the app carries on in the system font.
+  const [fontsLoaded, fontError] = useFonts({ PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold, PlusJakartaSans_800ExtraBold });
   useEffect(() => {
-    SplashScreen.hideAsync();
-  }, []);
+    if (fontsLoaded || fontError) SplashScreen.hideAsync();
+  }, [fontsLoaded, fontError]);
 
   // Refetch when the app returns to the front, when the network is back, and when a push arrives.
   useEffect(() => startLiveRefresh(queryClient), []);
@@ -98,6 +102,8 @@ export default function RootLayout() {
     return () => sub.remove();
   }, []);
 
+  if (!fontsLoaded && !fontError) return null;
+
   return (
     <GestureHandlerRootView style={styles.flex}>
       <SafeAreaProvider>
@@ -106,6 +112,7 @@ export default function RootLayout() {
             <StatusBar style="dark" />
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="index" />
+              <Stack.Screen name="welcome" />
               <Stack.Screen name="(auth)" />
               <Stack.Screen name="(society-select)" />
               <Stack.Screen name="(app)" />

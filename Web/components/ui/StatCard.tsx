@@ -36,7 +36,7 @@ export function StatCard({ label, value, icon: Icon, iconColor = 'text-primary-6
           </div>
         )}
       </div>
-      <p className="mt-1 text-xl font-bold tabular-nums text-slate-900 sm:text-2xl">{value}</p>
+      <p className="mt-1 font-display text-xl font-extrabold tabular-nums text-slate-900 sm:text-2xl">{value}</p>
       {sub && <p className="mt-1 text-xs text-slate-500">{sub}</p>}
       {trend && (
         <p className={cn('mt-1 text-xs font-medium', trend.positive ? 'text-green-600' : 'text-red-600')}>

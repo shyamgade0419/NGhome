@@ -1,8 +1,10 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography } from '@/theme';
+import { fonts } from '@/theme/typography';
 import { Tone, tint, tones } from '@/theme/tones';
+import { usePressScale } from '@/components/motion/usePressScale';
 
 interface Props {
   tone: Tone;
@@ -18,6 +20,7 @@ interface Props {
 /** One figure on a soft card of its own colour, with an icon chip: the colour tells what kind of figure it is. */
 export function TintStatTile({ tone, icon, label, value, subtitle, progress, onPress }: Props) {
   const color = tones[tone];
+  const press = usePressScale();
   const body = (
     <>
       <View style={[styles.chip, { backgroundColor: color }]}>
@@ -35,19 +38,22 @@ export function TintStatTile({ tone, icon, label, value, subtitle, progress, onP
   );
   const style = [styles.tile, { backgroundColor: tint(color, 0.88), borderColor: tint(color, 0.74) }];
   return onPress ? (
-    <TouchableOpacity style={style} onPress={onPress} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={`${label} ${value}`}>
-      {body}
-    </TouchableOpacity>
+    <Animated.View style={[styles.cell, press.style]}>
+      <TouchableOpacity style={style} onPress={onPress} onPressIn={press.onPressIn} onPressOut={press.onPressOut} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={`${label} ${value}`}>
+        {body}
+      </TouchableOpacity>
+    </Animated.View>
   ) : (
     <View style={style}>{body}</View>
   );
 }
 
 const styles = StyleSheet.create({
+  cell: { flex: 1 },
   tile: { flex: 1, borderRadius: 18, borderWidth: 1, padding: spacing.md, gap: 2 },
   chip: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm },
   label: { ...typography.labelSmall, color: colors.textSecondary },
-  value: { ...typography.headingSmall, color: colors.text, fontWeight: '800' },
+  value: { ...typography.headingSmall, fontFamily: fonts.extrabold, color: colors.text },
   subtitle: { ...typography.bodySmall, color: colors.textSecondary },
   track: { height: 5, borderRadius: 3, marginTop: spacing.sm, overflow: 'hidden' },
   fill: { height: '100%', borderRadius: 3 },

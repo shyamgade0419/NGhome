@@ -21,38 +21,44 @@ const fontFamily = Platform.select({
   },
 });
 
+/**
+ * Plus Jakarta Sans for headings, titles and big figures: friendlier and rounder than the system font, which stays for
+ * body text and labels. The files are loaded once in the root layout before the first screen draws. A custom font is picked
+ * by its file's own family name, so these tokens carry no fontWeight: the weight is in the name.
+ */
+export const fonts = {
+  semibold: 'PlusJakartaSans_600SemiBold',
+  bold: 'PlusJakartaSans_700Bold',
+  extrabold: 'PlusJakartaSans_800ExtraBold',
+} as const;
+
 export const typography = {
   displayLarge: {
     fontSize: 32,
     lineHeight: 40,
-    fontWeight: '700' as const,
-    fontFamily: fontFamily?.bold,
+    fontFamily: fonts.extrabold,
     letterSpacing: -0.5,
   },
   displaySmall: {
     fontSize: 24,
     lineHeight: 32,
-    fontWeight: '700' as const,
-    fontFamily: fontFamily?.bold,
+    fontFamily: fonts.bold,
     letterSpacing: -0.3,
   },
   headingLarge: {
     fontSize: 20,
     lineHeight: 28,
-    fontWeight: '700' as const,
-    fontFamily: fontFamily?.bold,
+    fontFamily: fonts.bold,
   },
   headingMedium: {
     fontSize: 18,
     lineHeight: 26,
-    fontWeight: '600' as const,
-    fontFamily: fontFamily?.semibold,
+    fontFamily: fonts.bold,
   },
   headingSmall: {
     fontSize: 16,
     lineHeight: 22,
-    fontWeight: '600' as const,
-    fontFamily: fontFamily?.semibold,
+    fontFamily: fonts.semibold,
   },
   bodyLarge: {
     fontSize: 16,

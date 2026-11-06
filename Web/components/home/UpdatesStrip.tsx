@@ -104,7 +104,7 @@ export function UpdatesStrip({ items, intervalMs = 5000 }: { items: UpdateItem[]
                 <Icon size={22} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-sm font-bold leading-snug text-slate-900 line-clamp-2">{item.title}</span>
+                <span className="block font-display text-sm font-bold leading-snug text-slate-900 line-clamp-2">{item.title}</span>
                 {item.subtitle && <span className="mt-0.5 block text-xs leading-snug text-slate-600 line-clamp-2">{item.subtitle}</span>}
                 {item.cta && <span className="mt-1.5 block text-xs font-bold" style={{ color }}>{item.cta} →</span>}
               </span>

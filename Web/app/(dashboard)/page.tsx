@@ -34,9 +34,11 @@ import { HeroCard } from '@/components/home/HeroCard';
 import { ProgressRing } from '@/components/home/ProgressRing';
 import { UpdatesStrip, UpdateItem } from '@/components/home/UpdatesStrip';
 import { QuickActions, QuickAction } from '@/components/home/QuickActions';
+import { Reveal } from '@/components/home/Reveal';
+import { CountUpNumber } from '@/components/home/CountUpNumber';
+import { DashboardSkeleton } from '@/components/home/DashboardSkeleton';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge, paymentStatusBadge } from '@/components/ui/Badge';
-import { PageSpinner } from '@/components/ui/Spinner';
 import { formatCurrency, formatDateTime, parseDecimalLike } from '@/lib/utils';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -187,7 +189,16 @@ export default function DashboardPage() {
   });
 
   const isLoading = summaryLoading || collectionLoading;
-  if (isLoading && !summary) return <PageSpinner />;
+  if (isLoading && !summary) {
+    return (
+      <>
+        <Header title="Dashboard" subtitle="Society financial overview" />
+        <PageContainer>
+          <DashboardSkeleton />
+        </PageContainer>
+      </>
+    );
+  }
 
   const s = summary;
 
@@ -301,6 +312,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Hero: for the finance team, what is still to collect and how much is in; for a resident, their own bill. */}
+        <Reveal>
         {showMoneyTiles ? (
           <HeroCard>
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -310,8 +322,8 @@ export default function DashboardPage() {
               </div>
               <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold uppercase tracking-wide">{periodStatus}</span>
             </div>
-            <p className="mt-4 text-3xl font-extrabold tabular-nums tracking-tight sm:text-4xl">
-              {collection ? formatCurrency(collection.totalPending) : '—'}
+            <p className="mt-4 font-display text-3xl font-extrabold tabular-nums tracking-tight sm:text-4xl">
+              <CountUpNumber value={collection ? parseDecimalLike(collection.totalPending) : null} format={formatCurrency} />
               <span className="ml-2 text-base font-semibold text-white/80 sm:text-lg">pending</span>
             </p>
             <p className="text-sm text-white/85">of {collection ? formatCurrency(collection.totalBilled) : '—'} billed this month</p>
@@ -340,7 +352,9 @@ export default function DashboardPage() {
                   </div>
                   <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold uppercase tracking-wide">{myBill.isPaid ? 'Paid' : 'Pending'}</span>
                 </div>
-                <p className="mt-4 text-3xl font-extrabold tabular-nums tracking-tight sm:text-4xl">{formatCurrency(myBill.totalAmount)}</p>
+                <p className="mt-4 font-display text-3xl font-extrabold tabular-nums tracking-tight sm:text-4xl">
+                  <CountUpNumber value={myTotal} format={formatCurrency} />
+                </p>
                 {!myBill.isPaid && (
                   <p className="text-sm text-white/85">
                     Outstanding {formatCurrency(myOutstanding)} · due {shortDate(myBill.dueDate)}
@@ -358,17 +372,21 @@ export default function DashboardPage() {
             )}
           </HeroCard>
         )}
+        </Reveal>
 
         {/* What is happening: swipe, or use the arrows */}
         {updates.length > 0 && (
-          <section>
-            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">What&apos;s happening</h2>
-            <UpdatesStrip items={updates} />
-          </section>
+          <Reveal delay={90}>
+            <section>
+              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">What&apos;s happening</h2>
+              <UpdatesStrip items={updates} />
+            </section>
+          </Reveal>
         )}
 
         {/* Financial stats. A resident the server shows no collection figures to gets no row of dashes. */}
         {(showMoneyTiles || collection) && (
+        <Reveal delay={180}>
         <section>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Financials
@@ -428,6 +446,7 @@ export default function DashboardPage() {
             )}
           </div>
         </section>
+        </Reveal>
         )}
 
         {/* Society stats */}
@@ -454,10 +473,12 @@ export default function DashboardPage() {
         </section>
 
         {/* Quick actions */}
-        <section>
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Quick actions</h2>
-          <QuickActions items={showMoneyTiles ? MANAGER_ACTIONS : RESIDENT_ACTIONS} />
-        </section>
+        <Reveal delay={270}>
+          <section>
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Quick actions</h2>
+            <QuickActions items={showMoneyTiles ? MANAGER_ACTIONS : RESIDENT_ACTIONS} />
+          </section>
+        </Reveal>
 
         {/* Pending payments quick view */}
         {pendingPayments && pendingPayments.data.length > 0 && (
