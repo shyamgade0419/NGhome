@@ -88,7 +88,7 @@ export default function AdminDetailsScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScreenHeader title="Register Society" subtitle="Step 2 of 2" showBack />
+      <ScreenHeader title="Register Society" subtitle="Step 2 of 2" showBack area={{ tone: 'teal', icon: 'business-outline' }} />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

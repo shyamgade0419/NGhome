@@ -21,6 +21,9 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { NGLogo } from '@/components/ui/NGLogo';
 import { colors, spacing, typography, radius } from '@/theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { fonts } from '@/theme/typography';
+import { HERO_GRADIENT, tint, tones } from '@/theme/tones';
 
 /* ─── Brand colours matching the logo design ─────────────────── */
 const BRAND_NAVY   = '#0D2147';
@@ -95,7 +98,9 @@ export default function LoginScreen() {
             showsVerticalScrollIndicator={false}
           >
             {/* ── Hero / Brand area ───────────────────────────── */}
-            <View style={styles.hero}>
+            <LinearGradient colors={[...HERO_GRADIENT]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
+              <View style={styles.glowTop} pointerEvents="none" />
+              <View style={styles.glowBottom} pointerEvents="none" />
               {/* Shield logo — centered */}
               <View style={styles.logoWrap}>
                 <NGLogo size={130} />
@@ -108,7 +113,7 @@ export default function LoginScreen() {
                 <Text style={styles.tagline}>Powered by NovaGade</Text>
                 <View style={styles.taglineLine} />
               </View>
-            </View>
+            </LinearGradient>
 
             {/* ── Login card ──────────────────────────────────── */}
             <View style={styles.card}>
@@ -194,7 +199,7 @@ export default function LoginScreen() {
                 onPress={() => router.push('/(auth)/register/join-code')}
                 activeOpacity={0.7}
               >
-                <Ionicons name="key-outline" size={15} color={BRAND_NAVY} />
+                <Ionicons name="key-outline" size={15} color={tones.green} />
                 <Text style={styles.joinText}>Have an invite code? </Text>
                 <Text style={styles.joinLink}>Join your society</Text>
               </TouchableOpacity>
@@ -222,8 +227,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 48,
     paddingBottom: 36,
-    backgroundColor: BRAND_NAVY,
+    overflow: 'hidden',
   },
+  glowTop: { position: 'absolute', right: -60, top: -70, width: 210, height: 210, borderRadius: 105, backgroundColor: 'rgba(255,255,255,0.08)' },
+  glowBottom: { position: 'absolute', left: -50, bottom: -60, width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(255,255,255,0.06)' },
   logoWrap: {
     marginBottom: 20,
     /* Subtle glow ring behind the shield */
@@ -271,8 +278,8 @@ const styles = StyleSheet.create({
     minHeight: 420,
   },
   heading: {
+    fontFamily: fonts.bold,
     fontSize: 24,
-    fontWeight: '700',
     color: BRAND_NAVY,
     letterSpacing: -0.3,
   },
@@ -321,8 +328,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: 'rgba(13,33,71,0.15)',
-    backgroundColor: colors.surfaceSecondary,
+    borderColor: tint(tones.green, 0.6),
+    backgroundColor: tint(tones.green, 0.9),
   },
   joinText: {
     fontSize: 13,

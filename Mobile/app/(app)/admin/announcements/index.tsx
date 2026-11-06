@@ -19,6 +19,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { societiesApi } from '@/api/endpoints/societies.api';
 import apiClient from '@/api/client';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
+import { SummaryStrip } from '@/components/home/SummaryStrip';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -158,6 +159,10 @@ export default function AnnouncementsScreen() {
     queryFn: () => societiesApi.getAnnouncements({ limit: 50 }),
   });
 
+  const posted = data?.data ?? [];
+  const live = posted.filter((a) => a.isPublished).length;
+  const urgent = posted.filter((a) => a.priority === 'URGENT' || a.priority === 'HIGH').length;
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.delete(`/announcements/${id}`),
     onSuccess: () => {
@@ -251,6 +256,15 @@ export default function AnnouncementsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScreenHeader title="Announcements" rightAction={composeButton} />
+      {posted.length > 0 && (
+        <SummaryStrip
+          tiles={[
+            { key: 'n', tone: 'violet', icon: 'megaphone-outline', label: 'Announcements', value: String(posted.length) },
+            { key: 'l', tone: 'green', icon: 'eye-outline', label: 'Live', value: String(live) },
+            { key: 'u', tone: 'coral', icon: 'flame-outline', label: 'Urgent', value: String(urgent) },
+          ]}
+        />
+      )}
       {isLoading ? (
         <LoadingState message="Loading announcements…" />
       ) : (

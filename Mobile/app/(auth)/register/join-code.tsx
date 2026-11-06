@@ -64,7 +64,7 @@ export default function JoinCodeScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScreenHeader title="Join Your Society" showBack />
+      <ScreenHeader title="Join Your Society" showBack area={{ tone: 'green', icon: 'key-outline' }} />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

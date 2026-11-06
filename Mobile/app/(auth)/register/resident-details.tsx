@@ -253,6 +253,7 @@ export default function ResidentDetailsScreen() {
         title={society ? society.displayName || society.name : 'Join Society'}
         subtitle="Create your resident account"
         showBack
+        area={{ tone: 'green', icon: 'person-add-outline' }}
       />
       <KeyboardAvoidingView
         style={styles.flex}

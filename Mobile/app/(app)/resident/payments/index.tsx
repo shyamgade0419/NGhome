@@ -12,7 +12,8 @@ import { StatusBadge, paymentStatusVariant } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius } from '@/theme';
 import { PaymentSubmission } from '@/types/billing.types';
-import { inr } from '@/utils/format';
+import { inr, toNum } from '@/utils/format';
+import { SummaryStrip } from '@/components/home/SummaryStrip';
 
 export default function ResidentPaymentsScreen() {
   const router = useRouter();
@@ -21,6 +22,11 @@ export default function ResidentPaymentsScreen() {
     queryKey: ['my-payments'],
     queryFn: () => paymentsApi.getMyPayments({ limit: 30 }),
   });
+
+  const mine = data?.data ?? [];
+  const approvedTotal = mine.filter((p) => p.status === 'APPROVED').reduce((sum, p) => sum + toNum(p.amount), 0);
+  const waiting = mine.filter((p) => p.status === 'PENDING' || p.status === 'UNDER_REVIEW').length;
+  const sentBack = mine.filter((p) => p.status === 'REJECTED').length;
 
   const renderItem = ({ item }: { item: PaymentSubmission }) => (
     <View style={styles.card}>
@@ -76,6 +82,15 @@ export default function ResidentPaymentsScreen() {
         />
       </View>
 
+      {mine.length > 0 && (
+        <SummaryStrip
+          tiles={[
+            { key: 'a', tone: 'green', icon: 'checkmark-circle-outline', label: 'Approved', value: inr(approvedTotal) },
+            { key: 'w', tone: 'amber', icon: 'time-outline', label: 'Waiting', value: String(waiting) },
+            { key: 'r', tone: 'coral', icon: 'return-up-back-outline', label: 'Sent back', value: String(sentBack) },
+          ]}
+        />
+      )}
       {isLoading ? (
         <LoadingState message="Loading payments..." />
       ) : (

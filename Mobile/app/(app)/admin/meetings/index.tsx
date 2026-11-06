@@ -27,6 +27,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { meetingsApi, SocietyMeeting } from '@/api/endpoints/meetings.api';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
+import { SummaryStrip } from '@/components/home/SummaryStrip';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -274,6 +275,9 @@ export default function MeetingsScreen() {
   });
 
   const meetings = data?.data ?? [];
+  const now = new Date();
+  const upcoming = meetings.filter((m) => new Date(m.meetingDate) >= now).length;
+  const held = meetings.length - upcoming;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -287,6 +291,15 @@ export default function MeetingsScreen() {
         }
       />
 
+      {meetings.length > 0 && (
+        <SummaryStrip
+          tiles={[
+            { key: 'u', tone: 'teal', icon: 'calendar-outline', label: 'Upcoming', value: String(upcoming) },
+            { key: 'h', tone: 'blue', icon: 'checkmark-done-outline', label: 'Held', value: String(held) },
+            { key: 't', tone: 'violet', icon: 'people-outline', label: 'In all', value: String(meetings.length) },
+          ]}
+        />
+      )}
       {isLoading ? (
         <LoadingState message="Loading meetings…" />
       ) : isError ? (

@@ -76,7 +76,7 @@ export default function SocietyInfoScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScreenHeader title="Register Society" subtitle="Step 1 of 2" showBack />
+      <ScreenHeader title="Register Society" subtitle="Step 1 of 2" showBack area={{ tone: 'teal', icon: 'business-outline' }} />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <StepIndicator current={0} total={2} />

@@ -40,7 +40,7 @@ export default function ForgotPasswordScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScreenHeader title="Forgot Password" showBack />
+      <ScreenHeader title="Forgot Password" showBack area={{ tone: 'amber', icon: 'key-outline' }} />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {sent ? (

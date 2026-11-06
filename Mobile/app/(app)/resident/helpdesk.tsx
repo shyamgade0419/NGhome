@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { helpdeskApi, MaintenanceRequest } from '@/api/endpoints/helpdesk.api';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
+import { SummaryStrip } from '@/components/home/SummaryStrip';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
@@ -175,6 +176,7 @@ export default function ResidentHelpdeskScreen() {
   });
 
   const requests: MaintenanceRequest[] = data?.data ?? [];
+  const countOf = (...statuses: string[]) => requests.filter((r) => statuses.includes(r.status)).length;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -186,6 +188,16 @@ export default function ResidentHelpdeskScreen() {
           </TouchableOpacity>
         }
       />
+
+      {requests.length > 0 && (
+        <SummaryStrip
+          tiles={[
+            { key: 'o', tone: 'amber', icon: 'alert-circle-outline', label: 'Open', value: String(countOf('OPEN')) },
+            { key: 'i', tone: 'blue', icon: 'build-outline', label: 'In progress', value: String(countOf('IN_PROGRESS')) },
+            { key: 'r', tone: 'green', icon: 'checkmark-circle-outline', label: 'Resolved', value: String(countOf('RESOLVED', 'CLOSED')) },
+          ]}
+        />
+      )}
 
       <NewRequestModal visible={showNew} onClose={() => setShowNew(false)} />
       {openRequest && (
