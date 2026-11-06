@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Users, Phone, MessageSquare, Pencil, AlertCircle, X, Hourglass, Check } from 'lucide-react';
+import { Users, Phone, MessageSquare, Pencil, AlertCircle, X, Hourglass, Check, Home, Key } from 'lucide-react';
+import { StatCard } from '@/components/ui/StatCard';
 import { societyApi } from '@/lib/api/endpoints';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Header } from '@/components/layout/Header';
@@ -354,6 +355,8 @@ export default function ResidentsPage() {
   });
 
   const missingPhone = residents.filter((r) => !r.phone && r.role === 'RESIDENT').length;
+  const tenants = residents.filter((r) => r.role === 'RESIDENT' && r.residencyType === 'TENANT').length;
+  const owners = residents.filter((r) => r.role === 'RESIDENT' && r.residencyType === 'OWNER').length;
 
   return (
     <>
@@ -362,6 +365,13 @@ export default function ResidentsPage() {
         subtitle={residents.length > 0 ? `${residents.length} member${residents.length !== 1 ? 's' : ''}` : undefined}
       />
       <PageContainer className="space-y-4">
+        {residents.length > 0 && (
+          <div className="grid grid-cols-3 gap-3">
+            <StatCard label="Members" value={String(residents.length)} icon={Users} tone="blue" compact />
+            <StatCard label="Owners" value={String(owners)} icon={Key} tone="green" compact />
+            <StatCard label="Tenants" value={String(tenants)} icon={Home} tone="amber" compact />
+          </div>
+        )}
         <PendingApprovals />
 
         {/* Missing phone notice */}

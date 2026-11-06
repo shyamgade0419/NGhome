@@ -11,6 +11,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { HERO_GRADIENT } from '@/lib/tones';
 
 const schema = z.object({
   identifier: z.string().min(1, 'Email or phone is required'),
@@ -58,7 +59,9 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen bg-slate-50">
       {/* Left branding panel */}
-      <div className="hidden lg:flex lg:w-1/2 flex-col items-center justify-center bg-primary-600 px-12 text-white">
+      <div className="hidden lg:flex lg:w-1/2 relative flex-col items-center justify-center overflow-hidden px-12 text-white" style={{ background: HERO_GRADIENT }}>
+        <div aria-hidden className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-white/10" />
+        <div aria-hidden className="pointer-events-none absolute -bottom-24 -left-16 h-60 w-60 rounded-full bg-white/5" />
         <div className="max-w-sm text-center">
           <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/20 backdrop-blur">
             <Building2 size={32} className="text-white" />

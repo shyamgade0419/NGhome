@@ -20,7 +20,7 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
   return (
     <header
       className="flex h-14 flex-shrink-0 items-center justify-between border-b bg-white px-4 lg:h-16 lg:px-6"
-      style={{ borderBottomColor: area ? tint(tones[area.tone], 0.6) : '#E8DFCD', borderBottomWidth: area ? 2 : 1 }}
+      style={{ borderBottomColor: area ? tint(tones[area.tone], 0.6) : '#E8DFCD', borderBottomWidth: area ? 2 : 1, backgroundColor: area ? tint(tones[area.tone], 0.94) : undefined }}
     >
       <div className="flex min-w-0 items-center gap-3">
         {/* Hamburger — mobile only */}

@@ -17,6 +17,8 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import toast from 'react-hot-toast';
 import { parseDecimalLike } from '@/lib/utils';
+import { StatCard } from '@/components/ui/StatCard';
+import { Building2 as BuildingIcon, Home as HomeIcon } from 'lucide-react';
 
 const statusVariant: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {
   ACTIVE: 'success',
@@ -847,6 +849,12 @@ export default function FlatsPage() {
       />
 
       <PageContainer>
+        {!isLoading && buildings.length > 0 && (
+          <div className="mb-4 grid grid-cols-2 gap-3">
+            <StatCard label="Buildings" value={String(buildings.length)} icon={BuildingIcon} tone="violet" />
+            <StatCard label="Flats" value={String(allFlats.length)} icon={HomeIcon} tone="blue" />
+          </div>
+        )}
         {isLoading ? (
           <PageSpinner />
         ) : buildings.length === 0 ? (
