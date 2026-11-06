@@ -44,6 +44,7 @@ jest.mock('@/components/ui/NotificationBell', () => ({ NotificationBell: () => n
 jest.mock('@/components/ui/BrandMark', () => ({ BrandMark: () => null }));
 
 import AdminDashboard from '../../app/(app)/admin/index';
+import { billingApi } from '@/api/endpoints/billing.api';
 
 jest.useRealTimers();
 jest.setTimeout(30_000);
@@ -130,9 +131,8 @@ describe('the admin dashboard and its billing month', () => {
   });
 
   it('falls back to the calendar month when there are no published periods yet, with nothing to browse', async () => {
-    const api = require('@/api/endpoints/billing.api').billingApi;
-    api.listPublishedPeriods.mockResolvedValueOnce([]);
-    api.getCurrentPeriod.mockResolvedValueOnce(null);
+    (billingApi.listPublishedPeriods as jest.Mock).mockResolvedValueOnce([]);
+    (billingApi.getCurrentPeriod as jest.Mock).mockResolvedValueOnce(null);
     const tree = await mount();
     const now = new Date();
     expect(mockSummary).toHaveBeenCalledWith({ year: now.getFullYear(), month: now.getMonth() + 1 });

@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { FlatList, TouchableOpacity } from 'react-native';
+import { FlatList, Text, TouchableOpacity } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
@@ -151,7 +151,6 @@ describe('ring, tiles, grid and hero', () => {
   });
 
   it('draws its children inside the hero card', async () => {
-    const { Text } = require('react-native');
     const hero = await render(<HeroCard><Text>₹24,349 pending</Text></HeroCard>);
     expect(textOf(hero.root)).toContain('₹24,349 pending');
   });
