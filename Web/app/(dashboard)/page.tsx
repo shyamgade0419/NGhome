@@ -43,6 +43,7 @@ import { formatCurrency, formatDateTime, parseDecimalLike } from '@/lib/utils';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { can } from '@/lib/permissions';
+import { useFeatures } from '@/lib/useFeatures';
 
 const MONTH_NAMES = [
   '', 'January', 'February', 'March', 'April', 'May', 'June',
@@ -82,6 +83,7 @@ export default function DashboardPage() {
   // The bank balance and the corpus are the finance team's figures. A resident (an owner sees them on the
   // Society Finances page if the society allows; a tenant never does) gets no tile at all, not a misleading zero.
   const showMoneyTiles = can.manageBilling(activeMembership?.role, user?.isPlatformAdmin);
+  const { isOn, pathOn } = useFeatures();
   /* Load published periods to populate the month picker */
   const { data: periodsRaw } = useQuery({
     queryKey: ['published-periods'],
@@ -218,7 +220,7 @@ export default function DashboardPage() {
   startOfToday.setHours(0, 0, 0, 0);
   const announcements: any[] = Array.isArray(announcementsRaw) ? announcementsRaw : (announcementsRaw?.data ?? []);
   const meetings: any[] = Array.isArray(meetingsRaw) ? meetingsRaw : (meetingsRaw?.data ?? []);
-  const nextMeeting = meetings
+  const nextMeeting = !isOn('meetings') ? undefined : meetings
     .filter((m) => m.meetingDate && new Date(m.meetingDate) >= startOfToday)
     .sort((a, b) => +new Date(a.meetingDate) - +new Date(b.meetingDate))[0];
 
@@ -272,12 +274,12 @@ export default function DashboardPage() {
   const tips: UpdateItem[] = showMoneyTiles
     ? [
         ...(announcements.length === 0 ? [{ id: 'tip-announce', tone: 'violet' as const, icon: Megaphone, title: 'Tell your residents something', subtitle: 'Post a notice and everyone sees it in the app.', cta: 'Post an announcement', href: '/community' }] : []),
-        ...(!nextMeeting ? [{ id: 'tip-meeting', tone: 'teal' as const, icon: CalendarDays, title: 'Plan a meeting', subtitle: 'Set the date and agenda, and residents are told.', cta: 'Schedule a meeting', href: '/meetings' }] : []),
+        ...(!nextMeeting && isOn('meetings') ? [{ id: 'tip-meeting', tone: 'teal' as const, icon: CalendarDays, title: 'Plan a meeting', subtitle: 'Set the date and agenda, and residents are told.', cta: 'Schedule a meeting', href: '/meetings' }] : []),
         { id: 'tip-invite', tone: 'green' as const, icon: Users, title: 'Invite residents', subtitle: "Share your society's join code so residents can sign up.", cta: 'Open settings', href: '/settings' },
       ]
     : [
         { id: 'tip-helpdesk', tone: 'amber' as const, icon: Wrench, title: 'Need something fixed?', subtitle: 'Raise a request and follow it until it is done.', cta: 'Open the helpdesk', href: '/helpdesk' },
-        { id: 'tip-visitors', tone: 'coral' as const, icon: Users, title: 'Expecting a guest?', subtitle: 'Invite them in advance and the gate lets them in.', cta: 'Open visitors', href: '/visitors' },
+        ...(isOn('visitors') ? [{ id: 'tip-visitors', tone: 'coral' as const, icon: Users, title: 'Expecting a guest?', subtitle: 'Invite them in advance and the gate lets them in.', cta: 'Open visitors', href: '/visitors' }] : []),
         { id: 'tip-community', tone: 'violet' as const, icon: Megaphone, title: 'Meet your neighbours', subtitle: 'Ask, share and chat on the community board.', cta: 'Open the board', href: '/community' },
       ];
   const updates: UpdateItem[] = real.length >= 3 ? real : [...real, ...tips.slice(0, 3 - real.length)];
@@ -491,7 +493,7 @@ export default function DashboardPage() {
         <Reveal delay={270}>
           <section>
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Quick actions</h2>
-            <QuickActions items={showMoneyTiles ? MANAGER_ACTIONS : RESIDENT_ACTIONS} />
+            <QuickActions items={(showMoneyTiles ? MANAGER_ACTIONS : RESIDENT_ACTIONS).filter((a) => pathOn(a.href))} />
           </section>
         </Reveal>
 

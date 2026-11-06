@@ -278,6 +278,10 @@ export const societyApi = {
     city?: string; state?: string; pincode?: string; email?: string; phone?: string;
   }) => api.patch('/societies/my', data),
   getConfig: () => api.get('/societies/my/config'),
+  /** Which parts of the app this society uses (every feature, true or false). Any member can read it. */
+  getFeatures: (): Promise<{ data: { features: import('@/lib/features').Features } }> => api.get('/societies/my/features'),
+  /** Switches parts of the app on or off. Only the names sent change. Admin only. */
+  setFeatures: (patch: Partial<import('@/lib/features').Features>) => api.patch('/societies/my/config', { features: patch }),
   updateConfig: (data: {
     currency?: string; billingCycle?: string; billingDueDay?: number;
     financialYearStartMonth?: number; gracePeriodDays?: number;

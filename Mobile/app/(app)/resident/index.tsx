@@ -29,6 +29,7 @@ import { TintStatTile } from '@/components/home/TintStatTile';
 import { ActionGrid, ActionItem } from '@/components/home/ActionGrid';
 import { UpdatesCarousel, UpdateItem } from '@/components/home/UpdatesCarousel';
 import { useBranding } from '@/hooks/useBranding';
+import { useFeatures } from '@/hooks/useFeatures';
 import { colors, spacing, typography, radius } from '@/theme';
 import { toNum, inr } from '@/utils/format';
 
@@ -54,6 +55,7 @@ export default function ResidentDashboard() {
   const router = useRouter();
   const { user } = useAuth();
   const brand = useBranding();
+  const { isOn, routeOn } = useFeatures();
 
   const { data: myBill, isLoading, refetch: refetchBill, isRefetching } = useQuery({
     queryKey: ['my-current-bill'],
@@ -110,10 +112,10 @@ export default function ResidentDashboard() {
 
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
-  const nextMeeting = (meetings?.data ?? [])
+  const nextMeeting = !isOn('meetings') ? undefined : (meetings?.data ?? [])
     .filter((m) => new Date(m.meetingDate) >= startOfToday)
     .sort((a, b) => +new Date(a.meetingDate) - +new Date(b.meetingDate))[0];
-  const nextEvent = (events?.data ?? [])
+  const nextEvent = !isOn('events') ? undefined : (events?.data ?? [])
     .filter((e) => e.status === 'PLANNED' && new Date(e.eventDate) >= startOfToday)
     .sort((a, b) => +new Date(a.eventDate) - +new Date(b.eventDate))[0];
 
@@ -165,8 +167,8 @@ export default function ResidentDashboard() {
   // Nothing posted yet: cards for what a resident can do, so the strip is always there.
   const tips: UpdateItem[] = [
     { id: 'tip-helpdesk', tone: 'amber' as const, icon: 'construct-outline' as const, title: 'Need something fixed?', subtitle: 'Raise a request and follow it until it is done.', cta: 'Open the helpdesk', onPress: () => router.push('/(app)/resident/helpdesk' as any) },
-    { id: 'tip-visitors', tone: 'coral' as const, icon: 'walk-outline' as const, title: 'Expecting a guest?', subtitle: 'Invite them in advance and the gate lets them in.', cta: 'Open visitors', onPress: () => router.push('/(app)/visitors' as any) },
-    { id: 'tip-community', tone: 'violet' as const, icon: 'chatbubbles-outline' as const, title: 'Meet your neighbours', subtitle: 'Ask, share and chat on the community board.', cta: 'Open the board', onPress: () => router.push('/(app)/forum' as any) },
+    ...(isOn('visitors') ? [{ id: 'tip-visitors', tone: 'coral' as const, icon: 'walk-outline' as const, title: 'Expecting a guest?', subtitle: 'Invite them in advance and the gate lets them in.', cta: 'Open visitors', onPress: () => router.push('/(app)/visitors' as any) }] : []),
+    ...(isOn('forum') ? [{ id: 'tip-community', tone: 'violet' as const, icon: 'chatbubbles-outline' as const, title: 'Meet your neighbours', subtitle: 'Ask, share and chat on the community board.', cta: 'Open the board', onPress: () => router.push('/(app)/forum' as any) }] : []),
   ];
   const updates: UpdateItem[] = real.length >= 3 ? real : [...real, ...tips.slice(0, 3 - real.length)];
 
@@ -301,7 +303,7 @@ export default function ResidentDashboard() {
             found, so they sit here with the community and gate shortcuts. */}
         <FadeInUp delay={270}>
           <SectionHeader title="Quick Links" />
-          <ActionGrid items={QUICK_LINKS} onOpen={(route) => router.push(route as any)} />
+          <ActionGrid items={QUICK_LINKS.filter((a) => routeOn(a.route))} onOpen={(route) => router.push(route as any)} />
         </FadeInUp>
 
         <View style={{ height: spacing['3xl'] }} />

@@ -98,7 +98,9 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
   let invNo = 0;
   let personNo = 0;
 
-  const drain = (over: Parameters<WhatsappService['drain']>[0] = {}) => whatsapp.drain({ gap: () => 0, ignoreWindow: true, ...over });
+  // `now` a little ahead: a row queued a moment ago has a due time stamped by the database's clock, and Node's clock on Windows can
+  // lag it by a few milliseconds, which made a send that starts at once find nothing due. In production a message waits for the next run.
+  const drain = (over: Parameters<WhatsappService['drain']>[0] = {}) => whatsapp.drain({ gap: () => 0, ignoreWindow: true, now: new Date(Date.now() + 2_000), ...over });
   const rows = (where: Prisma.WhatsappMessageWhereInput = {}) => prisma.whatsappMessage.findMany({ where: { societyId, ...where }, orderBy: { createdAt: 'asc' } });
   const setConfig = (body: Record<string, unknown>) => http_().patch('/api/v1/societies/my/config').set(auth(admin)).send(body).expect(200);
   /** Earlier tests leave overdue bills in this society; the fine tests must only see their own. */

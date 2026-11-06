@@ -42,6 +42,7 @@ import { cn, initials } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { useSidebar } from './SidebarContext';
 import { useBranding } from '@/components/BrandingProvider';
+import { useFeatures } from '@/lib/useFeatures';
 
 /* Admin + Staff nav */
 const ADMIN_NAV = [
@@ -95,6 +96,7 @@ export function Sidebar() {
   const { user, activeMembership, logout } = useAuth();
   const { isOpen, close } = useSidebar();
   const branding = useBranding();
+  const { pathOn } = useFeatures();
 
   // Auto-close on mobile when navigating to a new route
   useEffect(() => {
@@ -149,7 +151,7 @@ export function Sidebar() {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5 scrollbar-thin">
-          {NAV.map(({ href, icon: Icon, label }) => {
+          {NAV.filter((item) => pathOn(item.href)).map(({ href, icon: Icon, label }) => {
             // Exact match for '/', prefix match for everything else.
             // /billing/my must not match /billing, so check prefix with trailing slash.
             const active =

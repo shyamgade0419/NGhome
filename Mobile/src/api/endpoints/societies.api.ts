@@ -1,4 +1,5 @@
 import { normalizeResidency } from '@/utils/residency';
+import type { Features } from '@/features/catalog';
 import apiClient from '@/api/client';
 import { ApiResponse, PaginatedResponse, PaginationQuery } from '@/api/types';
 import { Society, Building, Flat, Announcement, Meeting } from '@/types/society.types';
@@ -14,6 +15,18 @@ export const societiesApi = {
   getBranding: async () => {
     const { data } = await apiClient.get<ApiResponse<Branding>>('/societies/my/branding');
     return data.data;
+  },
+
+  /** Which parts of the app this society uses (every feature, true or false). Any member can read it. */
+  getFeatures: async (): Promise<Features> => {
+    const { data } = await apiClient.get<ApiResponse<{ features: Features }>>('/societies/my/features');
+    return data.data.features;
+  },
+
+  /** Switches parts of the app on or off. Only the names sent change. Admin only. */
+  setFeatures: async (patch: Partial<Features>) => {
+    const { data } = await apiClient.patch('/societies/my/config', { features: patch });
+    return data;
   },
 
   getMySocietyStats: async () => {

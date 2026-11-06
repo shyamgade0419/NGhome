@@ -312,7 +312,7 @@ describe('WhatsApp: the platform\'s gateway and each society\'s own number (e2e,
         await http_().patch('/api/v1/societies/my/config').set(auth(s.admin)).send({ whatsappEnabled: true }).expect(200);
         await prisma.whatsappMessage.create({ data: { societyId: s.id, kind: 'TEST', dedupeKey: `c1-${UNIQUE}-${s.id}`, toPhone: '919876543210', body: 'hello', sendAfter: new Date(Date.now() - 5000) } });
       }
-      const out = await whatsapp.drain({ gap: () => 0, ignoreWindow: true });
+      const out = await whatsapp.drain({ gap: () => 0, ignoreWindow: true, now: new Date(Date.now() + 2_000) });
       expect(out).toMatchObject({ sent: 2, stopped: null });
       expect(gw.state.sent.map((s) => s.session).sort()).toEqual([(await sessionOf(A)) as string, (await sessionOf(B)) as string].sort());
       expect(gw.state.sent.every((s) => s.key === CONSOLE_KEY)).toBe(true); // the console's key, not the environment's

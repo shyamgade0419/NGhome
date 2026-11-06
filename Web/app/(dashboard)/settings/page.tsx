@@ -5,12 +5,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building2, Shield, Bell, IndianRupee, ChevronRight,
   Save, Plus, X, ExternalLink, UserCog, Trash2,
-  Sparkles, Lock, CheckCircle2, Key, Copy, RefreshCw, Share2, MessageSquare,
+  Sparkles, Lock, CheckCircle2, Key, Copy, RefreshCw, Share2, MessageSquare, ToggleRight,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { societyApi, billingRulesApi, usersApi } from '@/lib/api/endpoints';
 import { WhatsappSection } from '@/components/settings/WhatsappSection';
+import { FeaturesSection } from '@/components/settings/FeaturesSection';
 import { BASIS_LABEL, KIND_LABEL, buildRulePayload, describeRule } from '@/lib/billingRules';
 import { ruleDetailRows } from '@/lib/billingRuleDetails';
 import type { Basis, ChargeKind, RuleForm } from '@/lib/billingRules';
@@ -1011,6 +1012,17 @@ export default function SettingsPage() {
             </p>
             <WhatsappSection admin={admin} />
           </div>
+        </Card>
+
+        {/* Features: switch off what the society does not use */}
+        <Card padding="lg">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <ToggleRight size={18} className="text-primary-600" />
+              <CardTitle>Features</CardTitle>
+            </div>
+          </CardHeader>
+          <FeaturesSection admin={admin} />
         </Card>
 
         {/* Roles & Permissions */}

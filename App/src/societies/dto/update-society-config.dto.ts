@@ -1,5 +1,5 @@
 import {
-  IsOptional, IsString, IsInt, IsBoolean, IsNumber, IsEnum, IsArray, ArrayMaxSize, Min, Max, MaxLength,
+  IsOptional, IsString, IsInt, IsBoolean, IsNumber, IsEnum, IsArray, IsObject, ArrayMaxSize, Min, Max, MaxLength,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { BillingCycleType } from '@prisma/client';
@@ -129,4 +129,13 @@ export class UpdateSocietyConfigDto {
   @Min(1, { each: true })
   @Max(28, { each: true })
   whatsappReminderDays?: number[];
+
+  @ApiPropertyOptional({
+    description: 'Parts of the app this society uses, e.g. { "parking": false } (stored in additionalConfig). Only the names sent change; every feature is on unless switched off. Names: visitors, deliveries, householdHelp, parking, amenities, events, meetings, forum, chat, staff.',
+    type: 'object',
+    additionalProperties: { type: 'boolean' },
+  })
+  @IsOptional()
+  @IsObject()
+  features?: Record<string, boolean>;
 }

@@ -7,6 +7,10 @@ import { useAuth } from '@/hooks/useAuth';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { Card } from '@/components/ui/Card';
 import { colors, spacing, typography, radius } from '@/theme';
+import { useFeatures } from '@/hooks/useFeatures';
+import type { FeatureKey } from '@/features/catalog';
+import { areaForTitle } from '@/theme/areas';
+import { tint, tones } from '@/theme/tones';
 
 interface SettingItem {
   icon: keyof typeof Ionicons.glyphMap;
@@ -14,18 +18,27 @@ interface SettingItem {
   sublabel?: string;
   onPress: () => void;
   danger?: boolean;
+  /** Hidden when the society has switched this part of the app off. */
+  feature?: FeatureKey;
 }
 
 export default function SettingsScreen() {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const { isOn } = useFeatures();
 
-  const items: SettingItem[] = [
+  const allItems: SettingItem[] = [
     {
       icon: 'business-outline',
       label: 'Society Settings',
       sublabel: 'Name, address, contact details',
       onPress: () => router.push('/(app)/admin/settings/society' as any),
+    },
+    {
+      icon: 'toggle-outline',
+      label: 'Features',
+      sublabel: 'Switch off parts of the app you do not use',
+      onPress: () => router.push('/(app)/admin/settings/features' as any),
     },
     {
       icon: 'people-outline',
@@ -108,12 +121,14 @@ export default function SettingsScreen() {
     {
       icon: 'calendar-outline',
       label: 'Meetings',
+      feature: 'meetings',
       sublabel: 'Agendas & minutes',
       onPress: () => router.push('/(app)/admin/meetings' as any),
     },
     {
       icon: 'sparkles-outline',
       label: 'Events & Activities',
+      feature: 'events',
       sublabel: 'Society events & planned upcoming activities',
       onPress: () => router.push('/(app)/admin/events' as any),
     },
@@ -126,6 +141,7 @@ export default function SettingsScreen() {
     {
       icon: 'cash-outline',
       label: 'Salaries',
+      feature: 'staff',
       sublabel: 'Staff roster & payroll records',
       onPress: () => router.push('/(app)/admin/salaries' as any),
     },
@@ -182,6 +198,8 @@ export default function SettingsScreen() {
     },
   ];
 
+  const items = allItems.filter((i) => !i.feature || isOn(i.feature));
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScreenHeader title="Settings" />
@@ -212,11 +230,11 @@ export default function SettingsScreen() {
               onPress={item.onPress}
               activeOpacity={0.7}
             >
-              <View style={[styles.rowIcon, item.danger && styles.rowIconDanger]}>
+              <View style={[styles.rowIcon, item.danger && styles.rowIconDanger, !item.danger && areaForTitle(item.label) && { backgroundColor: tint(tones[areaForTitle(item.label)!.tone], 0.84) }]}>
                 <Ionicons
                   name={item.icon}
                   size={20}
-                  color={item.danger ? colors.error : colors.primary}
+                  color={item.danger ? colors.error : areaForTitle(item.label) ? tones[areaForTitle(item.label)!.tone] : colors.primary}
                 />
               </View>
               <View style={styles.rowText}>

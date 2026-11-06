@@ -29,6 +29,7 @@ import { TintStatTile } from '@/components/home/TintStatTile';
 import { ActionGrid, ActionItem } from '@/components/home/ActionGrid';
 import { UpdatesCarousel, UpdateItem } from '@/components/home/UpdatesCarousel';
 import { useBranding } from '@/hooks/useBranding';
+import { useFeatures } from '@/hooks/useFeatures';
 import { colors, spacing, typography, radius } from '@/theme';
 import { fonts } from '@/theme/typography';
 import { inr, inrCompact, toNum } from '@/utils/format';
@@ -57,6 +58,7 @@ export default function AdminDashboard() {
   const router = useRouter();
   const { user } = useAuth();
   const brand = useBranding();
+  const { isOn, routeOn } = useFeatures();
 
   // The published billing periods, newest first: what the dashboard can show. It opens on the newest (the one in use)
   // and steps back through older ones by arrow or swipe.
@@ -142,10 +144,10 @@ export default function AdminDashboard() {
 
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
-  const nextMeeting = (meetings?.data ?? [])
+  const nextMeeting = !isOn('meetings') ? undefined : (meetings?.data ?? [])
     .filter((m) => new Date(m.meetingDate) >= startOfToday)
     .sort((a, b) => +new Date(a.meetingDate) - +new Date(b.meetingDate))[0];
-  const nextEvent = (events?.data ?? [])
+  const nextEvent = !isOn('events') ? undefined : (events?.data ?? [])
     .filter((e) => e.status === 'PLANNED' && new Date(e.eventDate) >= startOfToday)
     .sort((a, b) => +new Date(a.eventDate) - +new Date(b.eventDate))[0];
 
@@ -200,10 +202,10 @@ export default function AdminDashboard() {
     ...((announcements?.data ?? []).length === 0
       ? [{ id: 'tip-announce', tone: 'violet' as const, icon: 'megaphone-outline' as const, title: 'Tell your residents something', subtitle: 'Post a notice and everyone sees it in the app.', cta: 'Post an announcement', onPress: () => router.push('/(app)/admin/announcements' as any) }]
       : []),
-    ...(!nextMeeting
+    ...(!nextMeeting && isOn('meetings')
       ? [{ id: 'tip-meeting', tone: 'teal' as const, icon: 'calendar-outline' as const, title: 'Plan a meeting', subtitle: 'Set the date and agenda, and residents are told.', cta: 'Schedule a meeting', onPress: () => router.push('/(app)/admin/meetings' as any) }]
       : []),
-    ...(!nextEvent
+    ...(!nextEvent && isOn('events')
       ? [{ id: 'tip-event', tone: 'coral' as const, icon: 'sparkles-outline' as const, title: 'Organise an event', subtitle: 'Festivals and get-togethers, with a budget you can track.', cta: 'Plan an event', onPress: () => router.push('/(app)/admin/events' as any) }]
       : []),
     { id: 'tip-invite', tone: 'green' as const, icon: 'person-add-outline' as const, title: 'Invite residents', subtitle: "Share your society's join code so residents can sign up.", cta: 'Open settings', onPress: () => router.push('/(app)/admin/settings' as any) },
@@ -338,7 +340,7 @@ export default function AdminDashboard() {
         {/* Quick actions */}
         <FadeInUp delay={270}>
           <SectionHeader title="Quick Actions" />
-          <ActionGrid items={QUICK_ACTIONS} onOpen={(route) => router.push(route as any)} />
+          <ActionGrid items={QUICK_ACTIONS.filter((a) => routeOn(a.route))} onOpen={(route) => router.push(route as any)} />
         </FadeInUp>
 
         <View style={styles.bottomPad} />

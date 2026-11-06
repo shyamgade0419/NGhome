@@ -21,6 +21,7 @@ export default function SettingsLayout() {
       <Stack.Screen name="buildings" />
       <Stack.Screen name="notifications" />
       <Stack.Screen name="billing" />
+      <Stack.Screen name="features" />
     </Stack>
   );
 }

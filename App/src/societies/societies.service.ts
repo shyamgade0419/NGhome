@@ -8,6 +8,7 @@ import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagina
 import { generateUniqueJoinCode } from '../common/utils/join-code.util';
 import { scrubLogo } from './branding';
 import { cleanReminderDays } from '../whatsapp/whatsapp-settings';
+import { Features, featurePatchProblem, readFeatures } from './features';
 import { Prisma, AuditAction } from '@prisma/client';
 
 @Injectable()
@@ -498,18 +499,22 @@ export class SocietiesService {
 
     // upiId and waterBillingEnabled have no DB column; fold both into the
     // existing additionalConfig JSON field rather than migrate the schema.
-    const { upiId, waterBillingEnabled, reminderTemplate, whatsappEnabled, whatsappReminderDays, ...configFields } = dto as UpdateSocietyConfigDto & {
+    const featuresProblem = dto.features !== undefined ? featurePatchProblem(dto.features) : null;
+    if (featuresProblem) throw new BadRequestException(featuresProblem);
+
+    const { upiId, waterBillingEnabled, reminderTemplate, whatsappEnabled, whatsappReminderDays, features, ...configFields } = dto as UpdateSocietyConfigDto & {
       upiId?: string;
       waterBillingEnabled?: boolean;
       reminderTemplate?: string;
       whatsappEnabled?: boolean;
       whatsappReminderDays?: number[];
+      features?: Record<string, boolean>;
     };
 
     let additionalConfigPatch: Prisma.InputJsonValue | undefined;
     if (
       upiId !== undefined || waterBillingEnabled !== undefined || reminderTemplate !== undefined ||
-      whatsappEnabled !== undefined || whatsappReminderDays !== undefined
+      whatsappEnabled !== undefined || whatsappReminderDays !== undefined || features !== undefined
     ) {
       const current = await this.prisma.societyConfiguration.findUnique({
         where: { societyId },
@@ -522,6 +527,8 @@ export class SocietiesService {
         ...(waterBillingEnabled !== undefined ? { waterBillingEnabled } : {}),
         // Blank puts the default wording back (readReminderTemplate falls back when nothing is stored).
         ...(reminderTemplate !== undefined ? { reminderTemplate: reminderTemplate.trim() } : {}),
+        // Only the features named change; the others keep what they were.
+        ...(features !== undefined ? { features: { ...((existing.features as Record<string, unknown> | undefined) ?? {}), ...features } } : {}),
         ...(whatsappEnabled !== undefined || whatsappReminderDays !== undefined
           ? {
               whatsapp: {
@@ -549,6 +556,12 @@ export class SocietiesService {
       update: data,
     });
     return scrubLogo(saved) ?? saved;
+  }
+
+  /** Which parts of the app this society uses: every feature, true or false. Readable by any member, so the apps can hide what is off. */
+  async getFeatures(societyId: string): Promise<{ features: Features }> {
+    const config = await this.prisma.societyConfiguration.findUnique({ where: { societyId }, select: { additionalConfig: true } });
+    return { features: readFeatures(config?.additionalConfig) };
   }
 
   async getConfiguration(societyId: string) {

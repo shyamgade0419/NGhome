@@ -79,6 +79,14 @@ export class SocietiesController {
     return this.brandingService.get(societyId);
   }
 
+  /** Any member: which parts of the app this society has switched off (parking, visitors, amenities and so on). */
+  @Get('my/features')
+  @UseGuards(TenantGuard)
+  @ApiOperation({ summary: 'Which parts of the app this society uses (every feature is on unless switched off)' })
+  async getFeatures(@SocietyId() societyId: string) {
+    return this.societiesService.getFeatures(societyId);
+  }
+
   @Get('my/config')
   @UseGuards(TenantGuard)
   @ApiOperation({ summary: 'Get society configuration' })
