@@ -12,15 +12,32 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
+  Receipt,
+  LayoutGrid,
+  CheckCircle2,
+  PlusCircle,
+  Droplets,
+  Wrench,
+  Megaphone,
+  CalendarDays,
+  BarChart3,
+  Landmark,
+  PieChart,
+  FolderOpen,
+  Bell,
 } from 'lucide-react';
-import { dashboardApi, paymentsApi, billingApi, reportsApi } from '@/lib/api/endpoints';
+import { dashboardApi, paymentsApi, billingApi, reportsApi, communityApi, meetingsApi } from '@/lib/api/endpoints';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { StatCard } from '@/components/ui/StatCard';
+import { HeroCard } from '@/components/home/HeroCard';
+import { ProgressRing } from '@/components/home/ProgressRing';
+import { UpdatesStrip, UpdateItem } from '@/components/home/UpdatesStrip';
+import { QuickActions, QuickAction } from '@/components/home/QuickActions';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge, paymentStatusBadge } from '@/components/ui/Badge';
 import { PageSpinner } from '@/components/ui/Spinner';
-import { formatCurrency, formatDateTime } from '@/lib/utils';
+import { formatCurrency, formatDateTime, parseDecimalLike } from '@/lib/utils';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { can } from '@/lib/permissions';
@@ -29,6 +46,34 @@ const MONTH_NAMES = [
   '', 'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
+
+const MANAGER_ACTIONS: readonly QuickAction[] = [
+  { label: 'Billing', href: '/billing', icon: Receipt, tone: 'blue' },
+  { label: 'Maintenance Sheet', href: '/billing/statement', icon: LayoutGrid, tone: 'teal' },
+  { label: 'Verify Payments', href: '/payments?status=PENDING', icon: CheckCircle2, tone: 'green' },
+  { label: 'Add Expense', href: '/expenses', icon: PlusCircle, tone: 'coral' },
+  { label: 'Water', href: '/water', icon: Droplets, tone: 'teal' },
+  { label: 'Helpdesk', href: '/helpdesk', icon: Wrench, tone: 'amber' },
+  { label: 'Community', href: '/community', icon: Megaphone, tone: 'violet' },
+  { label: 'Meetings', href: '/meetings', icon: CalendarDays, tone: 'teal' },
+  { label: 'Residents', href: '/residents', icon: Users, tone: 'blue' },
+  { label: 'Reports', href: '/reports', icon: BarChart3, tone: 'green' },
+  { label: 'Accounts', href: '/accounts', icon: Landmark, tone: 'violet' },
+];
+
+const RESIDENT_ACTIONS: readonly QuickAction[] = [
+  { label: 'My Bills', href: '/billing/my', icon: Receipt, tone: 'blue' },
+  { label: 'Maintenance Sheet', href: '/billing/statement', icon: LayoutGrid, tone: 'teal' },
+  { label: 'Society Finances', href: '/finances', icon: PieChart, tone: 'green' },
+  { label: 'Meetings', href: '/meetings', icon: CalendarDays, tone: 'teal' },
+  { label: 'Community', href: '/community', icon: Megaphone, tone: 'violet' },
+  { label: 'Helpdesk', href: '/helpdesk', icon: Wrench, tone: 'amber' },
+  { label: 'Documents', href: '/documents', icon: FolderOpen, tone: 'blue' },
+  { label: 'Notifications', href: '/notifications', icon: Bell, tone: 'coral' },
+];
+
+const shortDate = (iso: string | null | undefined) =>
+  iso ? new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
 
 export default function DashboardPage() {
   const { user, activeMembership } = useAuth();
@@ -122,36 +167,107 @@ export default function DashboardPage() {
     queryFn: () => paymentsApi.list({ status: 'PENDING', limit: 5 }).then((r) => r.data),
   });
 
+  // What is happening, for the swipe strip. Each is optional: a request that fails just leaves its card out.
+  const { data: announcementsRaw } = useQuery({
+    queryKey: ['home-announcements'],
+    queryFn: () => communityApi.listAnnouncements({ limit: 3 }).then((r: any) => r.data ?? r).catch(() => null),
+    staleTime: 60_000,
+  });
+  const { data: meetingsRaw } = useQuery({
+    queryKey: ['home-meetings'],
+    queryFn: () => meetingsApi.list().then((r: any) => r.data ?? r).catch(() => null),
+    staleTime: 60_000,
+  });
+  // A resident's hero card is their own bill, not the society's collection.
+  const { data: myBillsRaw } = useQuery({
+    queryKey: ['home-my-bills'],
+    queryFn: () => billingApi.getMyBills({ limit: 5 }).then((r: any) => r.data ?? r).catch(() => null),
+    enabled: !showMoneyTiles,
+    staleTime: 60_000,
+  });
+
   const isLoading = summaryLoading || collectionLoading;
   if (isLoading && !summary) return <PageSpinner />;
 
   const s = summary;
 
+  const billed = parseDecimalLike(collection?.totalBilled);
+  const collected = parseDecimalLike(collection?.totalCollected);
+  const collectedFraction = billed > 0 ? collected / billed : 0;
+  const pendingCount = s?.pendingApprovals ?? 0;
+
+  const myBills: any[] = Array.isArray(myBillsRaw) ? myBillsRaw : (myBillsRaw?.data ?? []);
+  const myBill = myBills.find((b) => b.isPublished && !b.isPaid) ?? myBills[0] ?? null;
+  const myTotal = parseDecimalLike(myBill?.totalAmount);
+  const myPaid = parseDecimalLike(myBill?.paidAmount);
+  const myPaidFraction = myTotal > 0 ? myPaid / myTotal : 0;
+  const myOutstanding = parseDecimalLike(myBill?.pendingAmount);
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const announcements: any[] = Array.isArray(announcementsRaw) ? announcementsRaw : (announcementsRaw?.data ?? []);
+  const meetings: any[] = Array.isArray(meetingsRaw) ? meetingsRaw : (meetingsRaw?.data ?? []);
+  const nextMeeting = meetings
+    .filter((m) => m.meetingDate && new Date(m.meetingDate) >= startOfToday)
+    .sort((a, b) => +new Date(a.meetingDate) - +new Date(b.meetingDate))[0];
+
+  const updates: UpdateItem[] = [
+    ...(showMoneyTiles && pendingCount > 0
+      ? [{
+          id: 'approvals',
+          tone: 'amber' as const,
+          icon: Clock,
+          title: `${pendingCount} payment${pendingCount > 1 ? 's' : ''} pending approval`,
+          subtitle: 'Check the amount and approve it.',
+          cta: 'Review now',
+          href: '/payments?status=PENDING',
+        }]
+      : []),
+    ...(!showMoneyTiles && myBill && !myBill.isPaid
+      ? [{
+          id: 'bill',
+          tone: 'amber' as const,
+          icon: Wallet,
+          title: 'Your maintenance bill is due',
+          subtitle: `${formatCurrency(myOutstanding)} by ${shortDate(myBill.dueDate)}`,
+          cta: 'See my bills',
+          href: '/billing/my',
+        }]
+      : []),
+    ...announcements.slice(0, 3).map((a: any) => ({
+      id: `a-${a.id}`,
+      tone: a.priority === 'URGENT' || a.priority === 'HIGH' ? ('coral' as const) : ('violet' as const),
+      icon: Megaphone,
+      title: a.title as string,
+      subtitle: a.content as string,
+      cta: 'Community',
+      href: '/community',
+    })),
+    ...(nextMeeting
+      ? [{
+          id: `m-${nextMeeting.id}`,
+          tone: 'teal' as const,
+          icon: CalendarDays,
+          title: nextMeeting.title as string,
+          subtitle: `Meeting on ${shortDate(nextMeeting.meetingDate)}${nextMeeting.location ? `, ${nextMeeting.location}` : ''}`,
+          cta: 'Meetings',
+          href: '/meetings',
+        }]
+      : []),
+  ];
+
+  const periodStatus = collection?.period?.status ?? (periods[currentIndex]?.status as string | undefined) ?? 'PUBLISHED';
+
   return (
     <>
       <Header title="Dashboard" subtitle="Society financial overview" />
       <PageContainer className="space-y-6">
-        {/* Pending approvals alert */}
-        {s && s.pendingApprovals > 0 && (
-          <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-5 py-3">
-            <Clock size={18} className="text-amber-600 flex-shrink-0" />
-            <p className="text-sm text-amber-800">
-              <span className="font-semibold">
-                {s.pendingApprovals} payment{s.pendingApprovals > 1 ? 's' : ''}
-              </span>{' '}
-              pending verification —{' '}
-              <Link href="/payments?status=PENDING" className="underline font-medium">
-                review now
-              </Link>
-            </p>
-          </div>
-        )}
-
         {/* Month picker */}
         <div className="flex items-center gap-3">
           <button
             onClick={() => goMonth('prev')}
             disabled={!canGoPrev}
+            aria-label="Earlier billing period"
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
             <ChevronLeft size={16} />
@@ -177,13 +293,82 @@ export default function DashboardPage() {
           <button
             onClick={() => goMonth('next')}
             disabled={!canGoNext}
+            aria-label="Later billing period"
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
             <ChevronRight size={16} />
           </button>
         </div>
 
-        {/* Financial stats */}
+        {/* Hero: for the finance team, what is still to collect and how much is in; for a resident, their own bill. */}
+        {showMoneyTiles ? (
+          <HeroCard>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium text-white/80">{currentIndex <= 0 ? 'Current billing period' : 'Billing period'}</p>
+                <p className="text-lg font-bold">{MONTH_NAMES[selectedMonth]} {selectedYear}</p>
+              </div>
+              <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold uppercase tracking-wide">{periodStatus}</span>
+            </div>
+            <p className="mt-4 text-3xl font-extrabold tabular-nums tracking-tight sm:text-4xl">
+              {collection ? formatCurrency(collection.totalPending) : '—'}
+              <span className="ml-2 text-base font-semibold text-white/80 sm:text-lg">pending</span>
+            </p>
+            <p className="text-sm text-white/85">of {collection ? formatCurrency(collection.totalBilled) : '—'} billed this month</p>
+            <div className="mt-5 flex flex-wrap items-center gap-4">
+              <ProgressRing fraction={collectedFraction} label={`${Math.round(collectedFraction * 100)}%`} title={`${Math.round(collectedFraction * 100)} percent collected`} />
+              <div className="grid flex-1 grid-cols-2 gap-3 sm:max-w-sm">
+                <div className="rounded-2xl bg-white/15 px-3 py-2">
+                  <p className="text-lg font-extrabold tabular-nums">{collection ? formatCurrency(collection.totalCollected) : '—'}</p>
+                  <p className="text-xs text-white/85">collected</p>
+                </div>
+                <Link href="/payments?status=PENDING" className="rounded-2xl bg-white/15 px-3 py-2 hover:bg-white/25">
+                  <p className="text-lg font-extrabold tabular-nums">{pendingCount}</p>
+                  <p className="text-xs text-white/85">to review</p>
+                </Link>
+              </div>
+            </div>
+          </HeroCard>
+        ) : (
+          <HeroCard>
+            {myBill ? (
+              <>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-medium text-white/80">Your maintenance</p>
+                    <p className="text-lg font-bold">Flat {myBill.flatCode}</p>
+                  </div>
+                  <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold uppercase tracking-wide">{myBill.isPaid ? 'Paid' : 'Pending'}</span>
+                </div>
+                <p className="mt-4 text-3xl font-extrabold tabular-nums tracking-tight sm:text-4xl">{formatCurrency(myBill.totalAmount)}</p>
+                {!myBill.isPaid && (
+                  <p className="text-sm text-white/85">
+                    Outstanding {formatCurrency(myOutstanding)} · due {shortDate(myBill.dueDate)}
+                  </p>
+                )}
+                <div className="mt-5 flex flex-wrap items-center gap-4">
+                  <ProgressRing fraction={myPaidFraction} label={`${Math.round(myPaidFraction * 100)}%`} title={`${Math.round(myPaidFraction * 100)} percent of this bill paid`} />
+                  <Link href="/billing/my" className="rounded-xl bg-white/20 px-4 py-2.5 text-sm font-bold hover:bg-white/30">
+                    {myBill.isPaid ? 'See my bills' : 'Pay or upload payment'}
+                  </Link>
+                </div>
+              </>
+            ) : (
+              <p className="py-2 text-base font-semibold">No pending bill. You are all caught up!</p>
+            )}
+          </HeroCard>
+        )}
+
+        {/* What is happening: swipe, or use the arrows */}
+        {updates.length > 0 && (
+          <section>
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">What&apos;s happening</h2>
+            <UpdatesStrip items={updates} />
+          </section>
+        )}
+
+        {/* Financial stats. A resident the server shows no collection figures to gets no row of dashes. */}
+        {(showMoneyTiles || collection) && (
         <section>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Financials
@@ -193,46 +378,42 @@ export default function DashboardPage() {
               </span>
             )}
           </h2>
-          <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-3">
             <StatCard
               label="Total Billed"
               value={collection ? formatCurrency(collection.totalBilled) : '—'}
               icon={IndianRupee}
-              iconColor="text-blue-600"
-              iconBg="bg-blue-50"
+              tone="blue"
               href="/billing"
             />
             <StatCard
               label="Collected"
               value={collection ? formatCurrency(collection.totalCollected) : '—'}
               icon={TrendingUp}
-              iconColor="text-green-600"
-              iconBg="bg-green-50"
+              tone="green"
+              progress={collectedFraction}
               href="/billing"
             />
             <StatCard
               label="Outstanding"
               value={collection ? formatCurrency(collection.totalPending) : '—'}
               icon={AlertCircle}
-              iconColor="text-red-600"
-              iconBg="bg-red-50"
+              tone="amber"
               href="/payments?status=PENDING"
             />
             <StatCard
               label="Total Expenses"
               value={totalExpenses > 0 ? formatCurrency(totalExpenses) : '—'}
               icon={Wallet}
-              iconColor="text-orange-600"
-              iconBg="bg-orange-50"
+              tone="coral"
               href="/expenses"
             />
             {showMoneyTiles && (
             <StatCard
               label="Bank Balance"
               value={s ? formatCurrency(s.accountBalance) : '—'}
-              icon={IndianRupee}
-              iconColor="text-primary-600"
-              iconBg="bg-primary-50"
+              icon={Landmark}
+              tone="blue"
               href="/accounts"
             />
             )}
@@ -241,37 +422,41 @@ export default function DashboardPage() {
               label="Corpus Fund"
               value={s ? formatCurrency(s.corpusBalance) : '—'}
               icon={IndianRupee}
-              iconColor="text-purple-600"
-              iconBg="bg-purple-50"
+              tone="violet"
               href="/accounts"
             />
             )}
           </div>
         </section>
+        )}
 
         {/* Society stats */}
         <section>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Society
           </h2>
-          <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-3">
             <StatCard
               label="Members"
               value={s?.members?.toString() ?? '—'}
               icon={Users}
-              iconColor="text-teal-600"
-              iconBg="bg-teal-50"
+              tone="teal"
               href="/residents"
             />
             <StatCard
               label="Flats"
               value={s ? `${s.flats}` : '—'}
               icon={Building2}
-              iconColor="text-indigo-600"
-              iconBg="bg-indigo-50"
+              tone="violet"
               href="/flats"
             />
           </div>
+        </section>
+
+        {/* Quick actions */}
+        <section>
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Quick actions</h2>
+          <QuickActions items={showMoneyTiles ? MANAGER_ACTIONS : RESIDENT_ACTIONS} />
         </section>
 
         {/* Pending payments quick view */}
