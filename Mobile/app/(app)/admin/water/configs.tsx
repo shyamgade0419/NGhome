@@ -49,6 +49,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius } from '@/theme';
 import { inr } from '@/utils/format';
+import { SheetHeader } from '@/components/ui/SheetHeader';
 
 const MODELS: { value: ConfigurableWaterBillingModel; label: string }[] = [
   { value: 'PER_KL', label: 'Per KL' },
@@ -147,12 +148,7 @@ function CreateConfigModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.modalSafe} edges={['top', 'bottom']}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>New Water Billing Config</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={12}>
-            <Ionicons name="close" size={22} color={colors.text} />
-          </TouchableOpacity>
-        </View>
+        <SheetHeader title="New Water Billing Config" onClose={onClose} />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
             <Text style={styles.label}>Name *</Text>

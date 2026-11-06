@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius } from '@/theme';
 import { BillingPeriod, billingPeriodName } from '@/types/billing.types';
 import { inr, inrCompact } from '@/utils/format';
+import { SheetHeader } from '@/components/ui/SheetHeader';
 
 /** Last calendar day of a month — handles 28/29/30/31 without a lookup table
  *  (day 0 of the *next* month is the last day of this one). */
@@ -95,12 +96,7 @@ function CreatePeriodModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>New Billing Period</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={12}>
-            <Ionicons name="close" size={22} color={colors.text} />
-          </TouchableOpacity>
-        </View>
+        <SheetHeader title="New Billing Period" onClose={onClose} />
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}

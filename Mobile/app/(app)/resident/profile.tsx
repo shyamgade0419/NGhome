@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { SupportLink } from '@/components/ui/SupportLink';
 import { colors, spacing, typography, radius } from '@/theme';
+import { SheetHeader } from '@/components/ui/SheetHeader';
 
 export default function ResidentProfileScreen() {
   const { user, logout } = useAuth();
@@ -184,12 +185,7 @@ export default function ResidentProfileScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Change Password</Text>
-              <TouchableOpacity onPress={() => setShowPasswordModal(false)} hitSlop={8}>
-                <Ionicons name="close" size={22} color={colors.text} />
-              </TouchableOpacity>
-            </View>
+            <SheetHeader title="Change Password" onClose={() => setShowPasswordModal(false)} />
 
             <View style={styles.modalBody}>
               <Input

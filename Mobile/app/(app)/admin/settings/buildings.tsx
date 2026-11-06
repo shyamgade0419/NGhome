@@ -35,6 +35,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius } from '@/theme';
 import { Building, Flat, FlatStatus } from '@/types/society.types';
+import { SheetHeader } from '@/components/ui/SheetHeader';
 
 const FLAT_STATUSES: FlatStatus[] = ['VACANT', 'ACTIVE', 'UNDER_RENOVATION', 'INACTIVE'];
 
@@ -85,12 +86,7 @@ function BuildingFormModal({
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.modalSafe} edges={['top', 'bottom']}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>{building ? 'Edit Building' : 'Add Building'}</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={12}>
-            <Ionicons name="close" size={22} color={colors.text} />
-          </TouchableOpacity>
-        </View>
+        <SheetHeader title={building ? 'Edit Building' : 'Add Building'} onClose={onClose} />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
             <Text style={styles.label}>Building Name *</Text>
@@ -233,12 +229,7 @@ function FlatFormModal({
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.modalSafe} edges={['top', 'bottom']}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>{flat ? 'Edit Flat' : 'Add Flat'}</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={12}>
-            <Ionicons name="close" size={22} color={colors.text} />
-          </TouchableOpacity>
-        </View>
+        <SheetHeader title={flat ? 'Edit Flat' : 'Add Flat'} onClose={onClose} />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
             <Text style={styles.label}>Building *</Text>

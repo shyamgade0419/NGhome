@@ -36,7 +36,7 @@ export function ScreenHeader({
   };
 
   return (
-    <View style={[styles.header, area && { borderBottomWidth: 2, borderBottomColor: tint(tones[area.tone], 0.55) }]}>
+    <View style={[styles.header, area && { borderBottomWidth: 2, borderBottomColor: tint(tones[area.tone], 0.55), backgroundColor: tint(tones[area.tone], 0.94) }]}>
       <View style={styles.left}>
         {showBack && (
           <TouchableOpacity onPress={handleBack} style={styles.backButton} hitSlop={8}>
@@ -50,8 +50,8 @@ export function ScreenHeader({
       <View style={styles.center}>
         <View style={styles.titleRow}>
           {area && (
-            <View style={[styles.areaChip, { backgroundColor: tint(tones[area.tone], 0.84) }]}>
-              <Ionicons name={area.icon} size={15} color={tones[area.tone]} />
+            <View style={[styles.areaChip, { backgroundColor: tones[area.tone] }]}>
+              <Ionicons name={area.icon} size={15} color="#FFFFFF" />
             </View>
           )}
           <Text style={[styles.title, styles.titleText]} numberOfLines={1}>

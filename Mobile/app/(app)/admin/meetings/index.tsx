@@ -32,6 +32,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius } from '@/theme';
+import { SheetHeader } from '@/components/ui/SheetHeader';
 
 // ── Detail / minutes sheet ───────────────────────────────────────────────────
 
@@ -191,12 +192,7 @@ function CreateMeetingModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>New Meeting</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={12}>
-            <Ionicons name="close" size={22} color={colors.text} />
-          </TouchableOpacity>
-        </View>
+        <SheetHeader title="New Meeting" onClose={onClose} />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
             <Text style={styles.blockLabel}>Title *</Text>

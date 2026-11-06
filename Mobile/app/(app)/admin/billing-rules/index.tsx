@@ -46,6 +46,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius } from '@/theme';
 import { inr } from '@/utils/format';
+import { SheetHeader } from '@/components/ui/SheetHeader';
 
 // ── Create sheet ─────────────────────────────────────────────────────────────
 
@@ -100,12 +101,7 @@ function CreateRuleModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>Add a charge</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={8}>
-            <Ionicons name="close" size={22} color={colors.text} />
-          </TouchableOpacity>
-        </View>
+        <SheetHeader title="Add a charge" onClose={onClose} />
 
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
@@ -250,12 +246,7 @@ function RuleDetailModal({ rule, onClose }: { rule: BillingRule; onClose: () => 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle} numberOfLines={1}>{rule.name}</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={8} accessibilityLabel="Close">
-            <Ionicons name="close" size={22} color={colors.text} />
-          </TouchableOpacity>
-        </View>
+        <SheetHeader title={rule.name} onClose={onClose} />
         <ScrollView contentContainerStyle={styles.modalBody}>
           <View style={detail.box}>
             {d.summary.map((r) => <Row key={r.label} {...r} />)}

@@ -43,6 +43,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius } from '@/theme';
 import { inr } from '@/utils/format';
+import { SheetHeader } from '@/components/ui/SheetHeader';
 
 const STATUS_OPTIONS: EventStatus[] = ['PLANNED', 'COMPLETED', 'CANCELLED'];
 
@@ -101,12 +102,7 @@ function EventFormModal({
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>{event ? 'Edit Event' : 'New Event / Activity'}</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={12}>
-            <Ionicons name="close" size={22} color={colors.text} />
-          </TouchableOpacity>
-        </View>
+        <SheetHeader title={event ? 'Edit Event' : 'New Event / Activity'} onClose={onClose} />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
             <Text style={styles.label}>Title *</Text>

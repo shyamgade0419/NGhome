@@ -15,6 +15,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { RequestThread } from '@/components/helpdesk/RequestThread';
 import { colors, spacing, typography, radius } from '@/theme';
+import { SheetHeader } from '@/components/ui/SheetHeader';
 
 const STATUS_OPTIONS = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] as const;
 
@@ -59,12 +60,7 @@ function UpdateModal({
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.modalSafe} edges={['top']}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle} numberOfLines={1}>{request.title}</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={8}>
-            <Ionicons name="close" size={22} color={colors.text} />
-          </TouchableOpacity>
-        </View>
+        <SheetHeader title={request.title} onClose={onClose} />
         <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
           {request.description && (
             <View style={styles.descBox}>

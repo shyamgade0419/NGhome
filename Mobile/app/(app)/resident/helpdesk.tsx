@@ -13,6 +13,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
 import { RequestThread } from '@/components/helpdesk/RequestThread';
 import { colors, spacing, typography, radius } from '@/theme';
+import { SheetHeader } from '@/components/ui/SheetHeader';
 
 const CATEGORIES = [
   { value: 'PLUMBING', label: '🔧 Plumbing' },
@@ -61,12 +62,7 @@ function NewRequestModal({ visible, onClose }: { visible: boolean; onClose: () =
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.modalSafe} edges={['top']}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>New Maintenance Request</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={8}>
-            <Ionicons name="close" size={22} color={colors.text} />
-          </TouchableOpacity>
-        </View>
+        <SheetHeader title="New Maintenance Request" onClose={onClose} />
         <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
           <Text style={styles.fieldLabel}>Issue Title *</Text>
           <TextInput

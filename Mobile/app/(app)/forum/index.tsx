@@ -13,6 +13,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius } from '@/theme';
+import { SheetHeader } from '@/components/ui/SheetHeader';
 
 function NewTopicModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const qc = useQueryClient();
@@ -33,12 +34,7 @@ function NewTopicModal({ visible, onClose }: { visible: boolean; onClose: () => 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.modalSafe} edges={['top']}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>New Topic</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={8}>
-            <Ionicons name="close" size={22} color={colors.text} />
-          </TouchableOpacity>
-        </View>
+        <SheetHeader title="New Topic" onClose={onClose} />
         <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
           <Text style={styles.fieldLabel}>Title</Text>
           <TextInput
