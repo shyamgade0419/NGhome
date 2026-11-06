@@ -45,6 +45,7 @@ jest.mock('@/components/ui/BrandMark', () => ({ BrandMark: () => null }));
 
 import AdminDashboard from '../../app/(app)/admin/index';
 import { billingApi } from '@/api/endpoints/billing.api';
+import { societiesApi } from '@/api/endpoints/societies.api';
 
 jest.useRealTimers();
 jest.setTimeout(30_000);
@@ -169,5 +170,34 @@ describe('the rest of the admin home', () => {
     expect(mockPush).toHaveBeenLastCalledWith('/(app)/admin/payments');
     await tap('Messages');
     expect(mockPush).toHaveBeenLastCalledWith('/(app)/chat');
+  });
+});
+
+describe('an admin whose society has nothing posted yet', () => {
+  it('still gets the strip, with a card for each thing an admin can start, and dots to swipe', async () => {
+    (societiesApi.getAnnouncements as jest.Mock).mockResolvedValue({ data: [] });
+    try {
+      const tree = await mount();
+      const text = textOf(tree.root);
+      expect(text).toContain("What's Happening");
+      for (const t of ['Tell your residents something', 'Plan a meeting', 'Organise an event', 'Invite residents']) expect(text).toContain(t);
+      const dots = tree.root.findAll((n: any) => n.type === 'View' && n.props.importantForAccessibility === 'no-hide-descendants')[0];
+      expect(dots.children.length).toBe(4);
+      // The cards go where the admin can act.
+      await act(async () => { tree.root.findAllByType(TouchableOpacity).find((n: any) => /Plan a meeting/.test(textOf(n)))!.props.onPress(); });
+      expect(mockPush).toHaveBeenLastCalledWith('/(app)/admin/meetings');
+    } finally {
+      (societiesApi.getAnnouncements as jest.Mock).mockResolvedValue({ data: [{ id: 'a1', title: 'Water tank cleaning on Saturday', content: 'Supply stops 9 am to 1 pm.', priority: 'NORMAL' }] });
+    }
+  });
+
+  it('adds only as many prompts as it needs once there are real cards, and none when there are enough', async () => {
+    mockSummary.mockImplementation(async () => ({ totalBilled: '1', totalCollected: '0', totalOutstanding: '1', totalExpenses: '0', accountBalance: '1', corpusBalance: '1', pendingApprovals: 1 }));
+    const tree = await mount();
+    const dots = tree.root.findAll((n: any) => n.type === 'View' && n.props.importantForAccessibility === 'no-hide-descendants')[0];
+    // One payment to approve and one notice, plus one prompt: three cards.
+    expect(dots.children.length).toBe(3);
+    expect(textOf(tree.root)).toContain('1 payment pending approval');
+    expect(textOf(tree.root)).toContain('Water tank cleaning on Saturday');
   });
 });

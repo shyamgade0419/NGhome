@@ -149,7 +149,7 @@ export default function AdminDashboard() {
     .filter((e) => e.status === 'PLANNED' && new Date(e.eventDate) >= startOfToday)
     .sort((a, b) => +new Date(a.eventDate) - +new Date(b.eventDate))[0];
 
-  const updates: UpdateItem[] = [
+  const real: UpdateItem[] = [
     ...(pending > 0
       ? [{
           id: 'approvals',
@@ -193,6 +193,22 @@ export default function AdminDashboard() {
         }]
       : []),
   ];
+
+  // A society with no notices, meetings or events yet (and nothing to approve) would otherwise have no strip at all.
+  // For whatever is missing, a card offers the next thing an admin can do, so the strip is always there to swipe.
+  const tips: UpdateItem[] = [
+    ...((announcements?.data ?? []).length === 0
+      ? [{ id: 'tip-announce', tone: 'violet' as const, icon: 'megaphone-outline' as const, title: 'Tell your residents something', subtitle: 'Post a notice and everyone sees it in the app.', cta: 'Post an announcement', onPress: () => router.push('/(app)/admin/announcements' as any) }]
+      : []),
+    ...(!nextMeeting
+      ? [{ id: 'tip-meeting', tone: 'teal' as const, icon: 'calendar-outline' as const, title: 'Plan a meeting', subtitle: 'Set the date and agenda, and residents are told.', cta: 'Schedule a meeting', onPress: () => router.push('/(app)/admin/meetings' as any) }]
+      : []),
+    ...(!nextEvent
+      ? [{ id: 'tip-event', tone: 'coral' as const, icon: 'sparkles-outline' as const, title: 'Organise an event', subtitle: 'Festivals and get-togethers, with a budget you can track.', cta: 'Plan an event', onPress: () => router.push('/(app)/admin/events' as any) }]
+      : []),
+    { id: 'tip-invite', tone: 'green' as const, icon: 'person-add-outline' as const, title: 'Invite residents', subtitle: "Share your society's join code so residents can sign up.", cta: 'Open settings', onPress: () => router.push('/(app)/admin/settings' as any) },
+  ];
+  const updates: UpdateItem[] = real.length >= 3 ? real : [...real, ...tips.slice(0, 3 - real.length + (real.length === 0 ? 1 : 0))];
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>

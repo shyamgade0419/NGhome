@@ -222,7 +222,7 @@ export default function DashboardPage() {
     .filter((m) => m.meetingDate && new Date(m.meetingDate) >= startOfToday)
     .sort((a, b) => +new Date(a.meetingDate) - +new Date(b.meetingDate))[0];
 
-  const updates: UpdateItem[] = [
+  const real: UpdateItem[] = [
     ...(showMoneyTiles && pendingCount > 0
       ? [{
           id: 'approvals',
@@ -266,6 +266,21 @@ export default function DashboardPage() {
         }]
       : []),
   ];
+
+  // A society with nothing posted yet would otherwise have no strip at all. For whatever is missing, a card offers the
+  // next thing this person can do, so the strip is always there.
+  const tips: UpdateItem[] = showMoneyTiles
+    ? [
+        ...(announcements.length === 0 ? [{ id: 'tip-announce', tone: 'violet' as const, icon: Megaphone, title: 'Tell your residents something', subtitle: 'Post a notice and everyone sees it in the app.', cta: 'Post an announcement', href: '/community' }] : []),
+        ...(!nextMeeting ? [{ id: 'tip-meeting', tone: 'teal' as const, icon: CalendarDays, title: 'Plan a meeting', subtitle: 'Set the date and agenda, and residents are told.', cta: 'Schedule a meeting', href: '/meetings' }] : []),
+        { id: 'tip-invite', tone: 'green' as const, icon: Users, title: 'Invite residents', subtitle: "Share your society's join code so residents can sign up.", cta: 'Open settings', href: '/settings' },
+      ]
+    : [
+        { id: 'tip-helpdesk', tone: 'amber' as const, icon: Wrench, title: 'Need something fixed?', subtitle: 'Raise a request and follow it until it is done.', cta: 'Open the helpdesk', href: '/helpdesk' },
+        { id: 'tip-visitors', tone: 'coral' as const, icon: Users, title: 'Expecting a guest?', subtitle: 'Invite them in advance and the gate lets them in.', cta: 'Open visitors', href: '/visitors' },
+        { id: 'tip-community', tone: 'violet' as const, icon: Megaphone, title: 'Meet your neighbours', subtitle: 'Ask, share and chat on the community board.', cta: 'Open the board', href: '/community' },
+      ];
+  const updates: UpdateItem[] = real.length >= 3 ? real : [...real, ...tips.slice(0, 3 - real.length)];
 
   const periodStatus = collection?.period?.status ?? (periods[currentIndex]?.status as string | undefined) ?? 'PUBLISHED';
 

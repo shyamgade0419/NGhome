@@ -12,6 +12,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 const mockPush = jest.fn();
 let mockBill: any;
 let mockPreview: any;
+let mockNotices: any[] = [];
 const future = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
 
 jest.mock('@/api/endpoints/billing.api', () => ({
@@ -19,7 +20,7 @@ jest.mock('@/api/endpoints/billing.api', () => ({
 }));
 jest.mock('@/api/endpoints/societies.api', () => ({
   societiesApi: {
-    getAnnouncements: async () => ({ data: [{ id: 'a1', title: 'Lift service on Monday', content: 'Block B lift is out 10 to 12.', priority: 'NORMAL' }] }),
+    getAnnouncements: async () => ({ data: mockNotices }),
     getMeetings: async () => ({ data: [
       { id: 'm0', title: 'Old meeting', meetingDate: future(-30), location: null },
       { id: 'm1', title: 'General body meeting', meetingDate: future(4), location: 'Clubhouse' },
@@ -70,6 +71,7 @@ afterEach(async () => { await act(async () => { trees.splice(0).forEach((t) => t
 beforeEach(() => {
   mockPush.mockReset();
   mockPreview = null;
+  mockNotices = [{ id: 'a1', title: 'Lift service on Monday', content: 'Block B lift is out 10 to 12.', priority: 'NORMAL' }];
   mockBill = { id: 'b1', totalAmount: '3500', paidAmount: '1400', pendingAmount: '2100', isPaid: false, dueDate: future(5), billingPeriod: { kind: 'MONTHLY' } };
 });
 
@@ -121,5 +123,20 @@ describe('the resident home', () => {
     expect(mockPush).toHaveBeenLastCalledWith('/(app)/vehicles');
     await tap('Finances');
     expect(mockPush).toHaveBeenLastCalledWith('/(app)/resident/finances');
+  });
+});
+
+describe('a resident when nothing has been posted', () => {
+  it('still gets the strip, with cards for what a resident can do', async () => {
+    mockNotices = [];
+    mockBill = { ...mockBill, paidAmount: '3500', pendingAmount: '0', isPaid: true };
+    const tree = await mount();
+    const text = textOf(tree.root);
+    expect(text).toContain("What's Happening");
+    // The nearest meeting and event are real cards; one prompt tops the strip up to three.
+    expect(text).toContain('General body meeting');
+    expect(text).toContain('Ganesh Chaturthi');
+    expect(text).toContain('Need something fixed?');
+    expect(text).not.toContain('Expecting a guest?');
   });
 });

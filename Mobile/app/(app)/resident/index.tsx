@@ -117,7 +117,7 @@ export default function ResidentDashboard() {
     .filter((e) => e.status === 'PLANNED' && new Date(e.eventDate) >= startOfToday)
     .sort((a, b) => +new Date(a.eventDate) - +new Date(b.eventDate))[0];
 
-  const updates: UpdateItem[] = [
+  const real: UpdateItem[] = [
     ...(myBill && !isPaid
       ? [{
           id: 'bill',
@@ -161,6 +161,14 @@ export default function ResidentDashboard() {
         }]
       : []),
   ];
+
+  // Nothing posted yet: cards for what a resident can do, so the strip is always there.
+  const tips: UpdateItem[] = [
+    { id: 'tip-helpdesk', tone: 'amber' as const, icon: 'construct-outline' as const, title: 'Need something fixed?', subtitle: 'Raise a request and follow it until it is done.', cta: 'Open the helpdesk', onPress: () => router.push('/(app)/resident/helpdesk' as any) },
+    { id: 'tip-visitors', tone: 'coral' as const, icon: 'walk-outline' as const, title: 'Expecting a guest?', subtitle: 'Invite them in advance and the gate lets them in.', cta: 'Open visitors', onPress: () => router.push('/(app)/visitors' as any) },
+    { id: 'tip-community', tone: 'violet' as const, icon: 'chatbubbles-outline' as const, title: 'Meet your neighbours', subtitle: 'Ask, share and chat on the community board.', cta: 'Open the board', onPress: () => router.push('/(app)/forum' as any) },
+  ];
+  const updates: UpdateItem[] = real.length >= 3 ? real : [...real, ...tips.slice(0, 3 - real.length)];
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
