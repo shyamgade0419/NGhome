@@ -13,17 +13,40 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { billingApi } from '@/api/endpoints/billing.api';
 import { societiesApi } from '@/api/endpoints/societies.api';
+import { eventsApi } from '@/api/endpoints/events.api';
 import { useAuth } from '@/hooks/useAuth';
 import { LoadingState } from '@/components/ui/LoadingState';
-import { Card, SectionHeader } from '@/components/ui/Card';
+import { SectionHeader } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { NotificationBell } from '@/components/ui/NotificationBell';
 import { BrandMark } from '@/components/ui/BrandMark';
 import { PendingVisitorBanner } from '@/components/visitors/PendingVisitorBanner';
+import { HeroCard } from '@/components/home/HeroCard';
+import { ProgressRing } from '@/components/home/ProgressRing';
+import { TintStatTile } from '@/components/home/TintStatTile';
+import { ActionGrid, ActionItem } from '@/components/home/ActionGrid';
+import { UpdatesCarousel, UpdateItem } from '@/components/home/UpdatesCarousel';
 import { useBranding } from '@/hooks/useBranding';
 import { colors, spacing, typography, radius } from '@/theme';
-import { Announcement } from '@/types/society.types';
 import { toNum, inr } from '@/utils/format';
+
+const QUICK_LINKS: readonly ActionItem[] = [
+  { label: 'Maint. Sheet', icon: 'grid-outline', tone: 'teal', route: '/(app)/maintenance-sheet' },
+  { label: 'Docs', icon: 'folder-open-outline', tone: 'blue', route: '/(app)/documents' },
+  { label: 'Finances', icon: 'pie-chart-outline', tone: 'green', route: '/(app)/resident/finances' },
+  { label: 'Events', icon: 'sparkles-outline', tone: 'coral', route: '/(app)/resident/events' },
+  { label: 'Directory', icon: 'people-outline', tone: 'blue', route: '/(app)/directory' },
+  { label: 'Community', icon: 'chatbubbles-outline', tone: 'violet', route: '/(app)/forum' },
+  { label: 'Messages', icon: 'chatbox-ellipses-outline', tone: 'green', route: '/(app)/chat' },
+  { label: 'Amenities', icon: 'calendar-outline', tone: 'teal', route: '/(app)/amenities' },
+  { label: 'Visitors', icon: 'walk-outline', tone: 'coral', route: '/(app)/visitors' },
+  { label: 'Deliveries', icon: 'cube-outline', tone: 'amber', route: '/(app)/deliveries' },
+  { label: 'Household Help', icon: 'people-circle-outline', tone: 'green', route: '/(app)/household-help' },
+  { label: 'Vehicles', icon: 'car-outline', tone: 'blue', route: '/(app)/vehicles' },
+];
+
+const when = (iso: string | null | undefined) =>
+  iso ? new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
 
 export default function ResidentDashboard() {
   const router = useRouter();
@@ -47,16 +70,32 @@ export default function ResidentDashboard() {
     queryKey: ['announcements-preview'],
     queryFn: () => societiesApi.getAnnouncements({ limit: 3 }),
   });
+  // Optional extras for the swipe strip: a request that fails just leaves its card out.
+  const { data: meetings, refetch: refetchMeetings } = useQuery({
+    queryKey: ['home-meetings'],
+    queryFn: () => societiesApi.getMeetings({ limit: 10 }).catch(() => null),
+    staleTime: 60_000,
+  });
+  const { data: events, refetch: refetchEvents } = useQuery({
+    queryKey: ['home-events'],
+    queryFn: () => eventsApi.list({ limit: 10 }).catch(() => null),
+    staleTime: 60_000,
+  });
 
   const onRefresh = () => {
     refetchBill();
     refetchAnnouncements();
     refetchPreview();
+    refetchMeetings();
+    refetchEvents();
   };
 
   if (isLoading) return <LoadingState fullscreen message="Loading your account..." />;
 
   const outstanding = myBill ? toNum(myBill.pendingAmount) : 0;
+  const total = myBill ? toNum(myBill.totalAmount) : 0;
+  const paid = myBill ? toNum(myBill.paidAmount) : 0;
+  const paidFraction = total > 0 ? paid / total : 0;
   const isPaid = myBill?.isPaid ?? false;
 
   const periodLabel = myBill?.billingPeriod?.kind === 'OPENING'
@@ -66,6 +105,60 @@ export default function ResidentDashboard() {
     : preview
       ? `${new Date(preview.dueDate).toLocaleString('en-IN', { month: 'short', year: 'numeric' })} Maintenance (Upcoming)`
       : 'Current Maintenance';
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const nextMeeting = (meetings?.data ?? [])
+    .filter((m) => new Date(m.meetingDate) >= startOfToday)
+    .sort((a, b) => +new Date(a.meetingDate) - +new Date(b.meetingDate))[0];
+  const nextEvent = (events?.data ?? [])
+    .filter((e) => e.status === 'PLANNED' && new Date(e.eventDate) >= startOfToday)
+    .sort((a, b) => +new Date(a.eventDate) - +new Date(b.eventDate))[0];
+
+  const updates: UpdateItem[] = [
+    ...(myBill && !isPaid
+      ? [{
+          id: 'bill',
+          tone: 'amber' as const,
+          icon: 'wallet-outline' as const,
+          title: `${periodLabel} is due`,
+          subtitle: `₹${outstanding.toLocaleString('en-IN')} by ${myBill.dueDate ? new Date(myBill.dueDate).toLocaleDateString('en-IN') : 'soon'}`,
+          cta: "I've made payment",
+          onPress: () => router.push('/(app)/resident/payments/submit'),
+        }]
+      : []),
+    ...(announcements?.data ?? []).map((a) => ({
+      id: `a-${a.id}`,
+      tone: a.priority === 'URGENT' || a.priority === 'HIGH' ? ('coral' as const) : ('violet' as const),
+      icon: 'megaphone-outline' as const,
+      title: a.title,
+      subtitle: a.content,
+      cta: 'Announcements',
+      onPress: () => router.push('/(app)/resident/announcements'),
+    })),
+    ...(nextMeeting
+      ? [{
+          id: `m-${nextMeeting.id}`,
+          tone: 'teal' as const,
+          icon: 'calendar-outline' as const,
+          title: nextMeeting.title,
+          subtitle: `Meeting on ${when(nextMeeting.meetingDate)}${nextMeeting.location ? `, ${nextMeeting.location}` : ''}`,
+          cta: 'Meetings',
+          onPress: () => router.push('/(app)/resident/meetings' as any),
+        }]
+      : []),
+    ...(nextEvent
+      ? [{
+          id: `e-${nextEvent.id}`,
+          tone: 'green' as const,
+          icon: 'sparkles-outline' as const,
+          title: nextEvent.title,
+          subtitle: `Event on ${when(nextEvent.eventDate)}`,
+          cta: 'Events',
+          onPress: () => router.push('/(app)/resident/events' as any),
+        }]
+      : []),
+  ];
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -102,7 +195,7 @@ export default function ResidentDashboard() {
         <PendingVisitorBanner />
 
         {/* Current bill hero card */}
-        <View style={[styles.heroCard, { backgroundColor: brand.color }]}>
+        <HeroCard>
           <View style={styles.heroTop}>
             <Text style={styles.heroLabel}>{periodLabel}</Text>
             {myBill && (
@@ -115,17 +208,24 @@ export default function ResidentDashboard() {
 
           {myBill ? (
             <>
-              <Text style={styles.heroAmount}>
-                {inr(myBill.totalAmount)}
-              </Text>
-              {!isPaid && (
-                <Text style={styles.heroDue}>
-                  Outstanding: ₹{outstanding.toLocaleString('en-IN')} · Due{' '}
-                  {myBill.dueDate
-                    ? new Date(myBill.dueDate).toLocaleDateString('en-IN')
-                    : 'soon'}
-                </Text>
-              )}
+              <View style={styles.heroMain}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.heroAmount}>{inr(myBill.totalAmount)}</Text>
+                  {!isPaid && (
+                    <Text style={styles.heroDue}>
+                      Outstanding: ₹{outstanding.toLocaleString('en-IN')} · Due{' '}
+                      {myBill.dueDate
+                        ? new Date(myBill.dueDate).toLocaleDateString('en-IN')
+                        : 'soon'}
+                    </Text>
+                  )}
+                </View>
+                <ProgressRing
+                  fraction={paidFraction}
+                  label={`${Math.round(paidFraction * 100)}%`}
+                  accessibilityLabel={`${Math.round(paidFraction * 100)} percent of this bill paid`}
+                />
+              </View>
               {!isPaid && (
                 <TouchableOpacity
                   style={styles.payBtn}
@@ -150,222 +250,50 @@ export default function ResidentDashboard() {
                 activeOpacity={0.7}
               >
                 <Text style={styles.previewLinkText}>See full breakdown</Text>
-                <Ionicons name="chevron-forward" size={13} color={colors.primary} />
+                <Ionicons name="chevron-forward" size={13} color={colors.textInverse} />
               </TouchableOpacity>
             </>
           ) : (
             <Text style={styles.noBill}>No pending bill. You&apos;re all caught up!</Text>
           )}
-        </View>
+        </HeroCard>
 
-        {/* Quick stats — each box tinted to match its own number (a hint of
-            the color it's about to show you), instead of three identical
-            white boxes that only differ once you read the digits. */}
+        {/* Quick stats: each on a soft card of its own colour, so what kind of figure it is shows before the digits are read. */}
         {myBill && (
           <View style={styles.statsRow}>
-            <Card style={[styles.statBox, { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight }]} padding="md">
-              <Text style={styles.statLabel}>Total Bill</Text>
-              <Text style={[styles.statValue, { color: colors.primary }]}>
-                {inr(myBill.totalAmount)}
-              </Text>
-            </Card>
-            <Card style={[styles.statBox, { backgroundColor: colors.secondaryLight, borderColor: colors.secondaryLight }]} padding="md">
-              <Text style={styles.statLabel}>Paid</Text>
-              <Text style={[styles.statValue, { color: colors.secondary }]}>
-                {inr(myBill.paidAmount)}
-              </Text>
-            </Card>
-            <Card
-              style={[
-                styles.statBox,
-                {
-                  backgroundColor: outstanding > 0 ? colors.warningLight : colors.secondaryLight,
-                  borderColor: outstanding > 0 ? colors.warningLight : colors.secondaryLight,
-                },
-              ]}
-              padding="md"
-            >
-              <Text style={styles.statLabel}>Due</Text>
-              <Text style={[styles.statValue, { color: outstanding > 0 ? colors.warning : colors.secondary }]}>
-                ₹{outstanding.toLocaleString('en-IN')}
-              </Text>
-            </Card>
+            <TintStatTile tone="blue" icon="receipt-outline" label="Total Bill" value={inr(myBill.totalAmount)} />
+            <TintStatTile tone="green" icon="checkmark-circle-outline" label="Paid" value={inr(myBill.paidAmount)} progress={paidFraction} />
+            <TintStatTile
+              tone={outstanding > 0 ? 'amber' : 'green'}
+              icon={outstanding > 0 ? 'alert-circle-outline' : 'happy-outline'}
+              label="Due"
+              value={`₹${outstanding.toLocaleString('en-IN')}`}
+            />
           </View>
+        )}
+
+        {/* What is happening: swipe sideways */}
+        {updates.length > 0 && (
+          <>
+            <SectionHeader
+              title="What's Happening"
+              action="Announcements"
+              onAction={() => router.push('/(app)/resident/announcements')}
+            />
+            <UpdatesCarousel items={updates} />
+          </>
         )}
 
         {/* Quick links — Maintenance Sheet, Documents and Finances existed
             only inside Profile's menu before, which several residents never
-            found. Surfacing them here directly. Each tile gets its own
-            tinted icon chip (instead of the same navy icon on a plain white
-            card four times over) so the row reads as distinct destinations,
-            not four copies of one tile. */}
+            found, so they sit here with the community and gate shortcuts. */}
         <SectionHeader title="Quick Links" />
-        <View style={styles.quickLinksRow}>
-          <TouchableOpacity
-            style={styles.quickLink}
-            activeOpacity={0.8}
-            onPress={() => router.push('/(app)/maintenance-sheet' as any)}
-          >
-            <View style={[styles.quickLinkIcon, { backgroundColor: colors.primaryLight }]}>
-              <Ionicons name="grid-outline" size={20} color={colors.primary} />
-            </View>
-            {/* "Maintenance" is one 11-char word with no space to wrap at —
-                at 4-across it doesn't fit one line and was breaking
-                mid-word onto a 3rd line. "Maint." does, cleanly. */}
-            <Text style={styles.quickLinkText} numberOfLines={2}>Maint.{'\n'}Sheet</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.quickLink}
-            activeOpacity={0.8}
-            onPress={() => router.push('/(app)/documents' as any)}
-          >
-            <View style={[styles.quickLinkIcon, { backgroundColor: colors.infoLight }]}>
-              <Ionicons name="folder-open-outline" size={20} color={colors.info} />
-            </View>
-            {/* "Documents" is one 9-char word with no space to wrap at —
-                same risk class as "Maintenance" above, just less obviously
-                so. "Docs" fits with room to spare at 4-across. */}
-            <Text style={styles.quickLinkText} numberOfLines={2}>Docs</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.quickLink}
-            activeOpacity={0.8}
-            onPress={() => router.push('/(app)/resident/finances' as any)}
-          >
-            <View style={[styles.quickLinkIcon, { backgroundColor: colors.secondaryLight }]}>
-              <Ionicons name="pie-chart-outline" size={20} color={colors.secondary} />
-            </View>
-            <Text style={styles.quickLinkText} numberOfLines={2}>Society{'\n'}Finances</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.quickLink}
-            activeOpacity={0.8}
-            onPress={() => router.push('/(app)/resident/events' as any)}
-          >
-            <View style={[styles.quickLinkIcon, { backgroundColor: colors.accentLight }]}>
-              <Ionicons name="sparkles-outline" size={20} color={colors.accent} />
-            </View>
-            <Text style={styles.quickLinkText} numberOfLines={2}>Events</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Community — directory, forum, chat. A second row rather than
-            widening the first: seven equal-width tiles across one row
-            would squeeze every label onto too little space to stay
-            legible. */}
-        <View style={styles.quickLinksRow}>
-          <TouchableOpacity
-            style={styles.quickLink}
-            activeOpacity={0.8}
-            onPress={() => router.push('/(app)/directory' as any)}
-          >
-            <View style={[styles.quickLinkIcon, { backgroundColor: colors.warningLight }]}>
-              <Ionicons name="people-outline" size={20} color={colors.warning} />
-            </View>
-            <Text style={styles.quickLinkText} numberOfLines={2}>Directory</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.quickLink}
-            activeOpacity={0.8}
-            onPress={() => router.push('/(app)/forum' as any)}
-          >
-            <View style={[styles.quickLinkIcon, { backgroundColor: colors.successLight }]}>
-              <Ionicons name="chatbubbles-outline" size={20} color={colors.success} />
-            </View>
-            <Text style={styles.quickLinkText} numberOfLines={2}>Community{'\n'}Board</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.quickLink}
-            activeOpacity={0.8}
-            onPress={() => router.push('/(app)/chat' as any)}
-          >
-            <View style={[styles.quickLinkIcon, { backgroundColor: colors.infoLight }]}>
-              <Ionicons name="chatbox-ellipses-outline" size={20} color={colors.info} />
-            </View>
-            <Text style={styles.quickLinkText} numberOfLines={2}>Messages</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.quickLink}
-            activeOpacity={0.8}
-            onPress={() => router.push('/(app)/amenities' as any)}
-          >
-            <View style={[styles.quickLinkIcon, { backgroundColor: colors.primaryLight }]}>
-              <Ionicons name="calendar-outline" size={20} color={colors.primary} />
-            </View>
-            <Text style={styles.quickLinkText} numberOfLines={2}>Amenities</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Gate — visitors and invitations */}
-        <View style={styles.quickLinksRow}>
-          <TouchableOpacity style={styles.quickLink} activeOpacity={0.8} onPress={() => router.push('/(app)/visitors' as any)}>
-            <View style={[styles.quickLinkIcon, { backgroundColor: colors.accentLight }]}>
-              <Ionicons name="walk-outline" size={20} color={colors.accent} />
-            </View>
-            <Text style={styles.quickLinkText} numberOfLines={2}>Visitors</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.quickLink} activeOpacity={0.8} onPress={() => router.push('/(app)/deliveries' as any)}>
-            <View style={[styles.quickLinkIcon, { backgroundColor: colors.warningLight }]}>
-              <Ionicons name="cube-outline" size={20} color={colors.warning} />
-            </View>
-            <Text style={styles.quickLinkText} numberOfLines={2}>Deliveries</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.quickLink} activeOpacity={0.8} onPress={() => router.push('/(app)/household-help' as any)}>
-            <View style={[styles.quickLinkIcon, { backgroundColor: colors.successLight }]}>
-              <Ionicons name="people-outline" size={20} color={colors.success} />
-            </View>
-            <Text style={styles.quickLinkText} numberOfLines={2}>Household{'\n'}Help</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.quickLink} activeOpacity={0.8} onPress={() => router.push('/(app)/vehicles' as any)}>
-            <View style={[styles.quickLinkIcon, { backgroundColor: colors.infoLight }]}>
-              <Ionicons name="car-outline" size={20} color={colors.info} />
-            </View>
-            <Text style={styles.quickLinkText} numberOfLines={2}>Vehicles{'\n'}& Parking</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Announcements preview */}
-        <SectionHeader
-          title="Announcements"
-          action="View All"
-          onAction={() => router.push('/(app)/resident/announcements')}
-        />
-        {(announcements?.data ?? []).length === 0 ? (
-          <View style={styles.noAnnouncements}>
-            <Text style={styles.noAnnouncementsText}>No announcements</Text>
-          </View>
-        ) : (
-          (announcements?.data ?? []).map((item: Announcement) => (
-            <TouchableOpacity
-              key={item.id}
-              style={[styles.announcementCard, { borderLeftColor: getPriorityColor(item.priority) }]}
-              activeOpacity={0.8}
-              onPress={() => router.push('/(app)/resident/announcements')}
-            >
-              <View style={styles.announcementBody}>
-                <Text style={styles.announcementTitle} numberOfLines={1}>{item.title}</Text>
-                <Text style={styles.announcementContent} numberOfLines={2}>{item.content}</Text>
-                <Text style={styles.announcementDate}>
-                  {item.publishAt ? new Date(item.publishAt).toLocaleDateString('en-IN') : ''}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          ))
-        )}
+        <ActionGrid items={QUICK_LINKS} onOpen={(route) => router.push(route as any)} />
 
         <View style={{ height: spacing['3xl'] }} />
       </ScrollView>
     </SafeAreaView>
   );
-}
-
-function getPriorityColor(priority: string): string {
-  switch (priority) {
-    case 'URGENT': return colors.error;
-    case 'HIGH': return colors.warning;
-    case 'NORMAL': return colors.info;
-    default: return colors.textTertiary;
-  }
 }
 
 const styles = StyleSheet.create({
@@ -393,17 +321,11 @@ const styles = StyleSheet.create({
   },
   avatarText: { ...typography.labelMedium, color: colors.primary, fontWeight: '700' },
 
-  heroCard: {
-    margin: spacing.base,
-    backgroundColor: colors.primary,
-    borderRadius: 20,
-    padding: spacing.xl,
-    gap: spacing.md,
-  },
   heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  heroLabel: { ...typography.labelLarge, color: 'rgba(255,255,255,0.8)' },
+  heroMain: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  heroLabel: { ...typography.labelLarge, color: 'rgba(255,255,255,0.85)', flexShrink: 1 },
   heroAmount: { ...typography.displayLarge, color: colors.textInverse },
-  heroDue: { ...typography.bodySmall, color: 'rgba(255,255,255,0.7)' },
+  heroDue: { ...typography.bodySmall, color: 'rgba(255,255,255,0.8)' },
   payBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -415,10 +337,10 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   payBtnText: { ...typography.labelLarge, color: colors.textInverse },
-  noBill: { ...typography.bodyMedium, color: 'rgba(255,255,255,0.7)', textAlign: 'center' },
+  noBill: { ...typography.bodyMedium, color: 'rgba(255,255,255,0.8)', textAlign: 'center' },
 
   previewBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  previewNote: { ...typography.bodySmall, color: 'rgba(255,255,255,0.7)', flexShrink: 1 },
+  previewNote: { ...typography.bodySmall, color: 'rgba(255,255,255,0.8)', flexShrink: 1 },
   previewLink: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 2 },
   previewLinkText: { ...typography.labelMedium, color: colors.textInverse, textDecorationLine: 'underline' },
 
@@ -426,42 +348,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
     paddingHorizontal: spacing.base,
-    marginBottom: spacing.md,
+    marginTop: spacing.base,
   },
-  statBox: { flex: 1 },
-  statLabel: { ...typography.labelSmall, color: colors.textSecondary },
-  statValue: { ...typography.headingSmall, marginTop: 4 },
-
-  quickLinksRow: { flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.base, marginBottom: spacing.md },
-  quickLink: {
-    flex: 1, alignItems: 'center', gap: 6,
-    backgroundColor: colors.surface, borderRadius: radius.lg,
-    borderWidth: 1, borderColor: colors.border,
-    paddingVertical: spacing.md, paddingHorizontal: spacing.xs,
-  },
-  quickLinkIcon: {
-    width: 36, height: 36, borderRadius: 18,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  quickLinkText: { ...typography.labelSmall, color: colors.text, textAlign: 'center', lineHeight: 14 },
-
-  noAnnouncements: { paddingHorizontal: spacing.base, paddingVertical: spacing.xl, alignItems: 'center' },
-  noAnnouncementsText: { ...typography.bodyMedium, color: colors.textTertiary },
-
-  announcementCard: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    marginHorizontal: spacing.base,
-    marginBottom: spacing.md,
-    borderRadius: radius.lg,
-    padding: spacing.base,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderLeftWidth: 4,
-    gap: spacing.md,
-  },
-  announcementBody: { flex: 1, gap: 3 },
-  announcementTitle: { ...typography.labelLarge, color: colors.text },
-  announcementContent: { ...typography.bodySmall, color: colors.textSecondary, lineHeight: 18 },
-  announcementDate: { ...typography.bodySmall, color: colors.textTertiary },
 });

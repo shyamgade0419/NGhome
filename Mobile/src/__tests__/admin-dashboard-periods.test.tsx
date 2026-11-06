@@ -11,6 +11,7 @@ import TestRenderer, { act } from 'react-test-renderer';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const mockSummary = jest.fn();
+const mockPush = jest.fn();
 
 jest.mock('@/api/endpoints/billing.api', () => ({
   billingApi: {
@@ -24,7 +25,14 @@ jest.mock('@/api/endpoints/billing.api', () => ({
     getDashboardSummary: (...a: unknown[]) => mockSummary(...a),
   },
 }));
-jest.mock('expo-router', () => ({ useRouter: () => ({ push: jest.fn() }) }));
+jest.mock('@/api/endpoints/societies.api', () => ({
+  societiesApi: {
+    getAnnouncements: jest.fn(async () => ({ data: [{ id: 'a1', title: 'Water tank cleaning on Saturday', content: 'Supply stops 9 am to 1 pm.', priority: 'NORMAL' }] })),
+    getMeetings: jest.fn(async () => ({ data: [] })),
+  },
+}));
+jest.mock('@/api/endpoints/events.api', () => ({ eventsApi: { list: jest.fn(async () => ({ data: [] })) } }));
+jest.mock('expo-router', () => ({ useRouter: () => ({ push: (...a: unknown[]) => mockPush(...a) }) }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
 jest.mock('react-native-safe-area-context', () => {
   const { View: V } = jest.requireActual('react-native');
@@ -64,6 +72,7 @@ afterEach(async () => {
 });
 beforeEach(() => {
   mockSummary.mockReset();
+  mockPush.mockReset();
   mockSummary.mockImplementation(async (p: { year: number; month: number }) => ({
     totalBilled: p.month === 10 ? '30880.01' : p.month === 9 ? '28000' : '0',
     totalCollected: '6530.57', totalOutstanding: '24349.44', totalExpenses: '18920', accountBalance: '258852.01', corpusBalance: '200000', pendingApprovals: 0,
@@ -129,5 +138,36 @@ describe('the admin dashboard and its billing month', () => {
     expect(mockSummary).toHaveBeenCalledWith({ year: now.getFullYear(), month: now.getMonth() + 1 });
     expect(arrow(tree, 'Earlier billing period')).toBeUndefined();
     expect(textOf(tree.root)).not.toContain('Swipe, or tap');
+  });
+});
+
+describe('the rest of the admin home', () => {
+  it('shows what is happening: payments waiting for approval first, then the notices', async () => {
+    mockSummary.mockImplementation(async () => ({ totalBilled: '30880.01', totalCollected: '6530.57', totalOutstanding: '24349.44', totalExpenses: '0', accountBalance: '1', corpusBalance: '1', pendingApprovals: 2 }));
+    const tree = await mount();
+    const text = textOf(tree.root);
+    expect(text).toContain("What's Happening");
+    expect(text).toContain('2 payments pending approval');
+    expect(text).toContain('Water tank cleaning on Saturday');
+    expect(text.indexOf('2 payments pending approval')).toBeLessThan(text.indexOf('Water tank cleaning'));
+  });
+
+  it('leads with the amount still to collect and how much is in', async () => {
+    const tree = await mount();
+    const text = textOf(tree.root);
+    expect(text).toContain('₹24,349 pending'); // 24349.44 rounded as rupees
+    expect(text).toContain('of ₹30,880 billed this month');
+    expect(tree.root.findAll((n: any) => n.props.accessibilityLabel === '21 percent collected').length).toBeGreaterThan(0);
+  });
+
+  it('opens the screen of the shortcut that is tapped', async () => {
+    const tree = await mount();
+    const tap = async (label: string) => act(async () => { tree.root.findAllByType(TouchableOpacity).find((n: any) => n.props.accessibilityLabel === label).props.onPress(); });
+    await tap('Billing');
+    expect(mockPush).toHaveBeenLastCalledWith('/(app)/admin/maintenance');
+    await tap('Verify');
+    expect(mockPush).toHaveBeenLastCalledWith('/(app)/admin/payments');
+    await tap('Messages');
+    expect(mockPush).toHaveBeenLastCalledWith('/(app)/chat');
   });
 });
