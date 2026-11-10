@@ -26,7 +26,7 @@ export function TintStatTile({ tone, icon, label, value, subtitle, progress, onP
       <View style={[styles.chip, { backgroundColor: color }]}>
         <Ionicons name={icon} size={18} color="#FFFFFF" />
       </View>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.label} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{label}</Text>
       <Text style={styles.value} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
       {!!subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
       {progress !== undefined && (

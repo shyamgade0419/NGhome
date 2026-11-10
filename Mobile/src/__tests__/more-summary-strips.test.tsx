@@ -102,7 +102,7 @@ describe('announcements (admin)', () => {
     const tree = await mount(<AnnouncementsScreen />);
     await until(() => flatText(tree.root).includes('Urgent'));
     // Four posted, three live, two urgent or high.
-    expect(flatText(tree.root)).toMatch(/Announcements 4.*Live 3.*Urgent 2/s);
+    expect(flatText(tree.root)).toMatch(/Posted 4.*Live 3.*Urgent 2/s);
   });
 });
 

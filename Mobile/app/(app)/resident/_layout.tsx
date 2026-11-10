@@ -24,13 +24,23 @@ export default function ResidentLayout() {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 56 + insets.bottom,
+          // The 28px icon pill, the 16px label and the tab item's own 5px above and below (10px) must all fit inside what
+          // is left after the bar's 1px border and 8px padding each side: 56 left the label 9px tall and cut its letters.
+          height: 74 + Math.max(insets.bottom - 8, 0),
           paddingTop: 8,
           paddingBottom: Math.max(insets.bottom, 8),
         },
+        // Always under the icon. React Navigation moves the label beside the icon whenever the screen is wider than it
+        // is tall (landscape, a tablet, a foldable), and a six-tab bar leaves each label about 65px, so every label was
+        // cut down to its first letter.
+        tabBarLabelPosition: 'below-icon',
+        // Sentence case: a six-tab bar leaves each label about 55px, and capitals with letter-spacing ('DASHBOARD',
+        // 'COMMUNITY') are wider than that, so they were cut short.
         tabBarLabelStyle: {
           ...typography.labelSmall,
           fontSize: 10,
+          letterSpacing: 0,
+          textTransform: 'none',
         },
       }}
     >

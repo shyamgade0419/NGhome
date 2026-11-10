@@ -259,7 +259,7 @@ export default function AnnouncementsScreen() {
       {posted.length > 0 && (
         <SummaryStrip
           tiles={[
-            { key: 'n', tone: 'violet', icon: 'megaphone-outline', label: 'Announcements', value: String(posted.length) },
+            { key: 'n', tone: 'violet', icon: 'megaphone-outline', label: 'Posted', value: String(posted.length) },
             { key: 'l', tone: 'green', icon: 'eye-outline', label: 'Live', value: String(live) },
             { key: 'u', tone: 'coral', icon: 'flame-outline', label: 'Urgent', value: String(urgent) },
           ]}
