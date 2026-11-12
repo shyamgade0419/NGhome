@@ -23,11 +23,13 @@ interface StatusBadgeProps {
 
 export function StatusBadge({ label, variant = 'neutral', size = 'md' }: StatusBadgeProps) {
   const config = variantConfig[variant];
+  // Statuses arrive as stored, 'UNDER_REVIEW' or 'PARTIALLY_PAID'; people read them with spaces.
+  const text = label.replace(/_/g, ' ');
   return (
     <View style={[styles.badge, { backgroundColor: config.bg }, size === 'sm' && styles.sm]}>
       <View style={[styles.dot, { backgroundColor: config.dot }]} />
       <Text numberOfLines={1} style={[styles.label, { color: config.text }, size === 'sm' && styles.smLabel]}>
-        {label}
+        {text}
       </Text>
     </View>
   );
