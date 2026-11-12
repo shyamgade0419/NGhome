@@ -2,7 +2,7 @@
   "expo": {
     "name": "NG Home",
     "slug": "nghome",
-    "version": "1.3.20",
+    "version": "1.3.21",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "nghome",
@@ -23,7 +23,7 @@
         "backgroundColor": "#0D2147"
       },
       "package": "in.novagade.nghome",
-      "versionCode": 34,
+      "versionCode": 35,
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.POST_NOTIFICATIONS",
