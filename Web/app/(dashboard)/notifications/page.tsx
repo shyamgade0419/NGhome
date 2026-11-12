@@ -3,7 +3,19 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Bell, Check, CheckCheck, Send, X } from 'lucide-react';
-import { notificationsApi } from '@/lib/api/endpoints';
+import { notificationsApi, societyApi } from '@/lib/api/endpoints';
+import {
+  AUDIENCE_OPTIONS,
+  EVERYONE,
+  allSelected,
+  choiceProblem,
+  sendLabel,
+  sentMessage,
+  toPayload,
+  toggleAll,
+  toggleId,
+  type AudienceChoice,
+} from '@/lib/audience';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
@@ -18,15 +30,39 @@ import toast from 'react-hot-toast';
 function ComposeModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const [form, setForm] = useState({ title: '', message: '' });
+  const [audience, setAudience] = useState<AudienceChoice>(EVERYONE);
+  const [openBuilding, setOpenBuilding] = useState<string | null>(null);
+
+  const needsList = audience.kind === 'BUILDING' || audience.kind === 'SPECIFIC_FLATS';
+  const { data: buildingsData, isLoading: buildingsLoading } = useQuery({
+    queryKey: ['audience-buildings'],
+    queryFn: () => societyApi.buildings().then((r: any) => r.data),
+    enabled: needsList,
+    staleTime: 5 * 60_000,
+  });
+  const buildings: { id: string; name: string; isActive?: boolean }[] = (Array.isArray(buildingsData) ? buildingsData : (buildingsData?.data ?? [])).filter(
+    (b: { isActive?: boolean }) => b.isActive !== false,
+  );
+  const activeBuilding = openBuilding ?? buildings[0]?.id ?? null;
+  const { data: flatsData, isLoading: flatsLoading } = useQuery({
+    queryKey: ['audience-flats', activeBuilding],
+    queryFn: () => societyApi.flats({ buildingId: activeBuilding, limit: 200 }).then((r: any) => r.data),
+    enabled: audience.kind === 'SPECIFIC_FLATS' && !!activeBuilding,
+    staleTime: 5 * 60_000,
+  });
+  const flats: { id: string; flatCode: string }[] = Array.isArray(flatsData) ? flatsData : (flatsData?.data ?? []);
 
   const mutation = useMutation({
     mutationFn: () =>
       notificationsApi.send({
         title: form.title.trim(),
         body: form.message.trim(),
+        ...toPayload(audience),
       }),
-    onSuccess: () => {
-      toast.success('Notification sent to all members');
+    onSuccess: (res: any) => {
+      const done = sentMessage(res?.data?.recipientCount);
+      if (done.ok) toast.success(done.message);
+      else toast(done.message);
       qc.invalidateQueries({ queryKey: ['notifications-mine'] });
       onClose();
     },
@@ -46,6 +82,112 @@ function ComposeModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Send to</label>
+            <div className="flex flex-wrap gap-2">
+              {AUDIENCE_OPTIONS.map((o) => (
+                <button
+                  key={o.kind}
+                  type="button"
+                  onClick={() => setAudience((a) => ({ ...a, kind: o.kind }))}
+                  aria-pressed={audience.kind === o.kind}
+                  className={cn(
+                    'rounded-full border px-3 py-1 text-sm',
+                    audience.kind === o.kind ? 'border-teal-300 bg-teal-50 font-medium text-slate-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
+                  )}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+
+            {audience.kind === 'BUILDING' && (
+              <div className="mt-2 space-y-1 rounded-lg border border-slate-200 p-3">
+                {buildingsLoading ? (
+                  <p className="text-sm text-slate-500">Loading buildings…</p>
+                ) : buildings.length === 0 ? (
+                  <p className="text-sm text-slate-500">This society has no buildings set up yet.</p>
+                ) : (
+                  buildings.map((b) => (
+                    <label key={b.id} className="flex cursor-pointer items-center gap-2 text-sm text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={audience.buildingIds.includes(b.id)}
+                        onChange={() => setAudience((a) => ({ ...a, buildingIds: toggleId(a.buildingIds, b.id) }))}
+                      />
+                      {b.name}
+                    </label>
+                  ))
+                )}
+              </div>
+            )}
+
+            {audience.kind === 'SPECIFIC_FLATS' && (
+              <div className="mt-2 space-y-2 rounded-lg border border-slate-200 p-3">
+                {buildingsLoading ? (
+                  <p className="text-sm text-slate-500">Loading…</p>
+                ) : buildings.length === 0 ? (
+                  <p className="text-sm text-slate-500">This society has no buildings or flats set up yet.</p>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      {buildings.map((b) => (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => setOpenBuilding(b.id)}
+                          className={cn(
+                            'rounded-full border px-3 py-1 text-xs',
+                            b.id === activeBuilding ? 'border-teal-300 bg-teal-50 font-medium' : 'border-slate-200 bg-white text-slate-600',
+                          )}
+                        >
+                          {b.name}
+                        </button>
+                      ))}
+                    </div>
+                    {flatsLoading ? (
+                      <p className="text-sm text-slate-500">Loading flats…</p>
+                    ) : flats.length === 0 ? (
+                      <p className="text-sm text-slate-500">No flats in this building.</p>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setAudience((a) => ({ ...a, flatIds: toggleAll(a.flatIds, flats.map((f) => f.id)) }))}
+                          className="text-xs text-primary-700 underline"
+                        >
+                          {allSelected(audience.flatIds, flats.map((f) => f.id)) ? 'Clear this building' : 'Select all in this building'}
+                        </button>
+                        <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto">
+                          {flats.map((f) => (
+                            <button
+                              key={f.id}
+                              type="button"
+                              onClick={() => setAudience((a) => ({ ...a, flatIds: toggleId(a.flatIds, f.id) }))}
+                              aria-pressed={audience.flatIds.includes(f.id)}
+                              className={cn(
+                                'min-w-[3.5rem] rounded-lg border px-2 py-1 text-xs',
+                                audience.flatIds.includes(f.id) ? 'border-teal-600 bg-teal-600 text-white' : 'border-slate-200 bg-white text-slate-700',
+                              )}
+                            >
+                              {f.flatCode}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {audience.flatIds.length > 0 && (
+                      <p className="text-xs text-slate-500">
+                        {audience.flatIds.length} flat{audience.flatIds.length === 1 ? '' : 's'} chosen across all buildings
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+            {audience.kind === 'COMMITTEE' && <p className="mt-1 text-xs text-slate-500">Only committee members get this.</p>}
+            {audience.kind === 'STAFF' && <p className="mt-1 text-xs text-slate-500">Only staff members get this.</p>}
+          </div>
           <Input
             label="Title *"
             placeholder="Maintenance reminder"
@@ -56,7 +198,7 @@ function ComposeModal({ onClose }: { onClose: () => void }) {
             <label className="mb-1 block text-sm font-medium text-slate-700">Message *</label>
             <textarea
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 min-h-[100px]"
-              placeholder="Write your message to all society members..."
+              placeholder="Write your message…"
               value={form.message}
               onChange={set('message')}
             />
@@ -67,9 +209,9 @@ function ComposeModal({ onClose }: { onClose: () => void }) {
           <Button
             onClick={() => mutation.mutate()}
             loading={mutation.isPending}
-            disabled={!form.title.trim() || !form.message.trim()}
+            disabled={!form.title.trim() || !form.message.trim() || !!choiceProblem(audience)}
           >
-            <Send size={14} className="mr-1.5" /> Send to All Members
+            <Send size={14} className="mr-1.5" /> {sendLabel(audience)}
           </Button>
         </div>
       </div>

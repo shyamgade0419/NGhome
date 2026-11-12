@@ -88,8 +88,17 @@ export const notificationsApi = {
    * server-side) by SendNotificationDto — send them explicitly rather than
    * relying on defaults that could change.
    */
-  send: async (payload: { title: string; body: string; type?: string }): Promise<void> => {
-    await apiClient.post('/notifications', { type: 'GENERAL', ...payload });
+  send: async (payload: {
+    title: string;
+    body: string;
+    type?: string;
+    /** Who gets it; everyone when left out. */
+    audience?: 'ALL_RESIDENTS' | 'COMMITTEE' | 'STAFF' | 'BUILDING' | 'SPECIFIC_FLATS';
+    /** The buildings (BUILDING) or flats (SPECIFIC_FLATS) it goes to. */
+    audienceConfig?: { buildingIds?: string[]; flatIds?: string[] };
+  }): Promise<{ recipientCount?: number }> => {
+    const { data } = await apiClient.post<{ data?: { recipientCount?: number } }>('/notifications', { type: 'GENERAL', ...payload });
+    return { recipientCount: data?.data?.recipientCount };
   },
 
   /** Registers this device for real push delivery — see src/notifications/push.ts. */

@@ -478,8 +478,15 @@ export const notificationsApi = {
     };
   },
   markRead: (id: string) => api.patch(`/notifications/my/${id}/read`, {}),
-  send: (data: { title: string; body: string; type?: string }) =>
-    api.post('/notifications', { type: 'GENERAL', ...data }),
+  send: (data: {
+    title: string;
+    body: string;
+    type?: string;
+    /** Who gets it; everyone when left out. */
+    audience?: 'ALL_RESIDENTS' | 'COMMITTEE' | 'STAFF' | 'BUILDING' | 'SPECIFIC_FLATS';
+    /** The buildings (BUILDING) or flats (SPECIFIC_FLATS) it goes to. */
+    audienceConfig?: { buildingIds?: string[]; flatIds?: string[] };
+  }) => api.post('/notifications', { type: 'GENERAL', ...data }),
 };
 
 // Users (society-scoped)
