@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AnnouncementAudience, NotificationChannel, NotificationStatus, SystemRole, Prisma,
 } from '@prisma/client';
 import { PushService } from './push.service';
 import { SendNotificationDto } from './dto/send-notification.dto';
+import { AudienceConfig, audienceProblem, cleanAudienceConfig, needsBuildings, needsFlats } from './audience';
 export { SendNotificationDto } from './dto/send-notification.dto';
 
 /**
@@ -22,8 +23,15 @@ export class NotificationsService {
     private readonly pushService: PushService,
   ) {}
 
-  async send(societyId: string, dto: SendNotificationDto) {
+  /**
+   * `opts.excludeUserId` leaves out the person who caused it: an admin posting an announcement does not need an alert
+   * for their own post. The manual 'send a notification' keeps them in, as it always did, so they see it arrive.
+   */
+  async send(societyId: string, dto: SendNotificationDto, opts: { excludeUserId?: string } = {}) {
     const audience = dto.audience ?? AnnouncementAudience.ALL_RESIDENTS;
+    const audienceConfig = cleanAudienceConfig(dto.audienceConfig);
+    const problem = audienceProblem(audience, audienceConfig);
+    if (problem) throw new BadRequestException(problem);
 
     const notification = await this.prisma.notification.create({
       data: {
@@ -34,6 +42,7 @@ export class NotificationsService {
         data: (dto.data ?? {}) as Prisma.InputJsonValue,
         channels: dto.channels ?? [NotificationChannel.IN_APP],
         audience,
+        audienceConfig: audienceConfig as Prisma.InputJsonValue,
         scheduledAt: new Date(),
       },
     });
@@ -44,7 +53,9 @@ export class NotificationsService {
     // NotificationRecord. Every "Send to All Members" click, on web or
     // mobile, has been reaching nobody's inbox since this feature was
     // built — not residents, not the admin who sent it.
-    const recipientUserIds = await this.resolveRecipientUserIds(societyId, audience);
+    const recipientUserIds = (await this.resolveRecipientUserIds(societyId, audience, audienceConfig)).filter(
+      (id) => id !== opts.excludeUserId,
+    );
     if (recipientUserIds.length > 0) {
       await this.prisma.notificationRecord.createMany({
         data: recipientUserIds.map((userId) => ({
@@ -60,9 +71,22 @@ export class NotificationsService {
     // Fire-and-forget-ish (PushService swallows its own errors) — a slow
     // or failed push send must never turn a successfully saved
     // notification into a failed API response.
-    void this.pushService.sendToUsers(recipientUserIds, dto.title, dto.body, { type: dto.type });
+    void this.pushService.sendToUsers(recipientUserIds, dto.title, dto.body, { ...(dto.data ?? {}), type: dto.type });
 
-    return notification;
+    // How many it reached, so the sender can be told rather than guess.
+    return Object.assign(notification, { recipientCount: recipientUserIds.length });
+  }
+
+  /**
+   * Has a notification of this kind already gone out for this thing (an announcement, a meeting, an event)? What the
+   * scheduled jobs ask before sending, so a restart or a second run never tells people twice. Matches on a field of the
+   * stored `data`, e.g. type 'MEETING_REMINDER' with meetingId.
+   */
+  async alreadySent(societyId: string, type: string, key: string, value: string): Promise<boolean> {
+    const count = await this.prisma.notification.count({
+      where: { societyId, type, data: { path: [key], equals: value } },
+    });
+    return count > 0;
   }
 
   /**
@@ -141,16 +165,23 @@ export class NotificationsService {
    * resident of their own flat) — without it they'd get the exact same
    * notification twice.
    */
-  private async resolveRecipientUserIds(
+  async resolveRecipientUserIds(
     societyId: string,
     audience: AnnouncementAudience,
+    config: AudienceConfig = {},
   ): Promise<string[]> {
     const roleFilter =
       audience === AnnouncementAudience.STAFF
         ? { role: SystemRole.SOCIETY_STAFF }
         : audience === AnnouncementAudience.COMMITTEE
           ? { role: SystemRole.COMMITTEE_MEMBER }
-          : {};
+          : needsBuildings(audience)
+            // A building's members: those whose flat is in it. The flat is checked against the society too, so an id from
+            // another society matches nobody.
+            ? { flat: { societyId, buildingId: { in: config.buildingIds ?? [] } } }
+            : needsFlats(audience)
+              ? { flat: { societyId, id: { in: config.flatIds ?? [] } } }
+              : {};
 
     const memberships = await this.prisma.societyMembership.findMany({
       where: { societyId, status: 'ACTIVE', ...roleFilter },

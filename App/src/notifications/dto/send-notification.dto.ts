@@ -26,8 +26,19 @@ export class SendNotificationDto {
   @IsEnum(NotificationChannel, { each: true })
   channels?: NotificationChannel[];
 
-  @ApiPropertyOptional({ enum: AnnouncementAudience })
+  @ApiPropertyOptional({
+    enum: AnnouncementAudience,
+    description: 'Who it goes to: everyone (the default), the committee or the staff, or the buildings or flats named in audienceConfig.',
+  })
   @IsOptional()
   @IsEnum(AnnouncementAudience)
   audience?: AnnouncementAudience;
+
+  @ApiPropertyOptional({
+    description: 'Which buildings (buildingIds, for BUILDING or BLOCK) or flats (flatIds, for SPECIFIC_FLATS) it goes to.',
+    example: { buildingIds: ['…'] },
+  })
+  @IsOptional()
+  @IsObject()
+  audienceConfig?: { buildingIds?: string[]; flatIds?: string[] };
 }

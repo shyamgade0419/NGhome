@@ -1,15 +1,20 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
 import { CreateMeetingDto } from './dto/create-meeting.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import { meetingNotice } from '../notifications/notification-content';
 export { CreateMeetingDto } from './dto/create-meeting.dto';
 
 @Injectable()
 export class MeetingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly notifications?: NotificationsService,
+  ) {}
 
   async create(societyId: string, createdById: string, dto: CreateMeetingDto) {
-    return this.prisma.meeting.create({
+    const meeting = await this.prisma.meeting.create({
       data: {
         societyId,
         createdById,
@@ -19,6 +24,15 @@ export class MeetingsService {
         agenda: dto.agenda,
       },
     });
+    // Everyone is told when and where; the details are in the alert itself, so it does not depend on the meeting being open
+    // to residents in the app (that only happens once its minutes are published).
+    if (this.notifications && meeting.meetingDate > new Date()) {
+      await this.notifications.notifyQuietly(
+        () => this.notifications!.send(societyId, meetingNotice(meeting), { excludeUserId: createdById }),
+        `meeting ${meeting.id} scheduled`,
+      );
+    }
+    return meeting;
   }
 
   async findAll(societyId: string, page: number, limit: number, forResident = false) {

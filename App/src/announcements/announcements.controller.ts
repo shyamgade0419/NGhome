@@ -81,7 +81,7 @@ export class AnnouncementsController {
   @UseGuards(RolesGuard)
   @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_STAFF)
   @ApiOperation({ summary: 'Publish an announcement' })
-  publish(@SocietyId() societyId: string, @Param('id') id: string) {
-    return this.announcementsService.publish(societyId, id);
+  publish(@SocietyId() societyId: string, @CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.announcementsService.publish(societyId, id, user.id);
   }
 }

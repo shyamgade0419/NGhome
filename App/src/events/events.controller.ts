@@ -60,10 +60,11 @@ export class EventsController {
   @ApiOperation({ summary: 'Update an event' })
   update(
     @SocietyId() societyId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
     @Body() dto: UpdateEventDto,
   ) {
-    return this.eventsService.update(societyId, id, dto);
+    return this.eventsService.update(societyId, id, dto, user.id);
   }
 
   @Delete(':id')

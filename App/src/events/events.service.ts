@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, EventStatus, ExpenseStatus, TransactionType, AuditAction } from '@prisma/client';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
@@ -6,6 +6,8 @@ import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagina
 const LINKED_ENTITY_TYPE = 'EVENT';
 
 import { CreateEventDto } from './dto/create-event.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import { eventCancelled, eventNotice, eventRescheduled } from '../notifications/notification-content';
 export { CreateEventDto } from './dto/create-event.dto';
 
 const FUND_SELECT = { id: true, name: true } satisfies Prisma.FundSelect;
@@ -13,7 +15,19 @@ const CREATOR_SELECT = { id: true, firstName: true, lastName: true } satisfies P
 
 @Injectable()
 export class EventsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly notifications?: NotificationsService,
+  ) {}
+
+  /** Tells everyone about an event. Never fails the save if the alert cannot go. */
+  private async tell(societyId: string, notice: ReturnType<typeof eventNotice>, actorId: string | undefined, context: string) {
+    if (!this.notifications) return;
+    await this.notifications.notifyQuietly(
+      () => this.notifications!.send(societyId, notice, { excludeUserId: actorId }),
+      context,
+    );
+  }
 
   async create(societyId: string, createdById: string, dto: CreateEventDto) {
     if (dto.fundId) {
@@ -21,7 +35,7 @@ export class EventsService {
       if (!fund) throw new NotFoundException('Fund not found in this society');
     }
 
-    return this.prisma.event.create({
+    const created = await this.prisma.event.create({
       data: {
         societyId,
         createdById,
@@ -36,6 +50,10 @@ export class EventsService {
       },
       include: { fund: { select: FUND_SELECT }, createdBy: { select: CREATOR_SELECT } },
     });
+    if (created.isVisibleToResidents && created.status === EventStatus.PLANNED && created.eventDate > new Date()) {
+      await this.tell(societyId, eventNotice(created), createdById, `event ${created.id} planned`);
+    }
+    return created;
   }
 
   async findAll(societyId: string, page: number, limit: number, forResident = false) {
@@ -92,16 +110,16 @@ export class EventsService {
     return events.map((e) => ({ ...e, expenseRecorded: recordedIds.has(e.id) }));
   }
 
-  async update(societyId: string, id: string, dto: Partial<CreateEventDto>) {
+  async update(societyId: string, id: string, dto: Partial<CreateEventDto>, actorId?: string) {
     // findOne (admin context — forResident=false) enforces society scope before updating
-    await this.findOne(societyId, id);
+    const before = await this.findOne(societyId, id);
 
     if (dto.fundId) {
       const fund = await this.prisma.fund.findFirst({ where: { id: dto.fundId, societyId } });
       if (!fund) throw new NotFoundException('Fund not found in this society');
     }
 
-    return this.prisma.event.update({
+    const updated = await this.prisma.event.update({
       where: { id },
       data: {
         title: dto.title,
@@ -115,6 +133,19 @@ export class EventsService {
       },
       include: { fund: { select: FUND_SELECT }, createdBy: { select: CREATOR_SELECT } },
     });
+    // Residents hear when an event they could see is called off or moved to another time; other edits stay quiet.
+    if (updated.isVisibleToResidents) {
+      if (updated.status === EventStatus.CANCELLED && before.status !== EventStatus.CANCELLED) {
+        await this.tell(societyId, eventCancelled(updated), actorId, `event ${id} cancelled`);
+      } else if (
+        updated.status === EventStatus.PLANNED &&
+        updated.eventDate.getTime() !== new Date(before.eventDate).getTime() &&
+        updated.eventDate > new Date()
+      ) {
+        await this.tell(societyId, eventRescheduled(updated), actorId, `event ${id} moved`);
+      }
+    }
+    return updated;
   }
 
   async remove(societyId: string, id: string) {
