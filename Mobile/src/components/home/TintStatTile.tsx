@@ -36,7 +36,11 @@ export function TintStatTile({ tone, icon, label, value, subtitle, progress, onP
       )}
     </>
   );
-  const style = [styles.tile, { backgroundColor: tint(color, 0.88), borderColor: tint(color, 0.74) }];
+  // A tile that is a button sits inside a wrapper whose height comes from its content, so it must grow into it
+  // (flexGrow), not take flex:1 (a zero basis, which collapsed it to its padding on a phone). A plain tile is a direct
+  // child of the row, where flex:1 only decides its width.
+  const look = { backgroundColor: tint(color, 0.88), borderColor: tint(color, 0.74) };
+  const style = [styles.tile, onPress ? styles.grow : styles.share, look];
   return onPress ? (
     <Animated.View style={[styles.cell, press.style]}>
       <TouchableOpacity style={style} onPress={onPress} onPressIn={press.onPressIn} onPressOut={press.onPressOut} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={`${label} ${value}`}>
@@ -50,7 +54,9 @@ export function TintStatTile({ tone, icon, label, value, subtitle, progress, onP
 
 const styles = StyleSheet.create({
   cell: { flex: 1 },
-  tile: { flex: 1, borderRadius: 18, borderWidth: 1, padding: spacing.md, gap: 2 },
+  grow: { flexGrow: 1 },
+  share: { flex: 1 },
+  tile: { borderRadius: 18, borderWidth: 1, padding: spacing.md, gap: 2 },
   chip: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm },
   label: { ...typography.labelSmall, color: colors.textSecondary },
   value: { ...typography.headingSmall, fontFamily: fonts.extrabold, color: colors.text },

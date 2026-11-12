@@ -26,6 +26,8 @@ import { inr } from '@/utils/format';
 
 const STATUS_FILTERS = ['ALL', 'PENDING', 'UNDER_REVIEW', 'APPROVED', 'REJECTED'] as const;
 type Filter = (typeof STATUS_FILTERS)[number];
+/** 'UNDER_REVIEW' for people: 'Under review'. */
+const filterLabel = (f: string) => f.replace(/_/g, ' ');
 
 const STATUS_TONE: Record<string, Tone> = { PENDING: 'amber', UNDER_REVIEW: 'blue', APPROVED: 'green', REJECTED: 'coral' };
 
@@ -124,7 +126,7 @@ export default function AdminPaymentsScreen() {
               onPress={() => setFilter(item)}
             >
               <Text style={[styles.filterText, filter === item && styles.filterTextActive]}>
-                {item}
+                {filterLabel(item)}
               </Text>
             </TouchableOpacity>
           )}
@@ -146,7 +148,7 @@ export default function AdminPaymentsScreen() {
           ListEmptyComponent={
             <EmptyState
               icon="card-outline"
-              title={`No ${filter === 'ALL' ? '' : filter.toLowerCase()} payments`}
+              title={`No ${filter === 'ALL' ? '' : filterLabel(filter).toLowerCase() + ' '}payments`}
               description="Payment submissions will appear here for review."
             />
           }

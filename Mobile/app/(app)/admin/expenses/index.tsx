@@ -788,7 +788,7 @@ const payModal = StyleSheet.create({
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
 
-  filterBar: { borderBottomWidth: 1, borderBottomColor: colors.border, maxHeight: 48 },
+  filterBar: { flexGrow: 0, flexShrink: 0, borderBottomWidth: 1, borderBottomColor: colors.border, maxHeight: 48 },
   filterContent: { paddingHorizontal: spacing.base, paddingVertical: 8, gap: 8 },
   filterChip: {
     paddingHorizontal: 14, paddingVertical: 4,

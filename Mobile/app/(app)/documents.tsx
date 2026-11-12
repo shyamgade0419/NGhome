@@ -663,7 +663,7 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, ...typography.bodyMedium, color: colors.text, padding: 0 },
 
-  chipBar: { maxHeight: 48, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.surface },
+  chipBar: { flexGrow: 0, flexShrink: 0, maxHeight: 48, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.surface },
   chipContent: { paddingHorizontal: spacing.base, paddingVertical: 8, gap: 8 },
   chip: {
     paddingHorizontal: 14,

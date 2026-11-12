@@ -85,6 +85,7 @@ function PeriodPicker({
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
+      style={{ flexGrow: 0, flexShrink: 0 }}
       contentContainerStyle={styles.periodRow}
     >
       {periods.map((p) => (

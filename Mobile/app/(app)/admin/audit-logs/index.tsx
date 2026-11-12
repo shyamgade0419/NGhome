@@ -177,6 +177,8 @@ const styles = StyleSheet.create({
   list: { padding: spacing.base },
 
   filterBar: {
+    flexGrow: 0,
+    flexShrink: 0,
     maxHeight: 48,
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
