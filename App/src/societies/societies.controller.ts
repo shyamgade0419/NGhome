@@ -107,6 +107,22 @@ export class SocietiesController {
     return this.societiesService.getResidentFinancialSummary(societyId, await this.residency.isTenantViewer(user));
   }
 
+  /** The month's collection summary for a resident; only when the society has switched it on. */
+  @Get('my/reports/collection')
+  @UseGuards(TenantGuard)
+  @ApiOperation({ summary: 'Monthly collection summary for residents (gated by society config)' })
+  getCollectionReport(@SocietyId() societyId: string, @Query('year') year?: string, @Query('month') month?: string) {
+    return this.societiesService.getResidentCollectionReport(societyId, year, month);
+  }
+
+  /** The month's expense breakdown for a resident; only when the society shows expenses to residents. */
+  @Get('my/reports/expenses')
+  @UseGuards(TenantGuard)
+  @ApiOperation({ summary: 'Monthly expense breakdown for residents (gated by society config)' })
+  getExpenseReport(@SocietyId() societyId: string, @Query('year') year?: string, @Query('month') month?: string) {
+    return this.societiesService.getResidentExpenseReport(societyId, year, month);
+  }
+
   @Patch('my/config')
   @UseGuards(TenantGuard, RolesGuard)
   @Roles(SystemRole.SOCIETY_ADMIN)

@@ -80,6 +80,8 @@ const toggleStyles = StyleSheet.create({
 type Config = {
   showAccountBalancesToResidents: boolean;
   showExpensesToResidents: boolean;
+  /** Stored in the society's additionalConfig; saved through the same call as the others. */
+  showCollectionToResidents: boolean;
   publishStatementToResidents: boolean;
   publishMeetingMinutes: boolean;
   allowPaymentProofUpload: boolean;
@@ -88,6 +90,7 @@ type Config = {
 const DEFAULTS: Config = {
   showAccountBalancesToResidents: false,
   showExpensesToResidents: false,
+  showCollectionToResidents: false,
   publishStatementToResidents: false,
   publishMeetingMinutes: false,
   allowPaymentProofUpload: true,
@@ -108,6 +111,7 @@ export default function NotificationSettingsScreen() {
       setForm({
         showAccountBalancesToResidents: data.showAccountBalancesToResidents ?? false,
         showExpensesToResidents: data.showExpensesToResidents ?? false,
+        showCollectionToResidents: data.additionalConfig?.showCollectionToResidents === true,
         publishStatementToResidents: data.publishStatementToResidents ?? false,
         publishMeetingMinutes: data.publishMeetingMinutes ?? false,
         allowPaymentProofUpload: data.allowPaymentProofUpload ?? true,
@@ -156,9 +160,15 @@ export default function NotificationSettingsScreen() {
           />
           <ToggleRow
             label="Show expense records"
-            sublabel="Residents can see society expense details"
+            sublabel="Residents can see society expense details, and the month-by-month expense breakdown under Reports"
             value={form.showExpensesToResidents}
             onChange={set('showExpensesToResidents')}
+          />
+          <ToggleRow
+            label="Show collection summary"
+            sublabel="Residents can see, under Reports, how much was billed, collected and is pending each month, and how many flats have paid. Never which flats."
+            value={form.showCollectionToResidents}
+            onChange={set('showCollectionToResidents')}
           />
           <ToggleRow
             label="Publish billing statements"

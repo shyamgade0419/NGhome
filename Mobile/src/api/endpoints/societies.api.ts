@@ -5,6 +5,30 @@ import { ApiResponse, PaginatedResponse, PaginationQuery } from '@/api/types';
 import { Society, Building, Flat, Announcement, Meeting } from '@/types/society.types';
 import type { Branding } from '@/utils/branding';
 
+export interface CollectionReport {
+  enabled: boolean;
+  year: number;
+  month: number;
+  found?: boolean;
+  status?: string;
+  totalBilled?: number;
+  totalCollected?: number;
+  totalPending?: number;
+  /** Collected as a percentage of billed, to one decimal place. */
+  collectionRate?: number;
+  flatsBilled?: number;
+  flatsPaid?: number;
+}
+
+export interface ExpenseReport {
+  enabled: boolean;
+  year: number;
+  month: number;
+  total?: number;
+  count?: number;
+  byCategory?: Array<{ category: string; total: number }>;
+}
+
 export const societiesApi = {
   getMySociety: async () => {
     const { data } = await apiClient.get<ApiResponse<Society>>('/societies/my');
@@ -184,6 +208,21 @@ export const societiesApi = {
       // Salaries" row — same shape as the admin monthly-overview report.
       byCategory: Array<{ category: string; total: number }> | null;
     }>>('/societies/my/financial-summary');
+    return data.data;
+  },
+
+  /**
+   * The month's collection summary, for a resident. `enabled` is false when the society has not switched it on;
+   * `found` is false when that month has no period published to flats. Never names a flat or a person.
+   */
+  getCollectionReport: async (year: number, month: number) => {
+    const { data } = await apiClient.get<ApiResponse<CollectionReport>>('/societies/my/reports/collection', { params: { year, month } });
+    return data.data;
+  },
+
+  /** The month's expense breakdown, for a resident. `enabled` is false when the society does not show expenses to residents. */
+  getExpenseReport: async (year: number, month: number) => {
+    const { data } = await apiClient.get<ApiResponse<ExpenseReport>>('/societies/my/reports/expenses', { params: { year, month } });
     return data.data;
   },
 

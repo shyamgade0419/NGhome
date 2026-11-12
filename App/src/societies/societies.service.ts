@@ -9,6 +9,7 @@ import { generateUniqueJoinCode } from '../common/utils/join-code.util';
 import { scrubLogo } from './branding';
 import { cleanReminderDays } from '../whatsapp/whatsapp-settings';
 import { Features, featurePatchProblem, readFeatures } from './features';
+import { RESIDENT_VISIBLE_PERIOD_STATUSES, cleanMonth, collectionRate, readShowCollection } from './resident-reports';
 import { Prisma, AuditAction } from '@prisma/client';
 
 @Injectable()
@@ -502,8 +503,9 @@ export class SocietiesService {
     const featuresProblem = dto.features !== undefined ? featurePatchProblem(dto.features) : null;
     if (featuresProblem) throw new BadRequestException(featuresProblem);
 
-    const { upiId, waterBillingEnabled, reminderTemplate, whatsappEnabled, whatsappReminderDays, features, ...configFields } = dto as UpdateSocietyConfigDto & {
+    const { upiId, waterBillingEnabled, reminderTemplate, whatsappEnabled, whatsappReminderDays, features, showCollectionToResidents, ...configFields } = dto as UpdateSocietyConfigDto & {
       upiId?: string;
+      showCollectionToResidents?: boolean;
       waterBillingEnabled?: boolean;
       reminderTemplate?: string;
       whatsappEnabled?: boolean;
@@ -514,7 +516,8 @@ export class SocietiesService {
     let additionalConfigPatch: Prisma.InputJsonValue | undefined;
     if (
       upiId !== undefined || waterBillingEnabled !== undefined || reminderTemplate !== undefined ||
-      whatsappEnabled !== undefined || whatsappReminderDays !== undefined || features !== undefined
+      whatsappEnabled !== undefined || whatsappReminderDays !== undefined || features !== undefined ||
+      showCollectionToResidents !== undefined
     ) {
       const current = await this.prisma.societyConfiguration.findUnique({
         where: { societyId },
@@ -525,6 +528,7 @@ export class SocietiesService {
         ...existing,
         ...(upiId !== undefined ? { upiId } : {}),
         ...(waterBillingEnabled !== undefined ? { waterBillingEnabled } : {}),
+        ...(showCollectionToResidents !== undefined ? { showCollectionToResidents } : {}),
         // Blank puts the default wording back (readReminderTemplate falls back when nothing is stored).
         ...(reminderTemplate !== undefined ? { reminderTemplate: reminderTemplate.trim() } : {}),
         // Only the features named change; the others keep what they were.
@@ -556,6 +560,84 @@ export class SocietiesService {
       update: data,
     });
     return scrubLogo(saved) ?? saved;
+  }
+
+  /**
+   * The collection summary for one month, for a resident: what was billed, collected and is pending, and how many flats
+   * have paid. No flat, name or amount per flat. Only when the society has switched it on, and only for a period that
+   * has been published to flats; otherwise says so rather than failing, so the screen can explain.
+   */
+  async getResidentCollectionReport(societyId: string, yearInput?: unknown, monthInput?: unknown) {
+    const { year, month } = cleanMonth(yearInput, monthInput);
+    const config = await this.prisma.societyConfiguration.findUnique({ where: { societyId }, select: { additionalConfig: true } });
+    if (!readShowCollection(config?.additionalConfig)) return { enabled: false, year, month };
+
+    const period = await this.prisma.billingPeriod.findFirst({
+      where: { societyId, periodYear: year, periodMonth: month, kind: 'REGULAR', status: { in: [...RESIDENT_VISIBLE_PERIOD_STATUSES] } },
+      select: { id: true, status: true, totalBilled: true, totalCollected: true, totalPending: true, dueDate: true },
+    });
+    if (!period) return { enabled: true, found: false, year, month };
+
+    const [flatsBilled, flatsPaid] = await Promise.all([
+      this.prisma.maintenanceBill.count({ where: { billingPeriodId: period.id } }),
+      this.prisma.maintenanceBill.count({ where: { billingPeriodId: period.id, isPaid: true } }),
+    ]);
+    const billed = period.totalBilled.toNumber();
+    const collected = period.totalCollected.toNumber();
+    return {
+      enabled: true,
+      found: true,
+      year,
+      month,
+      status: period.status,
+      dueDate: period.dueDate,
+      totalBilled: billed,
+      totalCollected: collected,
+      totalPending: period.totalPending.toNumber(),
+      collectionRate: collectionRate(billed, collected),
+      flatsBilled,
+      flatsPaid,
+    };
+  }
+
+  /**
+   * The expense breakdown for one month, for a resident: spending by category, with staff pay as one total. Only when the
+   * society has switched on 'show expenses to residents' (the same switch as the month-to-date card on Finances).
+   */
+  async getResidentExpenseReport(societyId: string, yearInput?: unknown, monthInput?: unknown) {
+    const { year, month } = cleanMonth(yearInput, monthInput);
+    const config = await this.prisma.societyConfiguration.findUnique({ where: { societyId }, select: { showExpensesToResidents: true } });
+    if (!config?.showExpensesToResidents) return { enabled: false, year, month };
+
+    const from = new Date(year, month - 1, 1);
+    const to = new Date(year, month, 1);
+    const [expenses, salaryAgg] = await Promise.all([
+      this.prisma.expense.findMany({
+        where: { societyId, status: { in: ['APPROVED', 'PAID'] }, expenseDate: { gte: from, lt: to } },
+        include: { category: { select: { name: true } } },
+      }),
+      this.prisma.salaryRecord.aggregate({
+        where: { societyId, salaryMonth: month, salaryYear: year, status: { in: ['PROCESSED', 'PAID'] } },
+        _sum: { netSalary: true },
+      }),
+    ]);
+
+    const byCategoryMap: Record<string, number> = {};
+    let total = 0;
+    for (const expense of expenses) {
+      const cat = expense.category?.name ?? 'Uncategorized';
+      byCategoryMap[cat] = (byCategoryMap[cat] ?? 0) + expense.amount.toNumber();
+      total += expense.amount.toNumber();
+    }
+    const salaryTotal = salaryAgg._sum.netSalary?.toNumber() ?? 0;
+    if (salaryTotal > 0) {
+      byCategoryMap['Staff Salaries'] = salaryTotal;
+      total += salaryTotal;
+    }
+    const byCategory = Object.entries(byCategoryMap)
+      .map(([category, amount]) => ({ category, total: amount }))
+      .sort((a, b) => b.total - a.total);
+    return { enabled: true, year, month, total, count: expenses.length, byCategory };
   }
 
   /** Which parts of the app this society uses: every feature, true or false. Readable by any member, so the apps can hide what is off. */

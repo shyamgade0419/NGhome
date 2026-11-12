@@ -37,6 +37,7 @@ const QUICK_LINKS: readonly ActionItem[] = [
   { label: 'Maint. Sheet', icon: 'grid-outline', tone: 'teal', route: '/(app)/maintenance-sheet' },
   { label: 'Docs', icon: 'folder-open-outline', tone: 'blue', route: '/(app)/documents' },
   { label: 'Finances', icon: 'pie-chart-outline', tone: 'green', route: '/(app)/resident/finances' },
+  { label: 'Reports', icon: 'bar-chart-outline', tone: 'teal', route: '/(app)/resident/reports' },
   { label: 'Events', icon: 'sparkles-outline', tone: 'coral', route: '/(app)/resident/events' },
   { label: 'Directory', icon: 'people-outline', tone: 'blue', route: '/(app)/directory' },
   { label: 'Community', icon: 'chatbubbles-outline', tone: 'violet', route: '/(app)/forum' },

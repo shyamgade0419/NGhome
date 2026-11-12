@@ -91,6 +91,13 @@ export class UpdateSocietyConfigDto {
   @IsBoolean()
   publishMeetingMinutes?: boolean;
 
+  @ApiPropertyOptional({
+    description: 'Show residents the monthly collection summary: billed, collected, pending and the collection rate, never any flat or name (stored in additionalConfig). Off unless switched on.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  showCollectionToResidents?: boolean;
+
   @ApiPropertyOptional({ description: 'Society UPI ID for direct payment (stored in additionalConfig)' })
   @IsOptional()
   @IsString()

@@ -288,7 +288,7 @@ export const societyApi = {
     lateFeeType?: string; lateFeeValue?: number; lateFeeMaxAmount?: number;
     invoicePrefix?: string; paymentVerificationRequired?: boolean;
     allowPaymentProofUpload?: boolean;
-    showAccountBalancesToResidents?: boolean; showExpensesToResidents?: boolean;
+    showAccountBalancesToResidents?: boolean; showExpensesToResidents?: boolean; showCollectionToResidents?: boolean;
     publishStatementToResidents?: boolean; publishMeetingMinutes?: boolean;
     upiId?: string;
     /** The wording of the WhatsApp payment reminder; empty goes back to the default. */
