@@ -195,3 +195,33 @@ every reminder day after the first uses the second wording. (A reminder's day is
   reminder goes as that template; until then both go as `ng_payment_reminder`, and nothing is held up. Existing Meta societies click
   **Send the missing templates to Meta** once. As with every Meta template, the wording is fixed once approved, so the editable
   wording applies to a linked number and to links sent by hand.
+
+## Meeting and event messages
+
+A society can also tell its flats about meetings and events on WhatsApp. It is a separate switch, **Also send meeting and event
+messages** (Settings → Billing Rules → WhatsApp, and in the app), and it is **off until the admin turns it on**: one message per
+flat is a lot more than a society expects from a setting it switched on for bills. It only has an effect while automatic WhatsApp
+is on (`additionalConfig.whatsapp.notices`, saved with `whatsappNotices`).
+
+| When | Message |
+|---|---|
+| A meeting is scheduled (a date still ahead) | "a society meeting has been scheduled", with the date, the place and the agenda |
+| The day before a meeting | "reminder: your society meeting is tomorrow" |
+| An event is planned (visible to residents, a date still ahead) | "a new society event has been planned", with the date and the description |
+| The day before an event | "reminder: your society event is tomorrow" |
+| An event is moved to a new date | "a society event has been moved to a new time" |
+| An event is cancelled | "a society event has been cancelled" |
+
+Other edits to an event (its description, its title) send nothing. A meeting recorded after the fact sends nothing. An event hidden
+from residents sends nothing.
+
+- **Who gets it:** one message per flat, to the same contact as every other message (the tenant when the flat has one, otherwise
+  the owner). The person who scheduled it is left out. Each message is keyed by meeting or event, which message it is and the
+  flat, so saving again never sends twice; a moved event is a new message for each new date.
+- **Linked number (OpenWA):** sent as written, in the usual queue (9 am to 8 pm, paced, with the daily limit).
+- **Meta:** two optional templates, `ng_meeting_notice` and `ng_event_notice`. Each has blanks for the name, a first line saying
+  what happened, the title, the date, the place (or the details) and the society. They are **optional**: until Meta approves
+  them nothing is queued for Meta (a free text message is not allowed there) and the society is still ready to send everything
+  else. Existing Meta societies click **Send the missing templates to Meta** once.
+- **In the app:** the phone alert for the same news is separate and always goes, whatever this switch says. It uses the
+  `alerts` channel with a sound, so it only needs the Firebase key uploaded to Expo.

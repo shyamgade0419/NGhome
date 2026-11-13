@@ -1,7 +1,8 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from './notifications.service';
 import { announcementNotice, eventReminder, meetingReminder } from './notification-content';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 
 const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -37,6 +38,7 @@ export class NotificationSchedulerService implements OnModuleInit, OnModuleDestr
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    @Optional() private readonly whatsapp?: WhatsappService,
   ) {}
 
   onModuleInit() {
@@ -105,6 +107,9 @@ export class NotificationSchedulerService implements OnModuleInit, OnModuleDestr
     for (const m of meetings) {
       if (await this.notifications.alreadySent(m.societyId, 'MEETING_REMINDER', 'meetingId', m.id)) continue;
       await this.notifications.send(m.societyId, meetingReminder(m));
+      await this.whatsapp
+        ?.enqueueNotice(m.societyId, { type: 'MEETING', stage: 'REMINDER', id: m.id, title: m.title, when: m.meetingDate, where: m.location, details: m.agenda })
+        .catch((e) => this.logger.error(`WhatsApp meeting reminder ${m.id} failed: ${e instanceof Error ? e.message : e}`));
       sent += 1;
     }
     return sent;
@@ -124,6 +129,9 @@ export class NotificationSchedulerService implements OnModuleInit, OnModuleDestr
     for (const e of events) {
       if (await this.notifications.alreadySent(e.societyId, 'EVENT_REMINDER', 'eventId', e.id)) continue;
       await this.notifications.send(e.societyId, eventReminder(e));
+      await this.whatsapp
+        ?.enqueueNotice(e.societyId, { type: 'EVENT', stage: 'REMINDER', id: e.id, title: e.title, when: e.eventDate, details: e.description })
+        .catch((err) => this.logger.error(`WhatsApp event reminder ${e.id} failed: ${err instanceof Error ? err.message : err}`));
       sent += 1;
     }
     return sent;

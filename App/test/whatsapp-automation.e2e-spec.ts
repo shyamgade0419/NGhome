@@ -21,6 +21,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { LateFeeService } from '../src/billing/late-fee.service';
 import { WhatsappService } from '../src/whatsapp/whatsapp.service';
+import { NotificationSchedulerService } from '../src/notifications/notification-scheduler.service';
 import { WhatsappSettingsStore } from '../src/whatsapp/whatsapp-settings.store';
 import { CLOUD_TEMPLATES } from '../src/whatsapp/whatsapp-cloud-templates';
 
@@ -81,6 +82,7 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let whatsapp: WhatsappService;
+  let scheduler: NotificationSchedulerService;
   let lateFees: LateFeeService;
   let store: WhatsappSettingsStore;
   const gw = fakeGateway();
@@ -1002,6 +1004,128 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
 
   /* ─────────────────── a society that sends through its own Meta account ─────────────────── */
 
+  describe('meeting and event messages', () => {
+    const HOUR = 3_600_000;
+    const meetingBody = (over: Record<string, unknown> = {}) => ({ title: 'AGM', location: 'Clubhouse', agenda: 'Budget and repairs', meetingDate: new Date(Date.now() + 4 * 24 * HOUR).toISOString(), ...over });
+    const eventBody = (over: Record<string, unknown> = {}) => ({ title: 'Diwali get-together', description: 'Snacks and music', eventDate: new Date(Date.now() + 10 * 24 * HOUR).toISOString(), ...over });
+    const schedule = (over: Record<string, unknown> = {}) => http_().post('/api/v1/meetings').set(auth(admin)).send(meetingBody(over));
+    const plan = (over: Record<string, unknown> = {}) => http_().post('/api/v1/events').set(auth(admin)).send(eventBody(over));
+
+    /** A flat with an owner and a tenant, each with a number of their own. */
+    async function household(seed: number) {
+      const flat = await newFlat();
+      const owner = await addPerson(flat, SystemRole.RESIDENT, 'OWNER', { isPrimary: true, phone: mobile(seed) });
+      const tenant = await addPerson(flat, SystemRole.RESIDENT, 'TENANT', { isPrimary: true, phone: mobile(seed + 1) });
+      return { flat, owner, tenant, ownerTo: wa(seed), tenantTo: wa(seed + 1) };
+    }
+    const forFlat = (kind: 'MEETING' | 'EVENT', flat: string) => rows({ kind, dedupeKey: { endsWith: `:${flat}` } });
+
+    beforeAll(() => { scheduler = app.get(NotificationSchedulerService); });
+    afterAll(async () => { await setConfig({ whatsappNotices: false }); });
+
+    it('sends nothing until the admin switches meeting and event messages on, even with WhatsApp on', async () => {
+      await setConfig({ whatsappEnabled: true, whatsappNotices: false });
+      const h = await household(760);
+      await schedule().expect(201);
+      await plan().expect(201);
+      expect(await forFlat('MEETING', h.flat)).toHaveLength(0);
+      expect(await forFlat('EVENT', h.flat)).toHaveLength(0);
+      const status = (await http_().get('/api/v1/whatsapp/status').set(auth(accountant)).expect(200)).body.data;
+      expect(status.notices).toBe(false);
+    });
+
+    it('sends nothing when the switch is on but WhatsApp itself is off', async () => {
+      await setConfig({ whatsappEnabled: false, whatsappNotices: true });
+      const h = await household(762);
+      await schedule().expect(201);
+      expect(await forFlat('MEETING', h.flat)).toHaveLength(0);
+    });
+
+    it('tells each flat once about a new meeting: the tenant, not the owner, with the place and the agenda', async () => {
+      await setConfig({ whatsappEnabled: true, whatsappNotices: true });
+      expect((await http_().get('/api/v1/whatsapp/status').set(auth(accountant)).expect(200)).body.data.notices).toBe(true);
+      const h = await household(764);
+      const meetingId = (await schedule().expect(201)).body.data.id as string;
+      const mine = await forFlat('MEETING', h.flat);
+      expect(mine).toHaveLength(1);
+      expect(mine[0].toPhone).toBe(h.tenantTo);
+      expect(mine[0].dedupeKey.startsWith(`meeting:${meetingId}:new:`)).toBe(true);
+      expect(mine[0].body).toContain('A society meeting has been scheduled');
+      expect(mine[0].body).toContain('*AGM*');
+      expect(mine[0].body).toContain('Clubhouse');
+      expect(mine[0].body).toContain('Budget and repairs');
+      // Saying it again changes nothing.
+      expect(await whatsapp.enqueueNotice(societyId, { type: 'MEETING', stage: 'NEW', id: meetingId, title: 'AGM', when: new Date(Date.now() + 4 * 24 * HOUR) })).toBe(0);
+      expect(await forFlat('MEETING', h.flat)).toHaveLength(1);
+      // And it really goes out.
+      // Every earlier flat in this society is a contact too, so send more than one run's worth.
+      expect(await drain({ maxPerRun: 500 })).toMatchObject({ failed: 0, stopped: null });
+      expect(JSON.stringify(gw.state.sent)).toContain(h.tenantTo);
+    });
+
+    it('leaves out the person who caused it, and says nothing for a meeting recorded after the fact', async () => {
+      await setConfig({ whatsappEnabled: true, whatsappNotices: true });
+      const h = await household(766);
+      expect(await whatsapp.enqueueNotice(societyId, { type: 'MEETING', stage: 'NEW', id: `actor-${UNIQUE}`, title: 'Self', when: new Date(Date.now() + 2 * 24 * HOUR) }, { excludeUserId: h.tenant.userId })).toBeGreaterThan(0);
+      expect(await forFlat('MEETING', h.flat)).toHaveLength(0); // the tenant was the only contact of that flat
+      await schedule({ title: 'Last month', meetingDate: new Date(Date.now() - 3 * 24 * HOUR).toISOString() }).expect(201);
+      expect(await forFlat('MEETING', h.flat)).toHaveLength(0);
+    });
+
+    it('tells the flats about a new event, but not one hidden from residents', async () => {
+      await setConfig({ whatsappEnabled: true, whatsappNotices: true });
+      const h = await household(768);
+      await plan({ title: 'Committee dinner', isVisibleToResidents: false }).expect(201);
+      expect(await forFlat('EVENT', h.flat)).toHaveLength(0);
+      await plan().expect(201);
+      const mine = await forFlat('EVENT', h.flat);
+      expect(mine).toHaveLength(1);
+      expect(mine[0].body).toContain('A new society event has been planned');
+      expect(mine[0].body).toContain('Snacks and music');
+    });
+
+    it('tells the flats when an event is moved or called off, and stays quiet for other edits', async () => {
+      await setConfig({ whatsappEnabled: true, whatsappNotices: true });
+      const h = await household(770);
+      const id = (await plan({ title: 'Cricket match' }).expect(201)).body.data.id as string;
+      const patch = (body: Record<string, unknown>) => http_().patch(`/api/v1/events/${id}`).set(auth(admin)).send(body).expect(200);
+      const count = async () => (await forFlat('EVENT', h.flat)).length;
+      expect(await count()).toBe(1);
+
+      await patch({ description: 'Bring your own bat' });
+      await patch({ title: 'Cricket match (final)' });
+      expect(await count()).toBe(1);
+
+      await patch({ eventDate: new Date(Date.now() + 12 * 24 * HOUR).toISOString() });
+      expect(await count()).toBe(2);
+      expect((await forFlat('EVENT', h.flat)).at(-1)!.body).toContain('moved to a new time');
+
+      await patch({ status: 'CANCELLED' });
+      expect(await count()).toBe(3);
+      expect((await forFlat('EVENT', h.flat)).at(-1)!.body).toContain('has been cancelled');
+    });
+
+    it('reminds the day before, once, a meeting that is not brand new, and an event too', async () => {
+      await setConfig({ whatsappEnabled: true, whatsappNotices: true });
+      const h = await household(772);
+      const adminId = (await prisma.societyMembership.findFirstOrThrow({ where: { societyId, role: SystemRole.SOCIETY_ADMIN } })).userId;
+      const longAgo = new Date(Date.now() - 3 * 24 * HOUR);
+      const tomorrow = new Date(Date.now() + 23 * HOUR);
+      await prisma.meeting.create({ data: { societyId, title: 'Tomorrow meeting', meetingDate: tomorrow, createdById: adminId, createdAt: longAgo } });
+      await prisma.event.create({ data: { societyId, title: 'Tomorrow event', eventDate: tomorrow, createdById: adminId, createdAt: longAgo } });
+      await scheduler.meetingReminders(new Date());
+      await scheduler.eventReminders(new Date());
+      const meeting = await forFlat('MEETING', h.flat);
+      const event = await forFlat('EVENT', h.flat);
+      expect(meeting.some((r) => r.body.includes('is tomorrow') && r.body.includes('Tomorrow meeting'))).toBe(true);
+      expect(event.some((r) => r.body.includes('is tomorrow') && r.body.includes('Tomorrow event'))).toBe(true);
+      const before = meeting.length + event.length;
+      await scheduler.meetingReminders(new Date());
+      await scheduler.eventReminders(new Date());
+      expect((await forFlat('MEETING', h.flat)).length + (await forFlat('EVENT', h.flat)).length).toBe(before); // never twice
+    });
+  });
+
   describe('a society that sends through its own Meta WhatsApp Business account', () => {
     const TOKEN = 'EAAG-secret-token-123';
     const PHONE_ID = '109876543210987';
@@ -1187,6 +1311,39 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
       await connectCloud().expect(200);
     });
 
+    it('sends a meeting or event message through Meta only once that template is approved, and queues nothing before', async () => {
+      const run = async (approved: boolean, seed: number) => {
+        resetGraph();
+        graph.state.templates = CLOUD_TEMPLATES.map((t) => ({ name: t.name, status: !approved && (t.name === 'ng_meeting_notice' || t.name === 'ng_event_notice') ? 'PENDING' : 'APPROVED', language: 'en' }));
+        await connectCloud().expect(200);
+        await reset();
+        await setConfig({ whatsappEnabled: true, whatsappNotices: true });
+        const flat = await newFlat();
+        await addPerson(flat, SystemRole.RESIDENT, 'OWNER', { isPrimary: true, phone: mobile(seed) });
+        await http_().post('/api/v1/meetings').set(auth(admin)).send({ title: 'AGM', location: 'Clubhouse', agenda: 'Budget', meetingDate: new Date(Date.now() + 4 * 24 * 3_600_000).toISOString() }).expect(201);
+        await http_().post('/api/v1/events').set(auth(admin)).send({ title: 'Diwali', description: 'Snacks', eventDate: new Date(Date.now() + 9 * 24 * 3_600_000).toISOString() }).expect(201);
+        return rows({ kind: { in: ['MEETING', 'EVENT'] }, dedupeKey: { endsWith: `:${flat}` } });
+      };
+
+      expect(await run(false, 774)).toHaveLength(0); // nothing queued, nothing stuck, and the bill messages are not held up
+      expect((await http_().get('/api/v1/whatsapp/cloud').set(auth(admin)).expect(200)).body.data.templatesReady).toBe(true);
+
+      const queued = await run(true, 775);
+      expect(queued.map((r) => r.kind).sort()).toEqual(['EVENT', 'MEETING']);
+      expect(await drain({ maxPerRun: 500 })).toMatchObject({ failed: 0, stopped: null });
+      const mine = graph.state.sent.filter((m) => m.to === wa(775)) as Array<{ template: string; params: string[] }>;
+      expect(mine.map((m) => m.template).sort()).toEqual(['ng_event_notice', 'ng_meeting_notice']);
+      const meeting = mine.find((m) => m.template === 'ng_meeting_notice')!;
+      expect(meeting.params).toHaveLength(6);
+      expect(meeting.params[1]).toBe('a society meeting has been scheduled');
+      expect(meeting.params[2]).toBe('AGM');
+      expect(meeting.params[4]).toBe('Clubhouse');
+      expect(mine.find((m) => m.template === 'ng_event_notice')!.params[4]).toBe('Snacks');
+      await setConfig({ whatsappNotices: false });
+      resetGraph();
+      await connectCloud().expect(200);
+    });
+
     it('holds a society\'s messages when Meta refuses its token, while another society still sends', async () => {
       await connectCloud().expect(200);
       await prisma.whatsappMessage.create({ data: { societyId, kind: 'PAYMENT_RECEIVED', dedupeKey: `tok-${UNIQUE}`, sendAfter: new Date(Date.now() - 5_000), toPhone: wa(43), body: 'b', params: { name: 'A', amount: '1', flat: 'F', paidOn: 'd', balance: '0', society: 'S' } } });
@@ -1237,7 +1394,7 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
       await connectCloud().expect(200);
       graph.state.templates = [{ name: 'ng_late_fine', status: 'PENDING', language: 'en' }];
       const res = (await http_().post('/api/v1/whatsapp/cloud/templates').set(auth(admin)).expect(200)).body.data;
-      expect(res.submitted.sort()).toEqual(['ng_bill_published', 'ng_payment_receipt', 'ng_payment_received', 'ng_payment_reminder', 'ng_payment_reminder_final']);
+      expect(res.submitted.sort()).toEqual(['ng_bill_published', 'ng_event_notice', 'ng_meeting_notice', 'ng_payment_receipt', 'ng_payment_received', 'ng_payment_reminder', 'ng_payment_reminder_final']);
       expect(graph.state.created.map((c) => c.name).sort()).toEqual(res.submitted.sort());
       expect(graph.state.created[0]).toMatchObject({ language: 'en', category: 'UTILITY' });
       expect(graph.state.created[0].components[0].example.body_text[0].length).toBe(graph.state.created[0].components[0].text.match(/\{\{\d+\}\}/g).length);

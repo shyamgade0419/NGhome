@@ -1,4 +1,4 @@
-import { fineMessage, paidMessage, publishedMessage } from './whatsapp-messages';
+import { fineMessage, noticeLead, noticeMessage, paidMessage, publishedMessage } from './whatsapp-messages';
 import { GatewayError, readGatewayConfig, sendText, sessionStatus } from './openwa.client';
 import {
   chatIdFor, cleanReminderDays, inSendWindow, istDayStart, istParts, normalizePhone, readWhatsappSettings,
@@ -28,11 +28,13 @@ describe('phone numbers', () => {
 
 describe('the society\'s WhatsApp settings', () => {
   it('is off, with the 5th and 10th as reminder days, until the admin says otherwise', () => {
-    expect(readWhatsappSettings(undefined)).toEqual({ enabled: false, reminderDays: [5, 10] });
-    expect(readWhatsappSettings({ whatsapp: { enabled: 'yes' } })).toEqual({ enabled: false, reminderDays: [5, 10] });
+    expect(readWhatsappSettings(undefined)).toEqual({ enabled: false, notices: false, reminderDays: [5, 10] });
+    expect(readWhatsappSettings({ whatsapp: { enabled: 'yes' } })).toEqual({ enabled: false, notices: false, reminderDays: [5, 10] });
   });
   it('reads what was saved, an empty list meaning no reminders', () => {
-    expect(readWhatsappSettings({ whatsapp: { enabled: true, reminderDays: [3, 12] } })).toEqual({ enabled: true, reminderDays: [3, 12] });
+    expect(readWhatsappSettings({ whatsapp: { enabled: true, reminderDays: [3, 12] } })).toEqual({ enabled: true, notices: false, reminderDays: [3, 12] });
+    expect(readWhatsappSettings({ whatsapp: { enabled: true, notices: true } }).notices).toBe(true);
+    expect(readWhatsappSettings({ whatsapp: { enabled: true, notices: 'yes' } }).notices).toBe(false); // only a real true switches it on
     expect(readWhatsappSettings({ whatsapp: { enabled: true, reminderDays: [] } }).reminderDays).toEqual([]);
   });
   it('keeps reminder days to real days of every month, once each, in order', () => {
@@ -131,5 +133,24 @@ describe('the gateway client', () => {
     expect(await sessionStatus(cfg, reply(200, { id: 's1', status: 'ready', phone: '919000000000' }) as any)).toEqual({ status: 'ready', phone: '919000000000' });
     expect(await sessionStatus(cfg, reply(200, { data: { status: 'qr_ready' } }) as any)).toEqual({ status: 'qr_ready', phone: null });
     await expect(sessionStatus(cfg, reply(404, { message: 'no such session' }) as any)).rejects.toMatchObject({ gatewayDown: true });
+  });
+  it('say what happened to a meeting or an event, in the first line', () => {
+    expect(noticeLead('MEETING', 'NEW')).toBe('a society meeting has been scheduled');
+    expect(noticeLead('EVENT', 'NEW')).toBe('a new society event has been planned');
+    expect(noticeLead('MEETING', 'REMINDER')).toContain('is tomorrow');
+    expect(noticeLead('EVENT', 'MOVED')).toContain('moved');
+    expect(noticeLead('EVENT', 'CANCELLED')).toContain('cancelled');
+  });
+  it('tell a flat when and where, and leave out a place or details there are none of', () => {
+    const full = noticeMessage({ name: 'Asha', type: 'MEETING', stage: 'NEW', title: 'Annual General Meeting', when: 'Sat, 14 Nov, 6:00 pm', where: 'Clubhouse', details: 'Budget and repairs', society: 'Green Park' });
+    expect(full).toContain('Dear Asha');
+    expect(full).toContain('A society meeting has been scheduled:');
+    expect(full).toContain('*Annual General Meeting*');
+    expect(full).toContain('Sat, 14 Nov, 6:00 pm');
+    expect(full).toContain('Clubhouse');
+    expect(full).toContain('Budget and repairs');
+    const bare = noticeMessage({ name: 'Asha', type: 'EVENT', stage: 'CANCELLED', title: 'Diwali', when: 'Sat, 14 Nov, 6:00 pm', where: '  ', details: null, society: 'Green Park' });
+    expect(bare).not.toContain('📍');
+    expect(bare).toContain('A society event has been cancelled:');
   });
 });

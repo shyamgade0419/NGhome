@@ -74,22 +74,27 @@ export function WhatsappSection({ admin }: { admin: boolean }) {
   // null = not edited yet: show what the server has, so a refetch cannot throw away what is being typed.
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [days, setDays] = useState<string | null>(null);
+  const [notices, setNotices] = useState<boolean | null>(null);
   const [tpl, setTpl] = useState<string | null>(null);
   const [finalTpl, setFinalTpl] = useState<string | null>(null);
   const saved = (config?.additionalConfig as any)?.whatsapp;
   const shownEnabled = enabled ?? saved?.enabled === true;
+  const shownNotices = notices ?? saved?.notices === true;
+  // An older server does not report this switch: then there is nothing to show or save for it.
+  const hasNotices = status?.notices !== undefined;
   const shownDays = days ?? (saved?.reminderDays ?? [5, 10]).join(', ');
   const shownTpl = tpl ?? tplData?.template ?? '';
   // An older server does not know the second reminder: then there is nothing to show or save for it.
   const hasSecond = tplData?.finalTemplate !== undefined && tplData?.defaultFinalTemplate !== undefined;
   const shownFinal = finalTpl ?? tplData?.finalTemplate ?? '';
-  const dirty = enabled !== null || days !== null || tpl !== null || finalTpl !== null;
+  const dirty = enabled !== null || notices !== null || days !== null || tpl !== null || finalTpl !== null;
 
   const save = useMutation({
     mutationFn: () =>
       societyApi.updateConfig({
         whatsappEnabled: shownEnabled,
         whatsappReminderDays: parseReminderDays(shownDays),
+        ...(notices !== null && hasNotices ? { whatsappNotices: notices } : {}),
         // Wording the same as the standard is stored as "unset", so the society follows the standard if it improves.
         ...(tpl !== null ? { reminderTemplate: tpl.trim() === tplData?.defaultTemplate.trim() ? '' : tpl.trim() } : {}),
         ...(finalTpl !== null && hasSecond ? { finalReminderTemplate: finalTpl.trim() === tplData?.defaultFinalTemplate?.trim() ? '' : finalTpl.trim() } : {}),
@@ -97,6 +102,7 @@ export function WhatsappSection({ admin }: { admin: boolean }) {
     onSuccess: () => {
       toast.success('WhatsApp settings saved');
       setEnabled(null);
+      setNotices(null);
       setDays(null);
       setTpl(null);
       setFinalTpl(null);
@@ -269,6 +275,20 @@ export function WhatsappSection({ admin }: { admin: boolean }) {
           </div>
           <Toggle checked={shownEnabled} onChange={setEnabled} disabled={!admin || (status ? !status.configured || !status.allowed || !status.hasSession : false)} />
         </div>
+
+        {hasNotices && (
+          <div className="flex items-start justify-between rounded-lg border border-green-100 bg-white px-4 py-3">
+            <div className="pr-4">
+              <p className="text-sm font-medium text-slate-800">Also send meeting and event messages</p>
+              <p className="text-xs text-slate-500">
+                When a meeting is scheduled or an event is planned, the day before, and when an event is moved or cancelled: one
+                message to every flat. The same news always reaches the app too, with a sound.
+                {status?.provider === 'CLOUD' && ' Through your WhatsApp Business account this needs the optional meeting and event templates approved (see the templates above); until then only the app alert goes.'}
+              </p>
+            </div>
+            <Toggle checked={shownNotices} onChange={setNotices} disabled={!admin || !shownEnabled} />
+          </div>
+        )}
 
         <div>
           <Input
@@ -530,6 +550,8 @@ const TEMPLATE_PURPOSE: Record<string, string> = {
   ng_bill_published: 'Bill is ready',
   ng_payment_reminder: 'Payment reminder',
   ng_payment_reminder_final: 'Second payment reminder',
+  ng_meeting_notice: 'Meeting message',
+  ng_event_notice: 'Event message',
   ng_late_fine: 'Late fine added',
   ng_payment_received: 'Payment received',
   ng_payment_receipt: 'Payment received, with a link to the receipt',

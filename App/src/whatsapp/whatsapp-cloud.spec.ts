@@ -15,14 +15,16 @@ describe('the WhatsApp message templates (what Meta is asked to approve)', () =>
   });
 
   it('has one template for each automatic message, and none for a test', () => {
-    expect(CLOUD_TEMPLATES.map((t) => t.kind).sort()).toEqual(['BILL_PUBLISHED', 'FINE_IMPOSED', 'PAYMENT_RECEIPT', 'PAYMENT_RECEIVED', 'REMINDER', 'REMINDER_FINAL']);
+    expect(CLOUD_TEMPLATES.map((t) => t.kind).sort()).toEqual(['BILL_PUBLISHED', 'EVENT', 'FINE_IMPOSED', 'MEETING', 'PAYMENT_RECEIPT', 'PAYMENT_RECEIVED', 'REMINDER', 'REMINDER_FINAL']);
     expect(templateOf('TEST')).toBeUndefined();
   });
 
-  it('needs only the four main templates to send: the receipt one and the follow-up reminder are optional and never hold a society up', () => {
+  it('needs only the four main templates to send: the receipt, the follow-up reminder and the meeting and event ones are optional and never hold a society up', () => {
     expect(CLOUD_TEMPLATES.filter((t) => !t.optional).map((t) => t.kind).sort()).toEqual(['BILL_PUBLISHED', 'FINE_IMPOSED', 'PAYMENT_RECEIVED', 'REMINDER']);
     expect(isOptionalTemplate('PAYMENT_RECEIPT')).toBe(true);
     expect(isOptionalTemplate('REMINDER_FINAL')).toBe(true);
+    expect(isOptionalTemplate('MEETING')).toBe(true);
+    expect(isOptionalTemplate('EVENT')).toBe(true);
     expect(isOptionalTemplate('REMINDER')).toBe(false);
     expect(isOptionalTemplate('PAYMENT_RECEIVED')).toBe(false);
     expect(isOptionalTemplate('NOPE')).toBe(false);
@@ -42,6 +44,15 @@ describe('the WhatsApp message templates (what Meta is asked to approve)', () =>
     expect(orderedParams(second, values)).toEqual(orderedParams(first, values));
     expect(renderTemplate(second, values)).toContain('second reminder');
     expect(renderTemplate(first, values)).not.toContain('second reminder');
+  });
+
+  it('fills the meeting and event messages: the lead says what happened, and a place or details are always filled in', () => {
+    const meeting = templateOf('MEETING')!;
+    const event = templateOf('EVENT')!;
+    const m = { name: 'Ravi', lead: 'a society meeting has been scheduled', title: 'AGM', when: 'Sat, 14 Nov, 6:00 pm', where: 'Clubhouse', society: 'Sunrise' };
+    expect(renderTemplate(meeting, m)).toBe('Hello Ravi, a society meeting has been scheduled: AGM. When: Sat, 14 Nov, 6:00 pm. Where: Clubhouse. Sent on behalf of Sunrise via NG Home.');
+    const e = { name: 'Ravi', lead: 'a society event has been cancelled', title: 'Diwali', when: 'Sat, 14 Nov, 6:00 pm', details: '-', society: 'Sunrise' };
+    expect(renderTemplate(event, e)).toContain('a society event has been cancelled: Diwali. When: Sat, 14 Nov, 6:00 pm. Details: -.');
   });
 
   it('puts the receipt link into the confirmation that carries it, after the amounts and before the society', () => {

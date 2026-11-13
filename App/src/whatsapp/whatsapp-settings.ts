@@ -6,6 +6,11 @@
 
 export interface WhatsappSettings {
   enabled: boolean;
+  /**
+   * Also send meeting and event messages (scheduled, the day before, moved, cancelled). Off until the admin switches it on:
+   * one message per flat is a lot more than a society expects from a setting it turned on for bills.
+   */
+  notices: boolean;
   /** Days of the month (India) on which unpaid flats are reminded. */
   reminderDays: number[];
 }
@@ -22,10 +27,11 @@ export function cleanReminderDays(input: unknown): number[] {
 
 /** What is stored, tolerating a missing or malformed value. Off until the admin switches it on. */
 export function readWhatsappSettings(additionalConfig: unknown): WhatsappSettings {
-  const raw = (additionalConfig as { whatsapp?: { enabled?: unknown; reminderDays?: unknown } } | null | undefined)?.whatsapp;
+  const raw = (additionalConfig as { whatsapp?: { enabled?: unknown; notices?: unknown; reminderDays?: unknown } } | null | undefined)?.whatsapp;
   const days = cleanReminderDays(raw?.reminderDays);
   return {
     enabled: raw?.enabled === true,
+    notices: raw?.notices === true,
     reminderDays: Array.isArray(raw?.reminderDays) ? days : DEFAULT_REMINDER_DAYS,
   };
 }

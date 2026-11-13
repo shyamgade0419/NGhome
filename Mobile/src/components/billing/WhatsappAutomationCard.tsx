@@ -21,18 +21,23 @@ export function WhatsappAutomationCard() {
   // null = not edited yet: show what the server has, so a refetch cannot throw away what is being typed.
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [days, setDays] = useState<string | null>(null);
+  const [notices, setNotices] = useState<boolean | null>(null);
   const [testPhone, setTestPhone] = useState('');
   useEffect(() => {
     setEnabled(null);
+    setNotices(null);
     setDays(null);
-  }, [status?.enabled, status?.reminderDays?.join(',')]);
+  }, [status?.enabled, status?.notices, status?.reminderDays?.join(',')]);
 
   const shownEnabled = enabled ?? status?.enabled ?? false;
   const shownDays = days ?? (status?.reminderDays ?? [5, 10]).join(', ');
-  const dirty = enabled !== null || days !== null;
+  // An older server does not report this switch: then there is nothing to show or save for it.
+  const hasNotices = status?.notices !== undefined;
+  const shownNotices = notices ?? status?.notices ?? false;
+  const dirty = enabled !== null || days !== null || (hasNotices && notices !== null);
 
   const save = useMutation({
-    mutationFn: () => whatsappApi.saveSettings({ enabled: shownEnabled, reminderDays: parseReminderDays(shownDays) }),
+    mutationFn: () => whatsappApi.saveSettings({ enabled: shownEnabled, reminderDays: parseReminderDays(shownDays), ...(hasNotices ? { notices: shownNotices } : {}) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['whatsapp-status'] });
       qc.invalidateQueries({ queryKey: ['society-config-mobile'] });
@@ -112,6 +117,26 @@ export function WhatsappAutomationCard() {
           accessibilityLabel="Send WhatsApp messages automatically"
         />
       </View>
+
+      {hasNotices && (
+        <View style={s.toggleRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.label}>Also send meeting and event messages</Text>
+            <Text style={s.hint}>
+              When a meeting is scheduled or an event is planned, the day before, and when an event is moved or cancelled: one
+              message to every flat. The same news always reaches the app too, with a sound.
+              {status?.provider === 'CLOUD' ? ' Through your WhatsApp Business account this needs the optional meeting and event templates approved on the web; until then only the app alert goes.' : ''}
+            </Text>
+          </View>
+          <Switch
+            value={shownNotices}
+            onValueChange={setNotices}
+            disabled={!isAdmin || !shownEnabled}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            accessibilityLabel="Also send meeting and event messages"
+          />
+        </View>
+      )}
 
       <Text style={s.label}>Send reminders on these days of the month</Text>
       <TextInput

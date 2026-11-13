@@ -4,6 +4,7 @@ import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagina
 import { CreateMeetingDto } from './dto/create-meeting.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { meetingNotice } from '../notifications/notification-content';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 export { CreateMeetingDto } from './dto/create-meeting.dto';
 
 @Injectable()
@@ -11,6 +12,7 @@ export class MeetingsService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly notifications?: NotificationsService,
+    @Optional() private readonly whatsapp?: WhatsappService,
   ) {}
 
   async create(societyId: string, createdById: string, dto: CreateMeetingDto) {
@@ -31,6 +33,12 @@ export class MeetingsService {
         () => this.notifications!.send(societyId, meetingNotice(meeting), { excludeUserId: createdById }),
         `meeting ${meeting.id} scheduled`,
       );
+    }
+    // And on WhatsApp, for a society that has switched meeting and event messages on. Never fails the save.
+    if (this.whatsapp && meeting.meetingDate > new Date()) {
+      await this.whatsapp
+        .enqueueNotice(societyId, { type: 'MEETING', stage: 'NEW', id: meeting.id, title: meeting.title, when: meeting.meetingDate, where: meeting.location, details: meeting.agenda }, { excludeUserId: createdById })
+        .catch((err) => console.error(`[whatsapp] meeting ${meeting.id} scheduled failed:`, err));
     }
     return meeting;
   }

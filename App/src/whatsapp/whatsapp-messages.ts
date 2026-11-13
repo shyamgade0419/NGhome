@@ -45,3 +45,27 @@ export function paidMessage(v: { name: string; flat: string; amount: number | st
   lines.push('', `_${v.society}_`);
   return lines.join('\n');
 }
+
+export type NoticeType = 'MEETING' | 'EVENT';
+export type NoticeStage = 'NEW' | 'REMINDER' | 'MOVED' | 'CANCELLED';
+
+/** The opening line of a meeting or event message: what has happened. */
+export function noticeLead(type: NoticeType, stage: NoticeStage): string {
+  const what = type === 'MEETING' ? 'society meeting' : 'society event';
+  switch (stage) {
+    case 'REMINDER': return `reminder: your ${what} is tomorrow`;
+    case 'MOVED': return `a ${what} has been moved to a new time`;
+    case 'CANCELLED': return `a ${what} has been cancelled`;
+    default: return type === 'MEETING' ? 'a society meeting has been scheduled' : 'a new society event has been planned';
+  }
+}
+
+/** A meeting or event message for a linked number. `where` is a meeting's place; `details` an event's description or a meeting's agenda. */
+export function noticeMessage(v: { name: string; type: NoticeType; stage: NoticeStage; title: string; when: string; where?: string | null; details?: string | null; society: string }): string {
+  const lead = noticeLead(v.type, v.stage);
+  const lines = [`Dear ${v.name},`, '', `${lead.charAt(0).toUpperCase()}${lead.slice(1)}:`, `*${v.title}*`, '', `🗓 ${v.when}`];
+  if (v.where && v.where.trim()) lines.push(`📍 ${v.where.trim()}`);
+  if (v.details && v.details.trim()) lines.push('', v.details.trim());
+  lines.push('', `_${v.society}_`);
+  return lines.join('\n');
+}

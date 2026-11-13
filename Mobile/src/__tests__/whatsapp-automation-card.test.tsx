@@ -108,6 +108,44 @@ describe('WhatsApp automation card', () => {
     expect(mockSave).toHaveBeenCalledWith({ enabled: true, reminderDays: [3, 12] });
   });
 
+  describe('meeting and event messages', () => {
+    const switches = (tree: any) => tree.root.findAllByType(Switch);
+    const noticeSwitch = (tree: any) => switches(tree).find((n: any) => n.props.accessibilityLabel === 'Also send meeting and event messages');
+
+    it('shows no such switch while the server does not report one, and saves nothing about it', async () => {
+      const tree = await mount();
+      expect(noticeSwitch(tree)).toBeUndefined();
+      expect(textOf(tree.root)).not.toContain('meeting and event messages');
+      await act(async () => { switches(tree)[0].props.onValueChange(true); });
+      await pressButton(tree, 'Save WhatsApp Settings');
+      await until(() => mockSave.mock.calls.length === 1);
+      expect(mockSave.mock.calls[0][0]).not.toHaveProperty('notices');
+    });
+
+    it('is off until switched on, can only be switched on while WhatsApp is on, and saves with the rest', async () => {
+      mockStatus = { ...mockStatus, notices: false };
+      const tree = await mount();
+      expect(noticeSwitch(tree).props.value).toBe(false);
+      expect(noticeSwitch(tree).props.disabled).toBe(true); // automatic WhatsApp is itself off
+      await act(async () => { switches(tree).find((n: any) => n.props.accessibilityLabel === 'Send WhatsApp messages automatically').props.onValueChange(true); });
+      expect(noticeSwitch(tree).props.disabled).toBe(false);
+      await act(async () => { noticeSwitch(tree).props.onValueChange(true); });
+      await pressButton(tree, 'Save WhatsApp Settings');
+      await until(() => mockSave.mock.calls.length === 1);
+      expect(mockSave).toHaveBeenCalledWith({ enabled: true, reminderDays: [5, 10], notices: true });
+    });
+
+    it('can be switched off again on its own, and is read as on when the server says so', async () => {
+      mockStatus = { ...mockStatus, enabled: true, notices: true };
+      const tree = await mount();
+      expect(noticeSwitch(tree).props.value).toBe(true);
+      await act(async () => { noticeSwitch(tree).props.onValueChange(false); });
+      await pressButton(tree, 'Save WhatsApp Settings');
+      await until(() => mockSave.mock.calls.length === 1);
+      expect(mockSave).toHaveBeenCalledWith({ enabled: true, reminderDays: [5, 10], notices: false });
+    });
+  });
+
   it('sends a test message to the number typed', async () => {
     const tree = await mount();
     await act(async () => { input(tree, 'Test phone number').props.onChangeText('98765 43210'); });

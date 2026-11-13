@@ -55,6 +55,8 @@ export interface WhatsappStatus {
   /** The platform owner has allowed this society to use WhatsApp. Without it the society cannot switch messages on. */
   allowed: boolean;
   enabled: boolean;
+  /** Also send meeting and event messages. Absent on a server that does not have them yet. */
+  notices?: boolean;
   reminderDays: number[];
   /** The gateway's session: `ready` is the only state in which messages go out. */
   session: string | null;
@@ -81,6 +83,8 @@ export const WHATSAPP_KIND_LABEL: Record<string, string> = {
   REMINDER: 'Reminder',
   FINE_IMPOSED: 'Late fine',
   PAYMENT_RECEIVED: 'Payment received',
+  MEETING: 'Meeting',
+  EVENT: 'Event',
   TEST: 'Test',
 };
 

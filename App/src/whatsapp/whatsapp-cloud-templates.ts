@@ -11,7 +11,7 @@
  * and every blank has an example value.
  */
 
-export type CloudKind = 'BILL_PUBLISHED' | 'REMINDER' | 'REMINDER_FINAL' | 'FINE_IMPOSED' | 'PAYMENT_RECEIVED' | 'PAYMENT_RECEIPT';
+export type CloudKind = 'BILL_PUBLISHED' | 'REMINDER' | 'REMINDER_FINAL' | 'FINE_IMPOSED' | 'PAYMENT_RECEIVED' | 'PAYMENT_RECEIPT' | 'MEETING' | 'EVENT';
 
 export const CLOUD_LANGUAGE = 'en';
 /** Meta's own greeting template, present on a new business account, used for the "send a test" button. */
@@ -83,6 +83,25 @@ export const CLOUD_TEMPLATES: CloudTemplate[] = [
     text: 'Hello {{1}}, we have received ₹{{2}} for Flat {{3}} on {{4}}. Thank you! Balance still due: ₹{{5}}. Your receipt is here: {{6}} - sent on behalf of {{7}} via NG Home.',
     params: ['name', 'amount', 'flat', 'paidOn', 'balance', 'receipt', 'society'],
     samples: ['Ravi Kumar', '2,500', 'A-101', '8 Nov 2026', '0', 'https://nghome-api.novagade.in/api/v1/public/receipts/AbCdEfGhIjKlMnOpQrStUv.AbCdEfGhIjKlMnOpQrStUv', 'Sunrise Residency'],
+  },
+  {
+    // A meeting: scheduled, the day before, moved. The second blank says which ('a society meeting has been scheduled'). Optional:
+    // a society that has not had it approved still sends everything else, and just sends no meeting messages on WhatsApp.
+    kind: 'MEETING',
+    name: 'ng_meeting_notice',
+    optional: true,
+    text: 'Hello {{1}}, {{2}}: {{3}}. When: {{4}}. Where: {{5}}. Sent on behalf of {{6}} via NG Home.',
+    params: ['name', 'lead', 'title', 'when', 'where', 'society'],
+    samples: ['Ravi Kumar', 'a society meeting has been scheduled', 'Annual General Meeting', 'Sat, 14 Nov, 6:00 pm', 'Clubhouse', 'Sunrise Residency'],
+  },
+  {
+    // An event: planned, the day before, moved, cancelled. Optional in the same way.
+    kind: 'EVENT',
+    name: 'ng_event_notice',
+    optional: true,
+    text: 'Hello {{1}}, {{2}}: {{3}}. When: {{4}}. Details: {{5}}. Sent on behalf of {{6}} via NG Home.',
+    params: ['name', 'lead', 'title', 'when', 'details', 'society'],
+    samples: ['Ravi Kumar', 'a new society event has been planned', 'Diwali get-together', 'Sat, 14 Nov, 6:00 pm', 'Snacks and music for all', 'Sunrise Residency'],
   },
 ];
 

@@ -21,7 +21,12 @@ export const whatsappApi = {
   },
 
   /** Switch automation on or off, and choose the reminder days (admin only). */
-  saveSettings: async (settings: { enabled: boolean; reminderDays: number[] }): Promise<void> => {
-    await apiClient.patch('/societies/my/config', { whatsappEnabled: settings.enabled, whatsappReminderDays: settings.reminderDays });
+  saveSettings: async (settings: { enabled: boolean; reminderDays: number[]; notices?: boolean }): Promise<void> => {
+    await apiClient.patch('/societies/my/config', {
+      whatsappEnabled: settings.enabled,
+      whatsappReminderDays: settings.reminderDays,
+      // Left out when the server does not know it, so an older server is not sent a setting it would refuse.
+      ...(settings.notices !== undefined ? { whatsappNotices: settings.notices } : {}),
+    });
   },
 };

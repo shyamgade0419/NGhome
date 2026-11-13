@@ -134,6 +134,13 @@ export class UpdateSocietyConfigDto {
   whatsappEnabled?: boolean;
 
   @ApiPropertyOptional({
+    description: 'Also send meeting and event messages on WhatsApp: scheduled, the day before, moved, cancelled (stored in additionalConfig). Off until switched on; only has an effect while whatsappEnabled is on.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  whatsappNotices?: boolean;
+
+  @ApiPropertyOptional({
     description: 'Days of the month (1–28) on which unpaid flats are reminded on WhatsApp. Defaults to the 5th and 10th.',
     type: [Number],
   })

@@ -9,6 +9,7 @@ import { CreateEventDto } from './dto/create-event.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { eventCancelled, eventNotice, eventRescheduled } from '../notifications/notification-content';
 import { isLocked, loadExpenseLock, lockMessage } from '../common/books-lock';
+import { WhatsappService, type NoticeInput } from '../whatsapp/whatsapp.service';
 export { CreateEventDto } from './dto/create-event.dto';
 
 const FUND_SELECT = { id: true, name: true } satisfies Prisma.FundSelect;
@@ -19,6 +20,7 @@ export class EventsService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly notifications?: NotificationsService,
+    @Optional() private readonly whatsapp?: WhatsappService,
   ) {}
 
   /** Tells everyone about an event. Never fails the save if the alert cannot go. */
@@ -28,6 +30,12 @@ export class EventsService {
       () => this.notifications!.send(societyId, notice, { excludeUserId: actorId }),
       context,
     );
+  }
+
+  /** The same news on WhatsApp, for a society that has switched meeting and event messages on. Never fails the save. */
+  private async tellOnWhatsapp(societyId: string, notice: NoticeInput, actorId: string | undefined, context: string) {
+    if (!this.whatsapp) return;
+    await this.whatsapp.enqueueNotice(societyId, notice, { excludeUserId: actorId }).catch((err) => console.error(`[whatsapp] ${context} failed:`, err));
   }
 
   async create(societyId: string, createdById: string, dto: CreateEventDto) {
@@ -53,6 +61,7 @@ export class EventsService {
     });
     if (created.isVisibleToResidents && created.status === EventStatus.PLANNED && created.eventDate > new Date()) {
       await this.tell(societyId, eventNotice(created), createdById, `event ${created.id} planned`);
+      await this.tellOnWhatsapp(societyId, { type: 'EVENT', stage: 'NEW', id: created.id, title: created.title, when: created.eventDate, details: created.description }, createdById, `event ${created.id} planned`);
     }
     return created;
   }
@@ -138,12 +147,14 @@ export class EventsService {
     if (updated.isVisibleToResidents) {
       if (updated.status === EventStatus.CANCELLED && before.status !== EventStatus.CANCELLED) {
         await this.tell(societyId, eventCancelled(updated), actorId, `event ${id} cancelled`);
+        await this.tellOnWhatsapp(societyId, { type: 'EVENT', stage: 'CANCELLED', id, title: updated.title, when: updated.eventDate, details: updated.description }, actorId, `event ${id} cancelled`);
       } else if (
         updated.status === EventStatus.PLANNED &&
         updated.eventDate.getTime() !== new Date(before.eventDate).getTime() &&
         updated.eventDate > new Date()
       ) {
         await this.tell(societyId, eventRescheduled(updated), actorId, `event ${id} moved`);
+        await this.tellOnWhatsapp(societyId, { type: 'EVENT', stage: 'MOVED', id, title: updated.title, when: updated.eventDate, details: updated.description }, actorId, `event ${id} moved`);
       }
     }
     return updated;

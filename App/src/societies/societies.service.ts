@@ -503,13 +503,14 @@ export class SocietiesService {
     const featuresProblem = dto.features !== undefined ? featurePatchProblem(dto.features) : null;
     if (featuresProblem) throw new BadRequestException(featuresProblem);
 
-    const { upiId, waterBillingEnabled, reminderTemplate, finalReminderTemplate, whatsappEnabled, whatsappReminderDays, features, showCollectionToResidents, ...configFields } = dto as UpdateSocietyConfigDto & {
+    const { upiId, waterBillingEnabled, reminderTemplate, finalReminderTemplate, whatsappEnabled, whatsappNotices, whatsappReminderDays, features, showCollectionToResidents, ...configFields } = dto as UpdateSocietyConfigDto & {
       upiId?: string;
       showCollectionToResidents?: boolean;
       waterBillingEnabled?: boolean;
       reminderTemplate?: string;
       finalReminderTemplate?: string;
       whatsappEnabled?: boolean;
+      whatsappNotices?: boolean;
       whatsappReminderDays?: number[];
       features?: Record<string, boolean>;
     };
@@ -517,7 +518,7 @@ export class SocietiesService {
     let additionalConfigPatch: Prisma.InputJsonValue | undefined;
     if (
       upiId !== undefined || waterBillingEnabled !== undefined || reminderTemplate !== undefined || finalReminderTemplate !== undefined ||
-      whatsappEnabled !== undefined || whatsappReminderDays !== undefined || features !== undefined ||
+      whatsappEnabled !== undefined || whatsappNotices !== undefined || whatsappReminderDays !== undefined || features !== undefined ||
       showCollectionToResidents !== undefined
     ) {
       const current = await this.prisma.societyConfiguration.findUnique({
@@ -535,11 +536,12 @@ export class SocietiesService {
         ...(finalReminderTemplate !== undefined ? { finalReminderTemplate: finalReminderTemplate.trim() } : {}),
         // Only the features named change; the others keep what they were.
         ...(features !== undefined ? { features: { ...((existing.features as Record<string, unknown> | undefined) ?? {}), ...features } } : {}),
-        ...(whatsappEnabled !== undefined || whatsappReminderDays !== undefined
+        ...(whatsappEnabled !== undefined || whatsappNotices !== undefined || whatsappReminderDays !== undefined
           ? {
               whatsapp: {
                 ...((existing.whatsapp as Record<string, unknown> | undefined) ?? {}),
                 ...(whatsappEnabled !== undefined ? { enabled: whatsappEnabled } : {}),
+                ...(whatsappNotices !== undefined ? { notices: whatsappNotices } : {}),
                 ...(whatsappReminderDays !== undefined ? { reminderDays: cleanReminderDays(whatsappReminderDays) } : {}),
               },
             }

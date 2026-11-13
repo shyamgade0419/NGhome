@@ -5,7 +5,8 @@ import { WhatsappSettingsStore } from './whatsapp-settings.store';
 import { pickBillContact } from '../billing/billing-contact';
 import { MONTH_NAMES, readFinalReminderTemplate, readReminderTemplate, renderReminder } from '../billing/reminder-template';
 import { outstandingForFlat } from '../payments/settlement';
-import { fineMessage, paidMessage, publishedMessage } from './whatsapp-messages';
+import { fineMessage, noticeLead, noticeMessage, paidMessage, publishedMessage } from './whatsapp-messages';
+import { shorten, whenText } from '../notifications/notification-content';
 import {
   GatewayConfig, GatewayCreds, GatewayError, sendText, sessionStatus, startSession,
 } from './openwa.client';
@@ -17,7 +18,20 @@ import {
   chatIdFor, inSendWindow, istDayStart, istParts, normalizePhone, readWhatsappSettings,
 } from './whatsapp-settings';
 
-export type WhatsappKind = 'BILL_PUBLISHED' | 'REMINDER' | 'FINE_IMPOSED' | 'PAYMENT_RECEIVED' | 'TEST';
+export type WhatsappKind = 'BILL_PUBLISHED' | 'REMINDER' | 'FINE_IMPOSED' | 'PAYMENT_RECEIVED' | 'MEETING' | 'EVENT' | 'TEST';
+
+/** A meeting or event to tell the flats about, and which message it is: just scheduled, the day before, moved or cancelled. */
+export interface NoticeInput {
+  type: 'MEETING' | 'EVENT';
+  stage: 'NEW' | 'REMINDER' | 'MOVED' | 'CANCELLED';
+  id: string;
+  title: string;
+  when: Date;
+  /** A meeting's place. */
+  where?: string | null;
+  /** An event's description, or a meeting's agenda. */
+  details?: string | null;
+}
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -133,7 +147,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Has Meta approved this optional template (the receipt one, the follow-up reminder) on this society's account? */
-  private async optionalTemplateApproved(societyId: string, kind: 'PAYMENT_RECEIPT' | 'REMINDER_FINAL'): Promise<boolean> {
+  private async optionalTemplateApproved(societyId: string, kind: 'PAYMENT_RECEIPT' | 'REMINDER_FINAL' | 'MEETING' | 'EVENT'): Promise<boolean> {
     try {
       const state = await this.cloud.state(societyId);
       return state.templates.some((t) => t.kind === kind && t.status === 'APPROVED');
@@ -272,6 +286,50 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       }
     }
     return this.enqueue(societyId, 'PAYMENT_RECEIVED', `paid:${payment.id}`, to, message);
+  }
+
+  /**
+   * Tell the flats about a meeting or an event: one message to each flat's contact (the tenant, else the owner), when it is
+   * scheduled or planned, the day before, and if an event is moved or cancelled. Only for a society that has switched on both
+   * WhatsApp automation and meeting and event messages. Through Meta it needs the optional meeting or event template to be
+   * approved; without it nothing is queued (a free text message is not allowed there), and the phone alert still goes.
+   * `excludeUserId` leaves out the person who caused it. Returns how many messages were queued.
+   */
+  async enqueueNotice(societyId: string, n: NoticeInput, opts: { excludeUserId?: string } = {}): Promise<number> {
+    const settings = await this.active(societyId);
+    if (!settings || !settings.notices) return 0;
+    if (settings.provider === 'CLOUD' && !(await this.optionalTemplateApproved(societyId, n.type))) return 0;
+
+    const flats = await this.prisma.societyMembership.findMany({
+      where: { societyId, status: 'ACTIVE', role: 'RESIDENT', flatId: { not: null } },
+      select: { flatId: true },
+      distinct: ['flatId'],
+    });
+    const contacts = await this.contactsOf(societyId, flats.map((f) => f.flatId as string));
+    const society = await this.societyName(societyId);
+    const when = whenText(n.when);
+    const lead = noticeLead(n.type, n.stage);
+    // A moved event is a new message for each new time, so moving it twice tells people twice, but saving it again does not.
+    const version = n.stage === 'MOVED' ? `:${n.when.toISOString()}` : '';
+
+    let added = 0;
+    for (const [flatId, to] of contacts) {
+      if (opts.excludeUserId && to.userId === opts.excludeUserId) continue;
+      const text = noticeMessage({ name: to.name, type: n.type, stage: n.stage, title: n.title, when, where: n.where, details: n.details, society });
+      const values = {
+        name: to.name,
+        lead,
+        title: n.title,
+        when,
+        // The templates have a fixed blank for the place or the details; a dash stands in when there is none.
+        where: n.where?.trim() || '-',
+        details: n.details ? shorten(n.details, 120) : '-',
+        society,
+      };
+      const message = this.compose(settings.provider, n.type, values, text);
+      if (await this.enqueue(societyId, n.type, `${n.type.toLowerCase()}:${n.id}:${n.stage.toLowerCase()}${version}:${flatId}`, to, message)) added += 1;
+    }
+    return added;
   }
 
   /**
@@ -641,6 +699,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       hasSession: settings.linked,
       enabled: settings.enabled,
       reminderDays: settings.reminderDays,
+      notices: settings.notices,
       session: session?.status ?? null,
       // This society's own number.
       sendingFrom: session?.phone ?? null,
