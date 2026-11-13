@@ -185,6 +185,8 @@ export interface Expense {
   correctionNote?: string | null;
   /** 'EVENT' for one recorded from an event, whose amount is fixed by the event. */
   linkedEntityType?: string | null;
+  /** Its month, or an earlier one, has been closed: it can no longer be added to, changed, approved, paid or deleted. */
+  locked?: boolean;
 }
 
 // Matches backend Announcement Prisma model

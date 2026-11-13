@@ -25,15 +25,13 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { SummaryStrip } from '@/components/home/SummaryStrip';
 import { ProgressRing } from '@/components/home/ProgressRing';
 import { FadeInUp } from '@/components/motion/FadeInUp';
+import { MonthStepper } from '@/components/ui/MonthStepper';
 import { colors, spacing, typography, radius } from '@/theme';
 import { HERO_GRADIENT, tint, tones } from '@/theme/tones';
 import { fonts } from '@/theme/typography';
 import { inr } from '@/utils/format';
 import {
   currentMonth,
-  isAfter,
-  monthTitle,
-  shiftMonth,
   statementRows,
   statementText,
   statementTotals,
@@ -121,31 +119,6 @@ export default function ResidentReportsScreen() {
         <View style={{ height: spacing['3xl'] }} />
       </ScrollView>
     </SafeAreaView>
-  );
-}
-
-// ── Month stepper ────────────────────────────────────────────────────────────
-
-function MonthStepper({ month, now, onChange }: { month: YearMonth; now: YearMonth; onChange: (m: YearMonth) => void }) {
-  const atLatest = !isAfter(shiftMonth(month, 1), now);
-  return (
-    <View style={styles.stepper}>
-      <TouchableOpacity onPress={() => onChange(shiftMonth(month, -1))} hitSlop={10} accessibilityRole="button" accessibilityLabel="Previous month" style={styles.stepBtn}>
-        <Ionicons name="chevron-back" size={20} color={colors.primary} />
-      </TouchableOpacity>
-      <Text style={styles.stepTitle}>{monthTitle(month)}</Text>
-      <TouchableOpacity
-        onPress={() => atLatest && onChange(shiftMonth(month, 1))}
-        disabled={!atLatest}
-        hitSlop={10}
-        accessibilityRole="button"
-        accessibilityLabel="Next month"
-        accessibilityState={{ disabled: !atLatest }}
-        style={[styles.stepBtn, !atLatest && { opacity: 0.35 }]}
-      >
-        <Ionicons name="chevron-forward" size={20} color={colors.primary} />
-      </TouchableOpacity>
-    </View>
   );
 }
 
@@ -300,9 +273,6 @@ const styles = StyleSheet.create({
   tabOn: { backgroundColor: tint(tones.teal, 0.88), borderColor: tint(tones.teal, 0.55) },
   tabText: { ...typography.labelMedium, color: colors.textSecondary, textTransform: 'none', letterSpacing: 0 },
   tabTextOn: { color: colors.primary },
-  stepper: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  stepBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
-  stepTitle: { ...typography.headingSmall, color: colors.text },
   hero: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderRadius: radius.xl, padding: spacing.lg, overflow: 'hidden', marginBottom: spacing.xs },
   eyebrow: { ...typography.labelSmall, color: 'rgba(255,255,255,0.75)' },
   big: { fontFamily: fonts.extrabold, fontSize: 34, lineHeight: 42, color: '#FFFFFF' },

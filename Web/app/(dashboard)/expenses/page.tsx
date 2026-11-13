@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { History, Pencil, Plus, Wallet } from 'lucide-react';
+import { History, Lock, Pencil, Plus, Wallet } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { expensesApi, accountsApi } from '@/lib/api/endpoints';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -23,6 +23,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { formatCurrency, formatDate, formatDateTime, EXPENSE_CATEGORIES, parseDecimalLike } from '@/lib/utils';
 import { StatCard } from '@/components/ui/StatCard';
+import { isLockedDate, lockNotice, monthTitle, parseMonthInput, thisMonthInput } from '@/lib/expenseLock';
 import { Clock, List } from 'lucide-react';
 import {
   changedFields, describeChanges, editValuesOf, paidAmountEffect, validateEdit,
@@ -64,18 +65,34 @@ export default function ExpensesPage() {
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
+  // The month being looked at: this month to begin with, so a new month starts clean. Empty is every month.
+  const [monthValue, setMonthValue] = useState(thisMonthInput());
+  const month = parseMonthInput(monthValue);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['expenses', { category, status, page }],
+    queryKey: ['expenses', { category, status, page, month: monthValue }],
     queryFn: () =>
       expensesApi
-        .list({ category: category || undefined, status: status || undefined, page, limit: 20 })
+        .list({
+          category: category || undefined,
+          status: status || undefined,
+          ...(month ? { year: month.year, month: month.month } : {}),
+          page,
+          limit: 20,
+        })
         .then((r) => r.data),
+    placeholderData: (prev) => prev,
   });
+  // How far the books are closed, from the list itself.
+  const lockedThrough = ((data?.meta as { lockedThrough?: { year: number; month: number } | null } | undefined)?.lockedThrough) ?? null;
+  const notice = lockNotice(lockedThrough);
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<ExpenseFormData>({
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseSchema),
   });
+  // A date in a closed month would be refused; say so here, and keep the button off, instead of after the click.
+  const chosenDate = watch('expenseDate');
+  const dateClosed = !!chosenDate && isLockedDate(chosenDate, lockedThrough);
 
   const createMutation = useMutation({
     mutationFn: (d: ExpenseFormData) => expensesApi.create({ ...d, fundId: d.fundId || undefined }),
@@ -218,6 +235,31 @@ export default function ExpensesPage() {
             <StatCard label="To approve" value={String((data.data as any[]).filter((e) => e.status === 'PENDING').length)} icon={Clock} tone="amber" />
           </div>
         )}
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            Month
+            <input
+              type="month"
+              value={monthValue}
+              onChange={(e) => { setMonthValue(e.target.value); setPage(1); }}
+              aria-label="Month"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => { setMonthValue(month ? '' : thisMonthInput()); setPage(1); }}
+            className="text-sm text-primary-700 underline"
+          >
+            {month ? 'Show all months' : 'Show this month'}
+          </button>
+        </div>
+        {notice && (
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600" role="note">
+            <Lock size={14} className="shrink-0" />
+            {notice}
+          </div>
+        )}
         <div className="flex gap-3">
           <Select
             options={CATEGORY_OPTIONS}
@@ -254,7 +296,7 @@ export default function ExpensesPage() {
               </Thead>
               <Tbody>
                 {data.data.map((e) => {
-                  const canEdit = e.status === 'PENDING' || ((e.status === 'APPROVED' || e.status === 'PAID') && isAdmin);
+                  const canEdit = !e.locked && (e.status === 'PENDING' || ((e.status === 'APPROVED' || e.status === 'PAID') && isAdmin));
                   return (
                     <Tr key={e.id}>
                       <Td className="font-mono text-xs text-slate-700">
@@ -287,10 +329,15 @@ export default function ExpensesPage() {
                         <Badge variant={expenseStatusBadge(e.status)}>
                           {e.status}
                         </Badge>
+                        {e.locked && (
+                          <span className="mt-1 flex items-center gap-1 text-xs text-slate-500" title="Its month is closed">
+                            <Lock size={11} /> Closed
+                          </span>
+                        )}
                       </Td>
                       <Td>
                         <div className="flex items-center justify-end gap-1">
-                          {e.status === 'PENDING' && (
+                          {!e.locked && e.status === 'PENDING' && (
                             <Button
                               size="sm"
                               variant="ghost"
@@ -300,7 +347,7 @@ export default function ExpensesPage() {
                               Approve
                             </Button>
                           )}
-                          {e.status === 'APPROVED' && (
+                          {!e.locked && e.status === 'APPROVED' && (
                             <Button
                               size="sm"
                               variant="ghost"
@@ -513,7 +560,7 @@ export default function ExpensesPage() {
           <Input label="Description" placeholder="e.g. Generator maintenance" error={errors.description?.message} {...register('description')} />
           <div className="grid grid-cols-2 gap-4">
             <Input label="Amount (₹)" type="number" step="0.01" placeholder="0.00" error={errors.amount?.message} {...register('amount')} />
-            <Input label="Date" type="date" error={errors.expenseDate?.message} {...register('expenseDate')} />
+            <Input label="Date" type="date" error={errors.expenseDate?.message ?? (dateClosed && lockedThrough ? `${monthTitle(lockedThrough)} and earlier months are closed. Choose a later date.` : undefined)} {...register('expenseDate')} />
           </div>
           <Select
             label="Category"
@@ -538,7 +585,7 @@ export default function ExpensesPage() {
           <Textarea label="Notes (optional)" placeholder="Additional details…" {...register('notes')} />
           <div className="flex justify-end gap-3 pt-2">
             <Button type="button" variant="outline" onClick={() => { setShowModal(false); reset(); }}>Cancel</Button>
-            <Button type="submit" loading={createMutation.isPending}>Log Expense</Button>
+            <Button type="submit" loading={createMutation.isPending} disabled={dateClosed}>Log Expense</Button>
           </div>
         </form>
       </Modal>

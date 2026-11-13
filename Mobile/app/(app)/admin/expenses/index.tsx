@@ -18,6 +18,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { MonthStepper } from '@/components/ui/MonthStepper';
+import { currentMonth, monthTitle, type YearMonth } from '@/reports/residentReports';
+import { isLockedDate, lockNotice, type LockedThrough } from '@/utils/expenseLock';
 import apiClient from '@/api/client';
 import { accountsApi, fundsApi } from '@/api/endpoints/accounts.api';
 import { useIsSocietyAdmin } from '@/hooks/useAuth';
@@ -61,6 +64,8 @@ interface Expense {
   linkedEntityType?: string | null;
   /** The receipts on file (photos or PDFs of the bill). */
   documents?: StoredReceipt[];
+  /** Its month, or an earlier one, has been closed: it can no longer be added to, changed, approved, paid or deleted. */
+  locked?: boolean;
 }
 
 const CATEGORIES = EXPENSE_CATEGORIES;
@@ -76,7 +81,7 @@ function expenseStatusVariant(status: string) {
 }
 
 // ── Add Expense Sheet ─────────────────────────────────────────────────────────
-function AddExpenseModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+function AddExpenseModal({ visible, onClose, lockedThrough }: { visible: boolean; onClose: () => void; lockedThrough?: LockedThrough }) {
   const qc = useQueryClient();
   const [showExpenseDatePicker, setShowExpenseDatePicker] = useState(false);
   const [form, setForm] = useState({
@@ -146,7 +151,9 @@ function AddExpenseModal({ visible, onClose }: { visible: boolean; onClose: () =
       Alert.alert('Error', e?.response?.data?.message ?? 'Failed to add expense.'),
   });
 
-  const canSubmit = form.description.trim().length > 0 && parseFloat(form.amount) > 0;
+  // A date in a closed month would be refused; say so here instead of after the tap.
+  const dateClosed = isLockedDate(form.expenseDate, lockedThrough);
+  const canSubmit = form.description.trim().length > 0 && parseFloat(form.amount) > 0 && !dateClosed;
 
   const set = (key: keyof typeof form) => (val: string) =>
     setForm((f) => ({ ...f, [key]: val }));
@@ -211,6 +218,11 @@ function AddExpenseModal({ visible, onClose }: { visible: boolean; onClose: () =
                 {new Date(form.expenseDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
               </Text>
             </TouchableOpacity>
+            {dateClosed && lockedThrough && (
+              <Text style={{ ...typography.bodySmall, color: colors.error }} accessibilityLabel="Date is in a closed month">
+                {monthTitle(lockedThrough)} and earlier months are closed. Choose a date after that.
+              </Text>
+            )}
             {showExpenseDatePicker && (
               <DateTimePicker
                 value={new Date(form.expenseDate)}
@@ -325,6 +337,9 @@ type Filter = typeof STATUS_FILTERS[number];
 export default function ExpensesScreen() {
   const qc = useQueryClient();
   const [filter, setFilter] = useState<Filter>('ALL');
+  // The month being looked at: this month to begin with, so a new month starts clean. Null is every month.
+  const now = React.useMemo(() => currentMonth(), []);
+  const [month, setMonth] = useState<YearMonth | null>(now);
   const [showAdd, setShowAdd] = useState(false);
   // Android-compatible reject modal (replaces Alert.prompt which is iOS-only)
   const [rejectingExpense, setRejectingExpense] = useState<Expense | null>(null);
@@ -337,14 +352,18 @@ export default function ExpensesScreen() {
   const isAdmin = useIsSocietyAdmin();
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
-    queryKey: ['expenses', filter],
+    queryKey: ['expenses', filter, month?.year ?? 'all', month?.month ?? 'all'],
     queryFn: async () => {
       const params: Record<string, unknown> = { limit: 50 };
       if (filter !== 'ALL') params.status = filter;
-      const res = await apiClient.get<{ data: Expense[]; meta: unknown }>('/expenses', { params });
+      if (month) { params.year = month.year; params.month = month.month; }
+      const res = await apiClient.get<{ data: Expense[]; meta: { lockedThrough?: LockedThrough } }>('/expenses', { params });
       return res.data;
     },
+    placeholderData: (prev) => prev,
   });
+  const lockedThrough = data?.meta?.lockedThrough ?? null;
+  const notice = lockNotice(lockedThrough);
 
   const approveMutation = useMutation({
     mutationFn: (id: string) => apiClient.post(`/expenses/${id}/approve`),
@@ -477,6 +496,12 @@ export default function ExpensesScreen() {
             {new Date(item.expenseDate).toLocaleDateString('en-IN')}
           </Text>
           <StatusBadge label={item.status} variant={expenseStatusVariant(item.status)} size="sm" />
+          {item.locked && (
+            <View style={styles.lockChip} accessibilityLabel="Closed month">
+              <Ionicons name="lock-closed" size={11} color={colors.textSecondary} />
+              <Text style={styles.lockChipText}>Closed</Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -484,7 +509,7 @@ export default function ExpensesScreen() {
       <ExpenseReceipts expenseId={item.id} status={item.status} receipts={item.documents ?? []} />
 
       {/* Approve / Reject for PENDING */}
-      {item.status === 'PENDING' && (
+      {!item.locked && item.status === 'PENDING' && (
         <View style={styles.actions}>
           <TouchableOpacity
             style={[styles.actionBtn, styles.approveBtn]}
@@ -514,7 +539,7 @@ export default function ExpensesScreen() {
       {/* Approving commits the expense but moves no money — marking it paid is
           the only thing that debits an account. Without this the balance kept
           showing spent money as still available. */}
-      {item.status === 'APPROVED' && (
+      {!item.locked && item.status === 'APPROVED' && (
         <View style={styles.actions}>
           <TouchableOpacity
             style={[styles.actionBtn, styles.approveBtn]}
@@ -538,7 +563,7 @@ export default function ExpensesScreen() {
 
       {/* A paid expense is in the books. The admin can still correct a wrong amount or date, with a comment;
           the account (and fund) move by the difference. */}
-      {item.status === 'PAID' && isAdmin && (
+      {!item.locked && item.status === 'PAID' && isAdmin && (
         <View style={styles.actions}>
           <TouchableOpacity
             style={[styles.actionBtn, styles.editBtn]}
@@ -558,6 +583,8 @@ export default function ExpensesScreen() {
       onPress={() => setShowAdd(true)}
       hitSlop={8}
       style={{ padding: 4 }}
+      accessibilityRole="button"
+      accessibilityLabel="Add expense"
     >
       <Ionicons name="add-circle-outline" size={26} color={colors.primary} />
     </TouchableOpacity>
@@ -566,6 +593,30 @@ export default function ExpensesScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScreenHeader title="Expenses" rightAction={addButton} />
+
+      {/* The month, this one to begin with; older months stay one tap away, and 'All months' shows everything. */}
+      <View style={styles.monthRow}>
+        {month ? (
+          <MonthStepper month={month} now={now} onChange={setMonth} style={{ flex: 1 }} />
+        ) : (
+          <Text style={styles.allMonths}>All months</Text>
+        )}
+        <TouchableOpacity
+          onPress={() => setMonth(month ? null : now)}
+          accessibilityRole="button"
+          accessibilityLabel={month ? 'Show all months' : 'Show this month'}
+          hitSlop={8}
+        >
+          <Text style={styles.monthLink}>{month ? 'All months' : `${monthTitle(now)} only`}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {notice && (
+        <View style={styles.lockBanner} accessibilityLabel="Books closed">
+          <Ionicons name="lock-closed-outline" size={16} color={colors.textSecondary} />
+          <Text style={styles.lockBannerText}>{notice}</Text>
+        </View>
+      )}
 
       {/* Status filter tabs */}
       <ScrollView
@@ -619,7 +670,7 @@ export default function ExpensesScreen() {
         />
       )}
 
-      <AddExpenseModal visible={showAdd} onClose={() => setShowAdd(false)} />
+      <AddExpenseModal visible={showAdd} onClose={() => setShowAdd(false)} lockedThrough={lockedThrough} />
 
       {editingExpense && <EditExpenseSheet expense={editingExpense} onClose={() => setEditingExpense(null)} />}
       {historyExpense && <ExpenseHistorySheet expense={historyExpense} onClose={() => setHistoryExpense(null)} />}
@@ -786,6 +837,16 @@ const payModal = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
+  monthRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.base, paddingTop: spacing.md },
+  allMonths: { ...typography.headingSmall, color: colors.text, flex: 1 },
+  monthLink: { ...typography.labelMedium, color: colors.primary, textDecorationLine: 'underline', textTransform: 'none', letterSpacing: 0 },
+  lockBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginHorizontal: spacing.base, marginTop: spacing.sm,
+    padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+  },
+  lockBannerText: { ...typography.bodySmall, color: colors.textSecondary, flex: 1 },
+  lockChip: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
+  lockChipText: { ...typography.bodySmall, color: colors.textSecondary },
   safe: { flex: 1, backgroundColor: colors.background },
 
   filterBar: { flexGrow: 0, flexShrink: 0, borderBottomWidth: 1, borderBottomColor: colors.border, maxHeight: 48 },
