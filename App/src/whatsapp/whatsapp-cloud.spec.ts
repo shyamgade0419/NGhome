@@ -1,4 +1,4 @@
-import { CLOUD_TEMPLATES, cleanParam, orderedParams, renderTemplate, templateOf } from './whatsapp-cloud-templates';
+import { CLOUD_TEMPLATES, cleanParam, isOptionalTemplate, orderedParams, renderTemplate, templateOf } from './whatsapp-cloud-templates';
 import { cloudError, listTemplates, sendTemplate } from './whatsapp-cloud.client';
 
 const blanks = (text: string) => [...text.matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1]));
@@ -15,8 +15,28 @@ describe('the WhatsApp message templates (what Meta is asked to approve)', () =>
   });
 
   it('has one template for each automatic message, and none for a test', () => {
-    expect(CLOUD_TEMPLATES.map((t) => t.kind).sort()).toEqual(['BILL_PUBLISHED', 'FINE_IMPOSED', 'PAYMENT_RECEIVED', 'REMINDER']);
+    expect(CLOUD_TEMPLATES.map((t) => t.kind).sort()).toEqual(['BILL_PUBLISHED', 'FINE_IMPOSED', 'PAYMENT_RECEIPT', 'PAYMENT_RECEIVED', 'REMINDER']);
     expect(templateOf('TEST')).toBeUndefined();
+  });
+
+  it('needs only the four main templates to send: the receipt one is optional and never holds a society up', () => {
+    expect(CLOUD_TEMPLATES.filter((t) => !t.optional).map((t) => t.kind).sort()).toEqual(['BILL_PUBLISHED', 'FINE_IMPOSED', 'PAYMENT_RECEIVED', 'REMINDER']);
+    expect(isOptionalTemplate('PAYMENT_RECEIPT')).toBe(true);
+    expect(isOptionalTemplate('PAYMENT_RECEIVED')).toBe(false);
+    expect(isOptionalTemplate('NOPE')).toBe(false);
+  });
+
+  it('has template names that are all different, as Meta requires', () => {
+    const names = CLOUD_TEMPLATES.map((t) => t.name);
+    expect(new Set(names).size).toBe(names.length);
+    for (const n of names) expect(n).toMatch(/^[a-z0-9_]+$/);
+  });
+
+  it('puts the receipt link into the confirmation that carries it, after the amounts and before the society', () => {
+    const t = templateOf('PAYMENT_RECEIPT')!;
+    const values = { name: 'Ravi', amount: '2,500', flat: 'A-101', paidOn: '8 Nov 2026', balance: '0', receipt: 'https://x.example/r/abc.def', society: 'Sunrise' };
+    expect(orderedParams(t, values)).toEqual(['Ravi', '2,500', 'A-101', '8 Nov 2026', '0', 'https://x.example/r/abc.def', 'Sunrise']);
+    expect(renderTemplate(t, values)).toBe('Hello Ravi, we have received ₹2,500 for Flat A-101 on 8 Nov 2026. Thank you! Balance still due: ₹0. Your receipt is here: https://x.example/r/abc.def - sent on behalf of Sunrise via NG Home.');
   });
 
   it('fills the blanks in the template\'s order, whatever order the values arrive in', () => {

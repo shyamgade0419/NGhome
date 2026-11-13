@@ -66,7 +66,7 @@ export function WhatsappAutomationCard() {
     };
   else if (status.session === 'ready')
     line = {
-      text: `Connected${status.sendingFrom ? ` — sending from your ${status.provider === 'CLOUD' ? 'WhatsApp Business number' : 'number'} +${status.sendingFrom}` : ''}. ${status.sentToday} sent today, ${status.queued} waiting${status.failedThisWeek ? `, ${status.failedThisWeek} failed this week` : ''}.${status.provider === 'CLOUD' && status.templatesReady === false ? ' Meta has not approved all four message templates yet, so messages wait until it does (check in the web app).' : ''}`,
+      text: `Connected${status.sendingFrom ? ` — sending from your ${status.provider === 'CLOUD' ? 'WhatsApp Business number' : 'number'} +${status.sendingFrom}` : ''}. ${status.sentToday} sent today, ${status.queued} waiting${status.failedThisWeek ? `, ${status.failedThisWeek} failed this week` : ''}.${status.provider === 'CLOUD' && status.templatesReady === false ? ' Meta has not approved the message templates yet, so messages wait until it does (check in the web app).' : ''}`,
       color: status.provider === 'CLOUD' && status.templatesReady === false ? colors.warning : '#166534',
     };
   else

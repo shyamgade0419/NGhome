@@ -10,6 +10,7 @@ import {
   GatewayConfig, GatewayCreds, GatewayError, sendText, sessionStatus, startSession,
 } from './openwa.client';
 import { CLOUD_LANGUAGE, TEST_TEMPLATE, orderedParams, renderTemplate, templateOf } from './whatsapp-cloud-templates';
+import { receiptUrl } from '../receipts/receipt-link';
 import { sendTemplate } from './whatsapp-cloud.client';
 import { WhatsappCloudService, WhatsappProvider } from './whatsapp-cloud.service';
 import {
@@ -131,6 +132,16 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     return provider === 'CLOUD' && t ? { body: renderTemplate(t, values), params: values } : { body: text, params: values };
   }
 
+  /** Has Meta approved the payment-confirmation-with-receipt template on this society's account? */
+  private async receiptTemplateApproved(societyId: string): Promise<boolean> {
+    try {
+      const state = await this.cloud.state(societyId);
+      return state.templates.some((t) => t.kind === 'PAYMENT_RECEIPT' && t.status === 'APPROVED');
+    } catch {
+      return false; // cannot tell: send the usual message rather than hold it
+    }
+  }
+
   private async societyName(societyId: string): Promise<string> {
     const s = await this.prisma.society.findUnique({ where: { id: societyId }, select: { name: true, displayName: true } });
     return s?.displayName || s?.name || 'Society';
@@ -246,8 +257,20 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     const balance = await outstandingForFlat(this.prisma, societyId, payment.flatId);
     const society = await this.societyName(societyId);
     const paidOn = dueLabel(payment.paymentDate);
-    const text = paidMessage({ name: to.name, flat: payment.flat.flatCode, amount: payment.amount.toString(), paidOn, balance: balance.toString(), society });
-    const message = this.compose(settings.provider, 'PAYMENT_RECEIVED', { name: to.name, amount: amountOf(payment.amount), flat: payment.flat.flatCode, paidOn, balance: amountOf(balance), society }, text);
+    // A link that opens this payment's receipt, with no login. Null only if the server has nothing to sign it with.
+    const receipt = receiptUrl(payment.id);
+    const text = paidMessage({ name: to.name, flat: payment.flat.flatCode, amount: payment.amount.toString(), paidOn, balance: balance.toString(), society, receiptUrl: receipt ?? undefined });
+    const values = { name: to.name, amount: amountOf(payment.amount), flat: payment.flat.flatCode, paidOn, balance: amountOf(balance), society };
+    let message = this.compose(settings.provider, 'PAYMENT_RECEIVED', values, text);
+    // Through Meta the link needs its own template. Used once Meta has approved it for this society; until then the usual
+    // template goes without the link, so nothing is held up waiting for it.
+    if (settings.provider === 'CLOUD' && receipt) {
+      const withLink = templateOf('PAYMENT_RECEIPT');
+      if (withLink && (await this.receiptTemplateApproved(societyId))) {
+        const linked = { ...values, receipt };
+        message = { body: renderTemplate(withLink, linked), params: linked };
+      }
+    }
     return this.enqueue(societyId, 'PAYMENT_RECEIVED', `paid:${payment.id}`, to, message);
   }
 
@@ -529,9 +552,10 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
 
   /** One queued message through a society's Meta account: the approved template for its kind, filled with the values it was written from. */
   private async sendThroughMeta(meta: NonNullable<Awaited<ReturnType<WhatsappCloudService['creds']>>>, message: { kind: string; toPhone: string; params: unknown }): Promise<void> {
-    const t = templateOf(message.kind);
-    if (!t) throw new GatewayError(`There is no WhatsApp template for ${message.kind} messages.`, undefined, false, true);
     const values = (message.params ?? null) as Record<string, unknown> | null;
+    // A payment confirmation written with a receipt link goes as the template that carries it.
+    const t = message.kind === 'PAYMENT_RECEIVED' && values?.receipt ? templateOf('PAYMENT_RECEIPT') : templateOf(message.kind);
+    if (!t) throw new GatewayError(`There is no WhatsApp template for ${message.kind} messages.`, undefined, false, true);
     // A message queued before the society switched to Meta has no values to fill the template with.
     if (!values) throw new GatewayError('This message was written for a linked number and cannot be sent as a template.', undefined, false, true);
     await sendTemplate(meta, message.toPhone, { name: t.name, language: CLOUD_LANGUAGE }, orderedParams(t, values));

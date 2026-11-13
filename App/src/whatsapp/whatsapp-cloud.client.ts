@@ -59,7 +59,7 @@ export function cloudError(status: number, body: GraphError | null): GatewayErro
   }
   // The template is missing, not approved yet, or does not match what was approved.
   if (code === 132001 || code === 132000 || code === 132005 || code === 132007 || code === 132012 || code === 132015 || code === 132016) {
-    return down(`The message template is not ready on this WhatsApp Business account (${text}). Check that all four templates are approved.`);
+    return down(`The message template is not ready on this WhatsApp Business account (${text}). Check that the message templates are approved.`);
   }
   // This person cannot receive it: not on WhatsApp, or the account is still in test mode and the number is not on its list.
   if (code === 131026 || code === 131030 || code === 131021 || code === 131009 || code === 131049 || code === 130472) {

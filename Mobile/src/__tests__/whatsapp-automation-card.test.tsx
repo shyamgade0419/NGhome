@@ -176,10 +176,10 @@ describe('a society that sends through its own Meta WhatsApp Business account', 
     expect(tree.root.findByType(Switch).props.disabled).toBe(false);
   });
 
-  it('warns while Meta has not approved all four templates', async () => {
+  it('warns while Meta has not approved the templates', async () => {
     mockStatus = { ...mockStatus, provider: 'CLOUD', templatesReady: false, sendingFrom: '919000022222', hasSession: true, session: 'ready' };
     const tree = await mount();
-    expect(textOf(tree.root)).toContain('Meta has not approved all four message templates yet');
+    expect(textOf(tree.root)).toContain('Meta has not approved the message templates yet');
   });
 
   it('does not need the platform gateway, and says where to connect when no account is connected', async () => {

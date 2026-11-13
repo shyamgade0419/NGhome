@@ -11,7 +11,7 @@
  * and every blank has an example value.
  */
 
-export type CloudKind = 'BILL_PUBLISHED' | 'REMINDER' | 'FINE_IMPOSED' | 'PAYMENT_RECEIVED';
+export type CloudKind = 'BILL_PUBLISHED' | 'REMINDER' | 'FINE_IMPOSED' | 'PAYMENT_RECEIVED' | 'PAYMENT_RECEIPT';
 
 export const CLOUD_LANGUAGE = 'en';
 /** Meta's own greeting template, present on a new business account, used for the "send a test" button. */
@@ -27,6 +27,12 @@ export interface CloudTemplate {
   params: string[];
   /** One example per blank, which Meta asks for when a template is submitted. */
   samples: string[];
+  /**
+   * Not needed to send: a society can send everything without it. It is submitted with the others and, once Meta approves it,
+   * improves one message (the payment confirmation gains the receipt link). Until then the message goes without the link,
+   * so a society that has not (re)submitted is never held up by it.
+   */
+  optional?: boolean;
 }
 
 export const CLOUD_TEMPLATES: CloudTemplate[] = [
@@ -58,9 +64,22 @@ export const CLOUD_TEMPLATES: CloudTemplate[] = [
     params: ['name', 'amount', 'flat', 'paidOn', 'balance', 'society'],
     samples: ['Ravi Kumar', '2,500', 'A-101', '8 Nov 2026', '0', 'Sunrise Residency'],
   },
+  {
+    // The payment confirmation with a link to the receipt. Meta cannot edit an approved template, so this is a new one beside
+    // ng_payment_received, which stays as the fallback.
+    kind: 'PAYMENT_RECEIPT',
+    name: 'ng_payment_receipt',
+    optional: true,
+    text: 'Hello {{1}}, we have received ₹{{2}} for Flat {{3}} on {{4}}. Thank you! Balance still due: ₹{{5}}. Your receipt is here: {{6}} - sent on behalf of {{7}} via NG Home.',
+    params: ['name', 'amount', 'flat', 'paidOn', 'balance', 'receipt', 'society'],
+    samples: ['Ravi Kumar', '2,500', 'A-101', '8 Nov 2026', '0', 'https://nghome-api.novagade.in/api/v1/public/receipts/AbCdEfGhIjKlMnOpQrStUv.AbCdEfGhIjKlMnOpQrStUv', 'Sunrise Residency'],
+  },
 ];
 
 export const templateOf = (kind: string): CloudTemplate | undefined => CLOUD_TEMPLATES.find((t) => t.kind === kind);
+
+/** Whether a template is one a society can send without. */
+export const isOptionalTemplate = (kind: string): boolean => templateOf(kind)?.optional === true;
 
 /**
  * A value as Meta accepts it in a blank: one line, no tabs, no run of four spaces, not empty and at most 1,024

@@ -196,7 +196,7 @@ export function WhatsappSection({ admin }: { admin: boolean }) {
               {status.queued} waiting{status.failedThisWeek > 0 ? `, ${status.failedThisWeek} failed this week` : ''}.
               {status.provider === 'CLOUD' && status.templatesReady === false && (
                 <span className="mt-1 block text-amber-700">
-                  Meta has not approved all four message templates yet, so messages wait until it does. Check them above.
+                  Meta has not approved the message templates yet, so messages wait until it does. Check them above.
                 </span>
               )}
             </span>
@@ -478,9 +478,10 @@ const TEMPLATE_PURPOSE: Record<string, string> = {
   ng_payment_reminder: 'Payment reminder',
   ng_late_fine: 'Late fine added',
   ng_payment_received: 'Payment received',
+  ng_payment_receipt: 'Payment received, with a link to the receipt',
 };
 
-/** The society's own Meta WhatsApp Business account: connect it, see Meta's verdict on the four templates. */
+/** The society's own Meta WhatsApp Business account: connect it, see Meta's verdict on the message templates. */
 function CloudPanel({ admin, inUse, onUse, using, onChanged }: { admin: boolean; inUse: boolean; onUse: () => void; using: boolean; onChanged: () => void }) {
   const { data: cloud } = useQuery({
     queryKey: ['whatsapp-cloud'],
@@ -522,7 +523,7 @@ function CloudPanel({ admin, inUse, onUse, using, onChanged }: { admin: boolean;
     onSuccess: (r: { submitted: string[]; failed: { name: string; error: string }[] }) => {
       if (r.failed.length) toast.error(`Meta refused ${r.failed[0].name}: ${r.failed[0].error}`);
       else if (r.submitted.length) toast.success(`Sent ${r.submitted.length} template${r.submitted.length === 1 ? '' : 's'} to Meta for approval`);
-      else toast.success('Nothing to send: all four templates are already on your account');
+      else toast.success('Nothing to send: all the templates are already on your account');
       onChanged();
     },
     onError: (e: any) => toast.error(errorText(e, 'Could not send the templates to Meta')),
@@ -570,6 +571,7 @@ function CloudPanel({ admin, inUse, onUse, using, onChanged }: { admin: boolean;
                   <li key={t.name} className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5">
                     <span className="text-slate-700">
                       {TEMPLATE_PURPOSE[t.name] ?? t.name} <span className="font-mono text-[11px] text-slate-400">{t.name}</span>
+                      {t.optional && <span className="ml-1 text-[11px] text-slate-400">(optional)</span>}
                     </span>
                     <span title={t.reason ?? undefined} className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${label.tone}`}>{label.text}</span>
                   </li>
@@ -587,7 +589,7 @@ function CloudPanel({ admin, inUse, onUse, using, onChanged }: { admin: boolean;
                   ? 'Add your WhatsApp Business Account ID (Change details) and NG Home can create these for you and show their approval here.'
                   : cloud.templatesReady
                     ? 'All approved. Your messages can go out.'
-                    : 'Meta usually approves a template within minutes, sometimes up to a day. Messages wait until all four are approved.'}
+                    : 'Meta usually approves a template within minutes, sometimes up to a day. Messages wait until the required templates are approved; the optional receipt one only adds the receipt link, and the confirmation goes without it until Meta approves it.'}
               </span>
             </div>
           </div>

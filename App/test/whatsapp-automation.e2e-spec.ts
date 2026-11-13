@@ -465,6 +465,14 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
       expect(msgs[0]).toMatchObject({ toPhone: wa(40), recipientUserId: payer.userId });
       expect(msgs[0].body).toContain('received *₹1,000*');
       expect(msgs[0].body).toContain('Balance still due: *₹2,000*');
+      // and a link to the receipt, which opens without logging in
+      expect(msgs[0].body).toContain('Your receipt:');
+      const link = msgs[0].body.match(/https?:\/\/\S+/)![0];
+      const page = await http_().get(new URL(link).pathname).expect(200);
+      expect(page.headers['content-type']).toMatch(/text\/html/);
+      expect(page.text).toContain('₹1,000.00');
+      expect(page.text).toContain('Balance still due');
+      expect(page.text).toContain('₹2,000.00');
 
       await drain();
       expect(gw.state.sent.at(-1)?.chatId).toBe(`${wa(40)}@c.us`);
@@ -967,10 +975,43 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
 
       expect((await rows({ kind: 'REMINDER' }))[0].body).not.toContain('MY OWN WORDING');
       expect(await drain()).toMatchObject({ sent: 3, failed: 0 });
-      expect(graph.state.sent.map((m) => m.template).sort()).toEqual(['ng_late_fine', 'ng_payment_received', 'ng_payment_reminder']);
+      // The receipt template is approved here, so the confirmation goes as the one that carries the link.
+      expect(graph.state.sent.map((m) => m.template).sort()).toEqual(['ng_late_fine', 'ng_payment_receipt', 'ng_payment_reminder']);
+      const receiptMsg = graph.state.sent.find((m) => m.template === 'ng_payment_receipt') as { params: string[] };
+      expect(receiptMsg.params).toHaveLength(7);
+      expect(receiptMsg.params[5]).toMatch(/\/api\/v1\/public\/receipts\/[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{22}$/);
+      expect((await rows({ kind: 'PAYMENT_RECEIVED' })).at(-1)!.body).toContain(receiptMsg.params[5]);
+
       const fine = graph.state.sent.find((m) => m.template === 'ng_late_fine') as { params: string[] };
       expect(fine.params).toEqual([expect.any(String), expect.any(String), code, '150', '2,150', expect.any(String)]);
       await setConfig({ reminderTemplate: '' });
+    });
+
+    it('sends the usual confirmation, without the link, while Meta has not approved the receipt template, and holds nothing', async () => {
+      graph.state.templates = CLOUD_TEMPLATES.map((t) => ({ name: t.name, status: t.name === 'ng_payment_receipt' ? 'PENDING' : 'APPROVED', language: 'en' }));
+      const status = (await connectCloud().expect(200)).body.data;
+      expect(status.templatesReady).toBe(true); // the receipt one is optional: the four that matter are approved
+      expect(status.templates.find((t: any) => t.name === 'ng_payment_receipt')).toMatchObject({ status: 'PENDING', optional: true });
+
+      await setConfig({ whatsappEnabled: true });
+      const f = await newFlat();
+      const person = await addPerson(f, SystemRole.RESIDENT, 'OWNER', { isPrimary: true, phone: mobile(753) });
+      const p = await newPeriod('PUBLISHED', '2030-01-10');
+      const bill = await newBill(p, f, 900, `W-${flatNo}`);
+      const pay = await prisma.paymentSubmission.create({
+        data: { societyId, flatId: f, userId: person.userId, maintenanceBillId: bill.id, amount: D(900), paymentDate: new Date('2044-03-06'), paymentMethod: 'UPI', status: 'APPROVED' },
+      });
+      expect(await whatsapp.enqueuePaid(societyId, pay.id)).toBe(true);
+      const queued = (await rows({ kind: 'PAYMENT_RECEIVED' })).at(-1)!;
+      expect(queued.params).not.toHaveProperty('receipt');
+      expect(queued.body).not.toContain('receipts/');
+
+      expect(await drain()).toMatchObject({ failed: 0, stopped: null });
+      const sent = graph.state.sent.at(-1) as { template: string; params: string[] };
+      expect(sent.template).toBe('ng_payment_received');
+      expect(sent.params).toHaveLength(6);
+      resetGraph();
+      await connectCloud().expect(200);
     });
 
     it('holds a society\'s messages when Meta refuses its token, while another society still sends', async () => {
@@ -1019,11 +1060,11 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
       expect(no.error).toMatch(/not in allowed list/);
     });
 
-    it('submits the four templates that are missing, and leaves existing ones alone', async () => {
+    it('submits the templates that are missing, and leaves existing ones alone', async () => {
       await connectCloud().expect(200);
       graph.state.templates = [{ name: 'ng_late_fine', status: 'PENDING', language: 'en' }];
       const res = (await http_().post('/api/v1/whatsapp/cloud/templates').set(auth(admin)).expect(200)).body.data;
-      expect(res.submitted.sort()).toEqual(['ng_bill_published', 'ng_payment_received', 'ng_payment_reminder']);
+      expect(res.submitted.sort()).toEqual(['ng_bill_published', 'ng_payment_receipt', 'ng_payment_received', 'ng_payment_reminder']);
       expect(graph.state.created.map((c) => c.name).sort()).toEqual(res.submitted.sort());
       expect(graph.state.created[0]).toMatchObject({ language: 'en', category: 'UTILITY' });
       expect(graph.state.created[0].components[0].example.body_text[0].length).toBe(graph.state.created[0].components[0].text.match(/\{\{\d+\}\}/g).length);

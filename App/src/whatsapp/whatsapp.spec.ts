@@ -81,6 +81,16 @@ describe('the messages', () => {
     const part = paidMessage({ name: 'Asha', flat: 'A-101', amount: '1000', paidOn: '5 Nov 2026', balance: '2500', society: 'Green Park' });
     expect(part).toContain('Balance still due: *₹2,500*');
   });
+  it('adds the receipt link to a payment confirmation when there is one, and leaves it out when there is not', () => {
+    const url = 'https://nghome-api.novagade.in/api/v1/public/receipts/AbCdEfGhIjKlMnOpQrStUv.AbCdEfGhIjKlMnOpQrStUv';
+    const withLink = paidMessage({ name: 'Asha', flat: 'A-101', amount: '3500', paidOn: '5 Nov 2026', balance: '0', society: 'Green Park', receiptUrl: url });
+    expect(withLink).toContain('Your receipt:');
+    expect(withLink).toContain(url);
+    expect(withLink.indexOf(url)).toBeLessThan(withLink.indexOf('_Green Park_')); // before the society line
+    const without = paidMessage({ name: 'Asha', flat: 'A-101', amount: '3500', paidOn: '5 Nov 2026', balance: '0', society: 'Green Park' });
+    expect(without).not.toContain('receipt');
+    expect(without).not.toContain('http');
+  });
 });
 
 describe('the gateway client', () => {

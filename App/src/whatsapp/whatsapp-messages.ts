@@ -34,13 +34,14 @@ export function fineMessage(v: { name: string; flat: string; month: string; fee:
   ].join('\n');
 }
 
-export function paidMessage(v: { name: string; flat: string; amount: number | string; paidOn: string; balance: number | string; society: string }): string {
+export function paidMessage(v: { name: string; flat: string; amount: number | string; paidOn: string; balance: number | string; society: string; receiptUrl?: string }): string {
   const lines = [
     `Dear ${v.name},`,
     '',
     `✅ We have received *${rupees(v.amount)}* for Flat *${v.flat}* on ${v.paidOn}. Thank you!`,
   ];
   if (Number(v.balance) > 0) lines.push('', `Balance still due: *${rupees(v.balance)}*`);
+  if (v.receiptUrl) lines.push('', '🧾 Your receipt:', v.receiptUrl);
   lines.push('', `_${v.society}_`);
   return lines.join('\n');
 }

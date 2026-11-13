@@ -46,7 +46,7 @@ export interface WhatsappStatus {
   provider: 'OPENWA' | 'CLOUD';
   /** This society has somewhere to send from by the way it chose: a linked number, or a connected Meta account. */
   hasSession: boolean;
-  /** Meta account only: all four message templates approved (null when it cannot be told). */
+  /** Meta account only: the required message templates approved (null when it cannot be told). */
   templatesReady: boolean | null;
   /** The platform owner has allowed this society to use WhatsApp. Without it the society cannot switch messages on. */
   allowed: boolean;
@@ -129,6 +129,8 @@ export interface WhatsappCloudTemplate {
   /** APPROVED | PENDING | REJECTED | PAUSED | DISABLED | NOT_SUBMITTED | UNKNOWN */
   status: string;
   reason: string | null;
+  /** Not needed to send: once approved it adds to a message (the receipt link on the payment confirmation). */
+  optional?: boolean;
 }
 
 /** A society's own Meta WhatsApp Business (Cloud API) account. The access token is never sent back. */

@@ -23,6 +23,8 @@ export interface CloudTemplateView {
   /** APPROVED | PENDING | REJECTED | PAUSED | DISABLED ... as Meta reports it; NOT_SUBMITTED when it has not been sent for approval. */
   status: string;
   reason: string | null;
+  /** Not needed to send; once approved it adds to a message (the receipt link on the payment confirmation). */
+  optional?: boolean;
 }
 
 /** What a society sees about its Meta account. The access token is never in here, only whether one is saved. */
@@ -41,7 +43,7 @@ export interface CloudState {
   status: 'ready' | 'token_invalid' | 'error' | null;
   problem: string | null;
   templates: CloudTemplateView[];
-  /** All four templates approved; null when that cannot be known (no Business Account ID entered). */
+  /** Every required template approved (the optional ones do not count); null when that cannot be known (no Business Account ID entered). */
   templatesReady: boolean | null;
 }
 
@@ -113,7 +115,7 @@ export class WhatsappCloudService {
       verifiedName: row?.verifiedName ?? null,
       status: null,
       problem: null,
-      templates: CLOUD_TEMPLATES.map((t) => ({ kind: t.kind, name: t.name, status: row?.wabaId ? 'NOT_SUBMITTED' : 'UNKNOWN', reason: null })),
+      templates: CLOUD_TEMPLATES.map((t) => ({ kind: t.kind, name: t.name, status: row?.wabaId ? 'NOT_SUBMITTED' : 'UNKNOWN', reason: null, optional: t.optional === true })),
       templatesReady: null,
     };
     if (!row) return base;
@@ -142,9 +144,10 @@ export class WhatsappCloudService {
   private withTemplates(live: CloudTemplateStatus[]): Pick<CloudState, 'templates' | 'templatesReady'> {
     const templates = CLOUD_TEMPLATES.map((t) => {
       const found = live.find((l) => l.name === t.name);
-      return { kind: t.kind, name: t.name, status: found?.status ?? 'NOT_SUBMITTED', reason: found?.rejectedReason ?? null };
+      return { kind: t.kind, name: t.name, status: found?.status ?? 'NOT_SUBMITTED', reason: found?.rejectedReason ?? null, optional: t.optional === true };
     });
-    return { templates, templatesReady: templates.every((t) => t.status === 'APPROVED') };
+    // Only the required templates decide whether messages can be sent; the optional ones just add to a message once approved.
+    return { templates, templatesReady: templates.filter((t) => !t.optional).every((t) => t.status === 'APPROVED') };
   }
 
   /**

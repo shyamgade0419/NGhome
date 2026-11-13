@@ -128,7 +128,8 @@ in WhatsApp Manager, the **Phone number ID**, a **token** (a system-user token w
 message goes as a template Meta approved beforehand. NG Home has four, in the UTILITY category: `ng_bill_published`,
 `ng_payment_reminder`, `ng_late_fine` and `ng_payment_received`. **Send the missing templates to Meta** creates them on the
 society's account, and the panel shows each one's verdict (Waiting for Meta, Approved, Rejected). Approval usually takes minutes
-to a day. Until all four are approved, messages wait in the queue. The wording is fixed once approved, so the society's own
+to a day. Until the four required ones are approved, messages wait in the queue. A fifth, `ng_payment_receipt`, is optional (see
+**The receipt link** below): the society can send everything without it. The wording is fixed once approved, so the society's own
 reminder wording applies only to WhatsApp links sent by hand. The templates are defined in
 `App/src/whatsapp/whatsapp-cloud-templates.ts`.
 
@@ -151,3 +152,25 @@ reminder wording applies only to WhatsApp links sent by hand. The templates are 
 
 Environment (optional): `WHATSAPP_CLOUD_API_VERSION` (default `v21.0`), `WHATSAPP_CLOUD_API_BASE` (default
 `https://graph.facebook.com`), `WHATSAPP_CLOUD_GAP_MS` (default 250).
+
+## The receipt link on the payment confirmation
+
+When the admin approves (or records) a payment, the confirmation message carries a link to that payment's receipt:
+`https://<api address>/api/v1/public/receipts/<token>`. It opens on a phone with no login and shows the society, the receipt
+number, the date, who paid and for which flat, how, the bills it settled, and what is still due, as a page that can be printed or
+saved as a PDF from the browser.
+
+- **The link is the key.** The token holds the payment's id and a signature made with a secret only the server has, so it cannot
+  be guessed or made up for another payment, and changing any character fails. A link that is wrong, tampered with, for a payment
+  that was not approved, or for one that does not exist all give the same empty "not valid" page, with no hint why.
+- **Safe to open.** Everything a person typed (names, references) is escaped. The page is sent with a strict content policy (one
+  inline script, nothing from outside), `no-store`, `noindex` and `no-referrer`.
+- **Linked number (OpenWA):** the message simply gains a "Your receipt:" line with the link.
+- **Meta:** the link needs its own template, `ng_payment_receipt` (Meta cannot edit an approved template, so it is a new one beside
+  `ng_payment_received`). It is **optional**: submit it with **Send the missing templates to Meta**; once Meta approves it the
+  confirmation goes as that template with the link. Until then the confirmation goes as the usual template without the link, so a
+  society that has not submitted it is never held up. An existing society just clicks the button once.
+
+Environment: `RECEIPT_LINK_SECRET` (the signing secret; falls back to `SETTINGS_ENCRYPTION_KEY`, then `JWT_ACCESS_SECRET`, at
+least 16 characters; with none, no link is added) and `PUBLIC_API_URL` (the address the link points at; default
+`https://nghome-api.novagade.in`). Changing the secret makes every link already sent stop working.

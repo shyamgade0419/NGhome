@@ -53,7 +53,7 @@ export interface WhatsappStatus {
   provider: 'OPENWA' | 'CLOUD';
   /** This society has somewhere to send from by the way it chose (a linked number, or a connected Meta account), set up on the web. */
   hasSession: boolean;
-  /** Meta account only: all four message templates approved (null when it cannot be told). */
+  /** Meta account only: the required message templates approved (null when it cannot be told). */
   templatesReady: boolean | null;
   /** The platform owner has allowed this society to use WhatsApp. Without it the society cannot switch messages on. */
   allowed: boolean;
