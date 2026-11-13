@@ -174,3 +174,24 @@ saved as a PDF from the browser.
 Environment: `RECEIPT_LINK_SECRET` (the signing secret; falls back to `SETTINGS_ENCRYPTION_KEY`, then `JWT_ACCESS_SECRET`, at
 least 16 characters; with none, no link is added) and `PUBLIC_API_URL` (the address the link points at; default
 `https://nghome-api.novagade.in`). Changing the secret makes every link already sent stop working.
+
+## The second reminder
+
+A flat can be reminded more than once about the same bill (the reminder days are the 5th and 10th unless the admin chose others),
+and the second message does not have to read like the first. There are two wordings, each written once in Settings → Billing Rules
+→ WhatsApp:
+
+- **First reminder** (`reminderTemplate`): the message a flat gets the first time it is reminded about its bill.
+- **Second reminder** (`finalReminderTemplate`): what it gets on a later reminder day, when it was already reminded about this bill
+  and still has not paid. Without wording of its own it gets a firmer standard one ("This is a second reminder...").
+
+Which one a flat gets is decided by what that flat has actually been sent, not by the day of the month: it gets the second wording
+only if a reminder was queued or sent for it on an earlier day since its bill was published. So a bill published on the 7th gets
+the first wording on the 10th, a reminder that failed to send does not count, running the pass twice in a day changes nothing, and
+every reminder day after the first uses the second wording. (A reminder's day is the one in its key, `reminder:<flat>:<date>`.)
+
+- **Linked number (OpenWA):** the two wordings are sent as written, with the flat's details filled in.
+- **Meta:** the second reminder has its own optional template, `ng_payment_reminder_final`. Once Meta approves it, the second
+  reminder goes as that template; until then both go as `ng_payment_reminder`, and nothing is held up. Existing Meta societies click
+  **Send the missing templates to Meta** once. As with every Meta template, the wording is fixed once approved, so the editable
+  wording applies to a linked number and to links sent by hand.

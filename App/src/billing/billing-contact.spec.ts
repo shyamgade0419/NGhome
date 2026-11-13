@@ -1,5 +1,5 @@
 import { describeContact, pickBillContact } from './billing-contact';
-import { DEFAULT_REMINDER_TEMPLATE, readReminderTemplate, renderReminder } from './reminder-template';
+import { DEFAULT_FINAL_REMINDER_TEMPLATE, DEFAULT_REMINDER_TEMPLATE, readFinalReminderTemplate, readReminderTemplate, renderReminder } from './reminder-template';
 
 const person = (
   first: string,
@@ -85,5 +85,29 @@ describe('the reminder template', () => {
     expect(out).not.toMatch(/\{\w+\}/);
     expect(out).toContain('Dear Asha');
     expect(out).toContain('A-101');
+  });
+
+  describe('the follow-up reminder', () => {
+    it('is its own wording, kept apart from the first, and a society that has not written one gets the default', () => {
+      expect(readFinalReminderTemplate(undefined)).toBe(DEFAULT_FINAL_REMINDER_TEMPLATE);
+      expect(readFinalReminderTemplate(null)).toBe(DEFAULT_FINAL_REMINDER_TEMPLATE);
+      expect(readFinalReminderTemplate({})).toBe(DEFAULT_FINAL_REMINDER_TEMPLATE);
+      expect(readFinalReminderTemplate({ finalReminderTemplate: '   ' })).toBe(DEFAULT_FINAL_REMINDER_TEMPLATE);
+      expect(readFinalReminderTemplate({ finalReminderTemplate: 7 })).toBe(DEFAULT_FINAL_REMINDER_TEMPLATE);
+      expect(readFinalReminderTemplate({ finalReminderTemplate: 'Second chance {name}' })).toBe('Second chance {name}');
+      // writing only the first does not change the follow-up, and the other way round
+      expect(readFinalReminderTemplate({ reminderTemplate: 'First only' })).toBe(DEFAULT_FINAL_REMINDER_TEMPLATE);
+      expect(readReminderTemplate({ finalReminderTemplate: 'Follow-up only' })).toBe(DEFAULT_REMINDER_TEMPLATE);
+    });
+
+    it('says it is a second reminder, unlike the first, and uses only placeholders that exist', () => {
+      expect(DEFAULT_FINAL_REMINDER_TEMPLATE).not.toBe(DEFAULT_REMINDER_TEMPLATE);
+      const out = renderReminder(DEFAULT_FINAL_REMINDER_TEMPLATE, vars);
+      expect(out).toContain('second reminder');
+      expect(out).not.toMatch(/\{\w+\}/);
+      expect(out).toContain('Dear Asha');
+      expect(out).toContain('A-101');
+      expect(renderReminder(DEFAULT_REMINDER_TEMPLATE, vars)).not.toContain('second reminder');
+    });
   });
 });

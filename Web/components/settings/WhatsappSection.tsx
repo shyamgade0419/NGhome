@@ -75,11 +75,15 @@ export function WhatsappSection({ admin }: { admin: boolean }) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [days, setDays] = useState<string | null>(null);
   const [tpl, setTpl] = useState<string | null>(null);
+  const [finalTpl, setFinalTpl] = useState<string | null>(null);
   const saved = (config?.additionalConfig as any)?.whatsapp;
   const shownEnabled = enabled ?? saved?.enabled === true;
   const shownDays = days ?? (saved?.reminderDays ?? [5, 10]).join(', ');
   const shownTpl = tpl ?? tplData?.template ?? '';
-  const dirty = enabled !== null || days !== null || tpl !== null;
+  // An older server does not know the second reminder: then there is nothing to show or save for it.
+  const hasSecond = tplData?.finalTemplate !== undefined && tplData?.defaultFinalTemplate !== undefined;
+  const shownFinal = finalTpl ?? tplData?.finalTemplate ?? '';
+  const dirty = enabled !== null || days !== null || tpl !== null || finalTpl !== null;
 
   const save = useMutation({
     mutationFn: () =>
@@ -88,12 +92,14 @@ export function WhatsappSection({ admin }: { admin: boolean }) {
         whatsappReminderDays: parseReminderDays(shownDays),
         // Wording the same as the standard is stored as "unset", so the society follows the standard if it improves.
         ...(tpl !== null ? { reminderTemplate: tpl.trim() === tplData?.defaultTemplate.trim() ? '' : tpl.trim() } : {}),
+        ...(finalTpl !== null && hasSecond ? { finalReminderTemplate: finalTpl.trim() === tplData?.defaultFinalTemplate?.trim() ? '' : finalTpl.trim() } : {}),
       }),
     onSuccess: () => {
       toast.success('WhatsApp settings saved');
       setEnabled(null);
       setDays(null);
       setTpl(null);
+      setFinalTpl(null);
       qc.invalidateQueries({ queryKey: ['society-config'] });
       qc.invalidateQueries({ queryKey: ['reminder-template'] });
       qc.invalidateQueries({ queryKey: ['billing-period-reminders'] });
@@ -115,12 +121,13 @@ export function WhatsappSection({ admin }: { admin: boolean }) {
   });
 
   const addToken = (token: string) => setTpl(`${shownTpl}${shownTpl && !/\s$/.test(shownTpl) ? ' ' : ''}${token}`);
+  const addFinalToken = (token: string) => setFinalTpl(`${shownFinal}${shownFinal && !/\s$/.test(shownFinal) ? ' ' : ''}${token}`);
 
   return (
     <div className="space-y-5">
       {status?.allowed && <SendingWayPanel admin={admin} status={status} />}
 
-      <Heading>Reminder wording</Heading>
+      <Heading>{hasSecond ? 'First reminder wording' : 'Reminder wording'}</Heading>
       <div className="space-y-3 rounded-lg border border-green-100 bg-green-50 p-4">
         <p className="text-xs text-green-800">
           The message sent to a flat that has not paid. Each flat gets its own details filled in. It goes to the tenant when
@@ -129,7 +136,7 @@ export function WhatsappSection({ admin }: { admin: boolean }) {
         {status?.provider === 'CLOUD' && (
           <p role="note" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
             Your society sends through its WhatsApp Business account, which can only send message templates that Meta approved
-            beforehand. The automatic reminder therefore uses the approved template, and this wording applies only to WhatsApp
+            beforehand. The automatic reminders therefore use the approved templates, and this wording applies only to WhatsApp
             links you send by hand from a bill.
           </p>
         )}
@@ -160,6 +167,52 @@ export function WhatsappSection({ admin }: { admin: boolean }) {
           </button>
         )}
       </div>
+
+      {hasSecond && (
+        <>
+          <Heading>Second reminder wording</Heading>
+          <div className="space-y-3 rounded-lg border border-green-100 bg-green-50 p-4">
+            <p className="text-xs text-green-800">
+              Sent on a later reminder day to a flat that was already reminded about this bill and still has not paid. A flat
+              reminded for the first time always gets the first wording, whichever day it is. Everything above about the details
+              you can use applies here too.
+            </p>
+            {status?.provider === 'CLOUD' && (
+              <p role="note" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Through your WhatsApp Business account the second reminder goes as the optional approved template
+                <span className="font-mono"> ng_payment_reminder_final</span> once Meta has approved it (see the templates below), and as the
+                usual reminder template until then. This wording applies only to links you send by hand.
+              </p>
+            )}
+            <div className="flex flex-wrap gap-1.5" aria-label="Details you can put in the second reminder">
+              {(tplData?.placeholders ?? []).map((p) => (
+                <button
+                  key={p.token}
+                  type="button"
+                  disabled={!admin}
+                  title={`${p.token}: ${p.meaning}. Click to add it at the end.`}
+                  onClick={() => addFinalToken(p.token)}
+                  className="rounded-full border border-green-200 bg-white px-2.5 py-1 font-mono text-[11px] text-green-800 hover:bg-green-100 disabled:opacity-50"
+                >
+                  {p.token}
+                </button>
+              ))}
+            </div>
+            <Textarea label="Second reminder message" rows={9} maxLength={1500} value={shownFinal} disabled={!admin} onChange={(e) => setFinalTpl(e.target.value)} />
+            <div>
+              <p className="mb-1 text-xs font-medium text-slate-600">How it looks for one flat</p>
+              <pre className="whitespace-pre-wrap rounded-lg border border-green-100 bg-white p-3 font-sans text-xs text-slate-800">
+                {previewReminder(shownFinal) || 'Nothing yet: the standard wording will be used.'}
+              </pre>
+            </div>
+            {admin && tplData?.defaultFinalTemplate && shownFinal.trim() !== tplData.defaultFinalTemplate.trim() && (
+              <button type="button" onClick={() => setFinalTpl(tplData.defaultFinalTemplate!)} className="text-xs font-medium text-green-800 underline hover:text-green-900">
+                Go back to the standard second reminder
+              </button>
+            )}
+          </div>
+        </>
+      )}
 
       <Heading>Automatic messages</Heading>
       <div className="space-y-3 rounded-lg border border-green-100 bg-green-50 p-4">
@@ -476,6 +529,7 @@ const TEMPLATE_LABEL: Record<string, { text: string; tone: string }> = {
 const TEMPLATE_PURPOSE: Record<string, string> = {
   ng_bill_published: 'Bill is ready',
   ng_payment_reminder: 'Payment reminder',
+  ng_payment_reminder_final: 'Second payment reminder',
   ng_late_fine: 'Late fine added',
   ng_payment_received: 'Payment received',
   ng_payment_receipt: 'Payment received, with a link to the receipt',

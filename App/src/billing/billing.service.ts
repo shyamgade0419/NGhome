@@ -20,7 +20,7 @@ import { generateInvoiceNumber } from '../common/utils/invoice-number';
 import { getPaginationParams, buildPaginationMeta } from '../common/utils/pagination';
 import { pickBillContact, describeContact } from './billing-contact';
 import {
-  DEFAULT_REMINDER_TEMPLATE, MONTH_NAMES, REMINDER_PLACEHOLDERS, readReminderTemplate, renderReminder,
+  DEFAULT_FINAL_REMINDER_TEMPLATE, DEFAULT_REMINDER_TEMPLATE, MONTH_NAMES, REMINDER_PLACEHOLDERS, readFinalReminderTemplate, readReminderTemplate, renderReminder,
 } from './reminder-template';
 
 @Injectable()
@@ -517,10 +517,15 @@ export class BillingService {
   async getReminderTemplate(societyId: string) {
     const config = await this.prisma.societyConfiguration.findUnique({ where: { societyId }, select: { additionalConfig: true } });
     const template = readReminderTemplate(config?.additionalConfig);
+    const finalTemplate = readFinalReminderTemplate(config?.additionalConfig);
     return {
       template,
       isDefault: template === DEFAULT_REMINDER_TEMPLATE,
       defaultTemplate: DEFAULT_REMINDER_TEMPLATE,
+      // The follow-up: sent to a flat that has already been reminded about its bill and still has not paid.
+      finalTemplate,
+      isFinalDefault: finalTemplate === DEFAULT_FINAL_REMINDER_TEMPLATE,
+      defaultFinalTemplate: DEFAULT_FINAL_REMINDER_TEMPLATE,
       placeholders: REMINDER_PLACEHOLDERS,
     };
   }

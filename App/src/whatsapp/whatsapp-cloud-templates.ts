@@ -11,7 +11,7 @@
  * and every blank has an example value.
  */
 
-export type CloudKind = 'BILL_PUBLISHED' | 'REMINDER' | 'FINE_IMPOSED' | 'PAYMENT_RECEIVED' | 'PAYMENT_RECEIPT';
+export type CloudKind = 'BILL_PUBLISHED' | 'REMINDER' | 'REMINDER_FINAL' | 'FINE_IMPOSED' | 'PAYMENT_RECEIVED' | 'PAYMENT_RECEIPT';
 
 export const CLOUD_LANGUAGE = 'en';
 /** Meta's own greeting template, present on a new business account, used for the "send a test" button. */
@@ -47,6 +47,16 @@ export const CLOUD_TEMPLATES: CloudTemplate[] = [
     kind: 'REMINDER',
     name: 'ng_payment_reminder',
     text: 'Hello {{1}}, this is a reminder that maintenance for Flat {{2}} ({{3}}) is still unpaid. Amount due: ₹{{4}}. Due date: {{5}}. Please pay in the NG Home app. If you have already paid, please ignore this message. Sent on behalf of {{6}} via NG Home.',
+    params: ['name', 'flat', 'month', 'amount', 'dueDate', 'society'],
+    samples: ['Ravi Kumar', 'A-101', 'Nov 2026', '2,500', '10 Nov 2026', 'Sunrise Residency'],
+  },
+  {
+    // The follow-up reminder, for a flat already reminded about this bill. Optional: until Meta approves it the usual reminder
+    // goes instead, so a society that has not submitted it is never held up.
+    kind: 'REMINDER_FINAL',
+    name: 'ng_payment_reminder_final',
+    optional: true,
+    text: 'Hello {{1}}, this is a second reminder that maintenance for Flat {{2}} ({{3}}) is still unpaid. Amount due: ₹{{4}}. Due date: {{5}}. Please pay at the earliest in the NG Home app. If you have already paid, please ignore this message. Sent on behalf of {{6}} via NG Home.',
     params: ['name', 'flat', 'month', 'amount', 'dueDate', 'society'],
     samples: ['Ravi Kumar', 'A-101', 'Nov 2026', '2,500', '10 Nov 2026', 'Sunrise Residency'],
   },

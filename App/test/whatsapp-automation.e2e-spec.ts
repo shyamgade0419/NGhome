@@ -298,7 +298,7 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
     let batch = 0;
     async function unpaidFlats() {
       batch += 1;
-      const k = batch * 100; // fresh phone numbers every call: a phone number belongs to one user
+      const k = 3000 + batch * 100; // fresh phone numbers every call: a phone number belongs to one user
       await settleOthers();
       const flat1 = await newFlat(); const c1 = `W-${flatNo}`;
       await addPerson(flat1, SystemRole.RESIDENT, 'OWNER', { isPrimary: true, phone: mobile(k + 10) });
@@ -340,6 +340,141 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
       expect(await rows({ kind: 'REMINDER' })).toHaveLength(3);
       // the next reminder day is a new day
       expect(await whatsapp.enqueueReminders(societyId, new Date('2044-03-10T06:00:00Z'))).toBe(3);
+    });
+
+    describe('the second reminder', () => {
+      const tenth = new Date('2044-03-10T06:00:00Z');
+      const setWording = (body: Record<string, unknown>) => http_().patch('/api/v1/societies/my/config').set(auth(admin)).send(body).expect(200);
+      afterEach(async () => { await setWording({ reminderTemplate: '', finalReminderTemplate: '' }); });
+      // The test periods are named for later months than the 2044 dates simulated here, so say when the bill was published: the 1st.
+      const publishedOnFirst = (periodId: string) => prisma.billingPeriod.update({ where: { id: periodId }, data: { publishedAt: new Date('2044-03-01T00:00:00Z') } });
+      const unpaid = async () => { const r = await unpaidFlats(); await publishedOnFirst(r.p); return r; };
+
+      it('sends the first wording on the first reminder day and the follow-up wording on the next, to a flat that still has not paid', async () => {
+        await setConfig({ whatsappEnabled: true });
+        await setWording({ reminderTemplate: 'FIRST {name} owes {amount}', finalReminderTemplate: 'AGAIN {name} still owes {amount}' });
+        await unpaid();
+
+        expect(await whatsapp.enqueueReminders(societyId, fifth)).toBe(3);
+        const first = await rows({ kind: 'REMINDER' });
+        expect(first).toHaveLength(3);
+        for (const r of first) expect(r.body).toMatch(/^FIRST /);
+
+        expect(await whatsapp.enqueueReminders(societyId, tenth)).toBe(3);
+        const all = await rows({ kind: 'REMINDER' });
+        expect(all).toHaveLength(6);
+        const second = all.filter((r) => r.dedupeKey.endsWith('2044-03-10'));
+        expect(second).toHaveLength(3);
+        for (const r of second) expect(r.body).toMatch(/^AGAIN .* still owes /);
+        // and the first day's messages are still the first wording
+        for (const r of all.filter((x) => x.dedupeKey.endsWith('2044-03-05'))) expect(r.body).toMatch(/^FIRST /);
+      });
+
+      it('uses a firmer default for the second reminder when the society has not written one, and the usual default for the first', async () => {
+        await setConfig({ whatsappEnabled: true });
+        await unpaid();
+        await whatsapp.enqueueReminders(societyId, fifth);
+        await whatsapp.enqueueReminders(societyId, tenth);
+        const all = await rows({ kind: 'REMINDER' });
+        for (const r of all.filter((x) => x.dedupeKey.endsWith('2044-03-05'))) {
+          expect(r.body).toContain('gentle reminder');
+          expect(r.body).not.toContain('second reminder');
+        }
+        for (const r of all.filter((x) => x.dedupeKey.endsWith('2044-03-10'))) {
+          expect(r.body).toContain('second reminder');
+          expect(r.body).not.toContain('gentle reminder');
+        }
+      });
+
+      it('writing only the first wording leaves the second at its default, and the other way round', async () => {
+        await setConfig({ whatsappEnabled: true });
+        await setWording({ reminderTemplate: 'ONLY FIRST {name}' });
+        await unpaid();
+        await whatsapp.enqueueReminders(societyId, fifth);
+        await whatsapp.enqueueReminders(societyId, tenth);
+        let all = await rows({ kind: 'REMINDER' });
+        expect(all.filter((x) => x.dedupeKey.endsWith('2044-03-05')).every((r) => r.body.startsWith('ONLY FIRST'))).toBe(true);
+        expect(all.filter((x) => x.dedupeKey.endsWith('2044-03-10')).every((r) => r.body.includes('second reminder'))).toBe(true);
+
+        await reset();
+        await setWording({ reminderTemplate: '', finalReminderTemplate: 'ONLY SECOND {name}' });
+        await unpaid();
+        await whatsapp.enqueueReminders(societyId, fifth);
+        await whatsapp.enqueueReminders(societyId, tenth);
+        all = await rows({ kind: 'REMINDER' });
+        expect(all.filter((x) => x.dedupeKey.endsWith('2044-03-05')).every((r) => r.body.includes('gentle reminder'))).toBe(true);
+        expect(all.filter((x) => x.dedupeKey.endsWith('2044-03-10')).every((r) => r.body.startsWith('ONLY SECOND'))).toBe(true);
+      });
+
+      it('gives a bill published after the first reminder day the first wording on its first reminder, not the second', async () => {
+        await setConfig({ whatsappEnabled: true });
+        await setWording({ reminderTemplate: 'FIRST {name}', finalReminderTemplate: 'AGAIN {name}' });
+        const { p } = await unpaidFlats();
+        await whatsapp.enqueueReminders(societyId, fifth); // reminded on the 5th
+        // ... but this bill was only published on the 7th: the 5th was not a reminder about it
+        await prisma.billingPeriod.update({ where: { id: p }, data: { publishedAt: new Date('2044-03-07T06:00:00Z') } });
+        expect(await whatsapp.enqueueReminders(societyId, tenth)).toBe(3);
+        const onTenth = (await rows({ kind: 'REMINDER' })).filter((r) => r.dedupeKey.endsWith('2044-03-10'));
+        for (const r of onTenth) expect(r.body).toMatch(/^FIRST /);
+      });
+
+      it('does not count a reminder that never went out', async () => {
+        await setConfig({ whatsappEnabled: true });
+        await setWording({ reminderTemplate: 'FIRST {name}', finalReminderTemplate: 'AGAIN {name}' });
+        await unpaid();
+        await whatsapp.enqueueReminders(societyId, fifth);
+        await prisma.whatsappMessage.updateMany({ where: { societyId, kind: 'REMINDER' }, data: { status: 'FAILED' } });
+        await whatsapp.enqueueReminders(societyId, tenth);
+        const onTenth = (await rows({ kind: 'REMINDER' })).filter((r) => r.dedupeKey.endsWith('2044-03-10'));
+        expect(onTenth).toHaveLength(3);
+        for (const r of onTenth) expect(r.body).toMatch(/^FIRST /); // the 5th failed, so this is still the first one they get
+      });
+
+      it('keeps the second reminder\'s wording when the pass runs again the same day', async () => {
+        await setConfig({ whatsappEnabled: true });
+        await setWording({ reminderTemplate: 'FIRST {name}', finalReminderTemplate: 'AGAIN {name}' });
+        await unpaid();
+        await whatsapp.enqueueReminders(societyId, fifth);
+        expect(await whatsapp.enqueueReminders(societyId, tenth)).toBe(3);
+        expect(await whatsapp.enqueueReminders(societyId, new Date(tenth.getTime() + 3 * 3600_000))).toBe(0);
+        const onTenth = (await rows({ kind: 'REMINDER' })).filter((r) => r.dedupeKey.endsWith('2044-03-10'));
+        expect(onTenth).toHaveLength(3);
+        for (const r of onTenth) expect(r.body).toMatch(/^AGAIN /);
+      });
+
+      it('sends the second wording on every reminder day after the first when the admin chose more days', async () => {
+        await setConfig({ whatsappEnabled: true, whatsappReminderDays: [5, 10, 15] });
+        await setWording({ reminderTemplate: 'FIRST {name}', finalReminderTemplate: 'AGAIN {name}' });
+        await unpaid();
+        await whatsapp.enqueueReminders(societyId, fifth);
+        await whatsapp.enqueueReminders(societyId, tenth);
+        await whatsapp.enqueueReminders(societyId, new Date('2044-03-15T06:00:00Z'));
+        const byDay = (d: string) => rows({ kind: 'REMINDER' }).then((all) => all.filter((r) => r.dedupeKey.endsWith(d)));
+        for (const r of await byDay('2044-03-05')) expect(r.body).toMatch(/^FIRST /);
+        for (const r of await byDay('2044-03-10')) expect(r.body).toMatch(/^AGAIN /);
+        for (const r of await byDay('2044-03-15')) expect(r.body).toMatch(/^AGAIN /);
+        await setConfig({ whatsappReminderDays: [5, 10] });
+      });
+
+      it('is saved on its own, read back with its default, and a blank goes back to the default', async () => {
+        const read = async () => (await http_().get('/api/v1/billing/reminder-template').set(auth(admin)).expect(200)).body.data;
+        let t = await read();
+        expect(t.isFinalDefault).toBe(true);
+        expect(t.finalTemplate).toBe(t.defaultFinalTemplate);
+        expect(t.defaultFinalTemplate).toContain('second reminder');
+        expect(t.defaultFinalTemplate).not.toBe(t.defaultTemplate);
+
+        await setWording({ finalReminderTemplate: '  Please pay {name}  ' });
+        t = await read();
+        expect(t).toMatchObject({ isFinalDefault: false, finalTemplate: 'Please pay {name}', isDefault: true }); // the first is untouched
+        await setWording({ finalReminderTemplate: '' });
+        t = await read();
+        expect(t.isFinalDefault).toBe(true);
+      });
+
+      it('refuses a follow-up wording that is too long', async () => {
+        await http_().patch('/api/v1/societies/my/config').set(auth(admin)).send({ finalReminderTemplate: 'x'.repeat(1501) }).expect(400);
+      });
     });
 
     it('does nothing on other days of the month', async () => {
@@ -1014,6 +1149,44 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
       await connectCloud().expect(200);
     });
 
+    it('sends the second reminder as its own template once Meta approves it, and the usual reminder template before that', async () => {
+      const fifthDay = new Date('2044-03-05T06:00:00Z');
+      const tenthDay = new Date('2044-03-10T06:00:00Z');
+      const run = async (approvedFinal: boolean) => {
+        resetGraph();
+        graph.state.templates = CLOUD_TEMPLATES.map((t) => ({ name: t.name, status: t.name === 'ng_payment_reminder_final' && !approvedFinal ? 'PENDING' : 'APPROVED', language: 'en' }));
+        await connectCloud().expect(200);
+        await reset();
+        await setConfig({ whatsappEnabled: true });
+        await settleOthers();
+        const f = await newFlat();
+        await addPerson(f, SystemRole.RESIDENT, 'OWNER', { isPrimary: true, phone: mobile(approvedFinal ? 754 : 755) });
+        const p = await newPeriod('PUBLISHED', '2030-01-10');
+        await prisma.billingPeriod.update({ where: { id: p }, data: { publishedAt: new Date('2044-03-01T00:00:00Z') } });
+        await newBill(p, f, 2000, `W-${flatNo}`);
+        expect(await whatsapp.enqueueReminders(societyId, fifthDay)).toBe(1);
+        expect(await whatsapp.enqueueReminders(societyId, tenthDay)).toBe(1);
+        expect(await drain()).toMatchObject({ sent: 2, failed: 0, stopped: null });
+        return graph.state.sent.map((m) => m.template);
+      };
+
+      // Approved: the 5th goes as the usual reminder, the 10th as the follow-up, with the same six details.
+      expect(await run(true)).toEqual(['ng_payment_reminder', 'ng_payment_reminder_final']);
+      const second = graph.state.sent.find((m) => m.template === 'ng_payment_reminder_final') as { params: string[] };
+      expect(second.params).toHaveLength(6);
+      expect(second.params[3]).toBe('2,000');
+      const secondRow = (await rows({ kind: 'REMINDER' })).find((r) => r.dedupeKey.endsWith('2044-03-10'))!;
+      expect(secondRow.body).toContain('second reminder');
+
+      // Not approved yet: both go as the usual reminder, nothing is held, and the society is still ready to send.
+      expect(await run(false)).toEqual(['ng_payment_reminder', 'ng_payment_reminder']);
+      const status = (await http_().get('/api/v1/whatsapp/cloud').set(auth(admin)).expect(200)).body.data;
+      expect(status.templatesReady).toBe(true);
+      expect(status.templates.find((t: any) => t.name === 'ng_payment_reminder_final')).toMatchObject({ optional: true, status: 'PENDING' });
+      resetGraph();
+      await connectCloud().expect(200);
+    });
+
     it('holds a society\'s messages when Meta refuses its token, while another society still sends', async () => {
       await connectCloud().expect(200);
       await prisma.whatsappMessage.create({ data: { societyId, kind: 'PAYMENT_RECEIVED', dedupeKey: `tok-${UNIQUE}`, sendAfter: new Date(Date.now() - 5_000), toPhone: wa(43), body: 'b', params: { name: 'A', amount: '1', flat: 'F', paidOn: 'd', balance: '0', society: 'S' } } });
@@ -1064,7 +1237,7 @@ describe('WhatsApp automation (e2e, real Postgres, fake gateway)', () => {
       await connectCloud().expect(200);
       graph.state.templates = [{ name: 'ng_late_fine', status: 'PENDING', language: 'en' }];
       const res = (await http_().post('/api/v1/whatsapp/cloud/templates').set(auth(admin)).expect(200)).body.data;
-      expect(res.submitted.sort()).toEqual(['ng_bill_published', 'ng_payment_receipt', 'ng_payment_received', 'ng_payment_reminder']);
+      expect(res.submitted.sort()).toEqual(['ng_bill_published', 'ng_payment_receipt', 'ng_payment_received', 'ng_payment_reminder', 'ng_payment_reminder_final']);
       expect(graph.state.created.map((c) => c.name).sort()).toEqual(res.submitted.sort());
       expect(graph.state.created[0]).toMatchObject({ language: 'en', category: 'UTILITY' });
       expect(graph.state.created[0].components[0].example.body_text[0].length).toBe(graph.state.created[0].components[0].text.match(/\{\{\d+\}\}/g).length);

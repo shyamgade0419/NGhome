@@ -119,6 +119,14 @@ export class UpdateSocietyConfigDto {
   reminderTemplate?: string;
 
   @ApiPropertyOptional({
+    description: 'The wording of the follow-up reminder: what a flat gets when it was already reminded about its bill and still has not paid, filled in per flat like reminderTemplate (stored in additionalConfig). An empty value goes back to the default wording.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1500)
+  finalReminderTemplate?: string;
+
+  @ApiPropertyOptional({
     description: 'Send bill, reminder, late-fine and payment-received messages on WhatsApp automatically (stored in additionalConfig). Needs the WhatsApp gateway connected to the server.',
   })
   @IsOptional()

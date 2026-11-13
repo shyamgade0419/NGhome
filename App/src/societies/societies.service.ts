@@ -503,11 +503,12 @@ export class SocietiesService {
     const featuresProblem = dto.features !== undefined ? featurePatchProblem(dto.features) : null;
     if (featuresProblem) throw new BadRequestException(featuresProblem);
 
-    const { upiId, waterBillingEnabled, reminderTemplate, whatsappEnabled, whatsappReminderDays, features, showCollectionToResidents, ...configFields } = dto as UpdateSocietyConfigDto & {
+    const { upiId, waterBillingEnabled, reminderTemplate, finalReminderTemplate, whatsappEnabled, whatsappReminderDays, features, showCollectionToResidents, ...configFields } = dto as UpdateSocietyConfigDto & {
       upiId?: string;
       showCollectionToResidents?: boolean;
       waterBillingEnabled?: boolean;
       reminderTemplate?: string;
+      finalReminderTemplate?: string;
       whatsappEnabled?: boolean;
       whatsappReminderDays?: number[];
       features?: Record<string, boolean>;
@@ -515,7 +516,7 @@ export class SocietiesService {
 
     let additionalConfigPatch: Prisma.InputJsonValue | undefined;
     if (
-      upiId !== undefined || waterBillingEnabled !== undefined || reminderTemplate !== undefined ||
+      upiId !== undefined || waterBillingEnabled !== undefined || reminderTemplate !== undefined || finalReminderTemplate !== undefined ||
       whatsappEnabled !== undefined || whatsappReminderDays !== undefined || features !== undefined ||
       showCollectionToResidents !== undefined
     ) {
@@ -531,6 +532,7 @@ export class SocietiesService {
         ...(showCollectionToResidents !== undefined ? { showCollectionToResidents } : {}),
         // Blank puts the default wording back (readReminderTemplate falls back when nothing is stored).
         ...(reminderTemplate !== undefined ? { reminderTemplate: reminderTemplate.trim() } : {}),
+        ...(finalReminderTemplate !== undefined ? { finalReminderTemplate: finalReminderTemplate.trim() } : {}),
         // Only the features named change; the others keep what they were.
         ...(features !== undefined ? { features: { ...((existing.features as Record<string, unknown> | undefined) ?? {}), ...features } } : {}),
         ...(whatsappEnabled !== undefined || whatsappReminderDays !== undefined

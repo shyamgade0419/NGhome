@@ -15,13 +15,15 @@ describe('the WhatsApp message templates (what Meta is asked to approve)', () =>
   });
 
   it('has one template for each automatic message, and none for a test', () => {
-    expect(CLOUD_TEMPLATES.map((t) => t.kind).sort()).toEqual(['BILL_PUBLISHED', 'FINE_IMPOSED', 'PAYMENT_RECEIPT', 'PAYMENT_RECEIVED', 'REMINDER']);
+    expect(CLOUD_TEMPLATES.map((t) => t.kind).sort()).toEqual(['BILL_PUBLISHED', 'FINE_IMPOSED', 'PAYMENT_RECEIPT', 'PAYMENT_RECEIVED', 'REMINDER', 'REMINDER_FINAL']);
     expect(templateOf('TEST')).toBeUndefined();
   });
 
-  it('needs only the four main templates to send: the receipt one is optional and never holds a society up', () => {
+  it('needs only the four main templates to send: the receipt one and the follow-up reminder are optional and never hold a society up', () => {
     expect(CLOUD_TEMPLATES.filter((t) => !t.optional).map((t) => t.kind).sort()).toEqual(['BILL_PUBLISHED', 'FINE_IMPOSED', 'PAYMENT_RECEIVED', 'REMINDER']);
     expect(isOptionalTemplate('PAYMENT_RECEIPT')).toBe(true);
+    expect(isOptionalTemplate('REMINDER_FINAL')).toBe(true);
+    expect(isOptionalTemplate('REMINDER')).toBe(false);
     expect(isOptionalTemplate('PAYMENT_RECEIVED')).toBe(false);
     expect(isOptionalTemplate('NOPE')).toBe(false);
   });
@@ -30,6 +32,16 @@ describe('the WhatsApp message templates (what Meta is asked to approve)', () =>
     const names = CLOUD_TEMPLATES.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
     for (const n of names) expect(n).toMatch(/^[a-z0-9_]+$/);
+  });
+
+  it('has a follow-up reminder that fills in like the first and says it is a second one', () => {
+    const first = templateOf('REMINDER')!;
+    const second = templateOf('REMINDER_FINAL')!;
+    expect(second.params).toEqual(first.params); // the same details, so one set of values fills either
+    const values = { name: 'Ravi', flat: 'A-101', month: 'Nov 2026', amount: '2,500', dueDate: '10 Nov 2026', society: 'Sunrise' };
+    expect(orderedParams(second, values)).toEqual(orderedParams(first, values));
+    expect(renderTemplate(second, values)).toContain('second reminder');
+    expect(renderTemplate(first, values)).not.toContain('second reminder');
   });
 
   it('puts the receipt link into the confirmation that carries it, after the amounts and before the society', () => {

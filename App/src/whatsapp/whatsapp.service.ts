@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { WhatsappSettingsStore } from './whatsapp-settings.store';
 import { pickBillContact } from '../billing/billing-contact';
-import { MONTH_NAMES, readReminderTemplate, renderReminder } from '../billing/reminder-template';
+import { MONTH_NAMES, readFinalReminderTemplate, readReminderTemplate, renderReminder } from '../billing/reminder-template';
 import { outstandingForFlat } from '../payments/settlement';
 import { fineMessage, paidMessage, publishedMessage } from './whatsapp-messages';
 import {
@@ -132,11 +132,11 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     return provider === 'CLOUD' && t ? { body: renderTemplate(t, values), params: values } : { body: text, params: values };
   }
 
-  /** Has Meta approved the payment-confirmation-with-receipt template on this society's account? */
-  private async receiptTemplateApproved(societyId: string): Promise<boolean> {
+  /** Has Meta approved this optional template (the receipt one, the follow-up reminder) on this society's account? */
+  private async optionalTemplateApproved(societyId: string, kind: 'PAYMENT_RECEIPT' | 'REMINDER_FINAL'): Promise<boolean> {
     try {
       const state = await this.cloud.state(societyId);
-      return state.templates.some((t) => t.kind === 'PAYMENT_RECEIPT' && t.status === 'APPROVED');
+      return state.templates.some((t) => t.kind === kind && t.status === 'APPROVED');
     } catch {
       return false; // cannot tell: send the usual message rather than hold it
     }
@@ -266,7 +266,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     // template goes without the link, so nothing is held up waiting for it.
     if (settings.provider === 'CLOUD' && receipt) {
       const withLink = templateOf('PAYMENT_RECEIPT');
-      if (withLink && (await this.receiptTemplateApproved(societyId))) {
+      if (withLink && (await this.optionalTemplateApproved(societyId, 'PAYMENT_RECEIPT'))) {
         const linked = { ...values, receipt };
         message = { body: renderTemplate(withLink, linked), params: linked };
       }
@@ -309,6 +309,34 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
 
     const contacts = await this.contactsOf(societyId, [...perFlat.keys()]);
     const template = readReminderTemplate(settings.additionalConfig);
+    const followUpTemplate = readFinalReminderTemplate(settings.additionalConfig);
+
+    // A flat is sent the follow-up wording when it was already reminded about this bill (a reminder queued or sent, for a day
+    // after the bill was published) and has still not paid. Judged by what the flat has actually been sent, not by which day of
+    // the month it is: a bill published on the 7th is first reminded on the 10th, and that is its first reminder, not its
+    // second. A reminder that failed to send does not count, and neither does today's own, so running the pass twice in a day
+    // changes nothing. A reminder's day is the one in its key ('reminder:<flat>:<date>'), the day it was meant for.
+    const sinceDay = (b: (typeof bills)[number]) => istParts(b.billingPeriod.publishedAt ?? b.billingPeriod.startDate ?? b.createdAt).date;
+    const earlier = await this.prisma.whatsappMessage.findMany({
+      where: {
+        societyId,
+        kind: 'REMINDER',
+        status: { in: ['SENT', 'PENDING', 'SENDING'] },
+        dedupeKey: { startsWith: 'reminder:' },
+        // Plenty of history, and no more: a reminder from more than a few months ago is not about this bill.
+        createdAt: { gte: new Date(Date.now() - 200 * 24 * 60 * 60 * 1000) },
+      },
+      select: { dedupeKey: true },
+    });
+    const remindedBefore = (flatId: string, since: string) =>
+      earlier.some((m) => {
+        const [, flat, day] = m.dedupeKey.split(':');
+        return flat === flatId && day !== undefined && day < date && day >= since;
+      });
+    // Through Meta, the follow-up goes as its own template once Meta has approved it; until then as the usual reminder.
+    const metaFollowUp = settings.provider === 'CLOUD' && (await this.optionalTemplateApproved(societyId, 'REMINDER_FINAL'));
+    const followUpMeta = templateOf('REMINDER_FINAL');
+
     const society = await this.societyName(societyId);
     const upi = ((settings.additionalConfig as { upiId?: unknown } | null)?.upiId as string | undefined) ?? '';
     const money = (d: Prisma.Decimal) => Number(d).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -320,7 +348,8 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       const month = `${MONTH_NAMES[latest.billingPeriod.periodMonth] ?? ''} ${latest.billingPeriod.periodYear}`.trim();
       const dueDate = dueLabel(latest.dueDate);
       // The society's own wording is for a linked number; the official API sends its approved template instead.
-      const text = renderReminder(template, {
+      const followUp = remindedBefore(flatId, sinceDay(latest));
+      const text = renderReminder(followUp ? followUpTemplate : template, {
         name: to.name,
         flat: latest.flatCode,
         month,
@@ -331,7 +360,12 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
         society,
         upi,
       });
-      const message = this.compose(settings.provider, 'REMINDER', { name: to.name, flat: latest.flatCode, month, amount: money(owed), dueDate, society }, text);
+      const values = { name: to.name, flat: latest.flatCode, month, amount: money(owed), dueDate, society };
+      let message = this.compose(settings.provider, 'REMINDER', values, text);
+      if (followUp && metaFollowUp && followUpMeta) {
+        const marked = { ...values, followUp: 'yes' };
+        message = { body: renderTemplate(followUpMeta, values), params: marked };
+      }
       if (await this.enqueue(societyId, 'REMINDER', `reminder:${flatId}:${date}`, to, message)) added += 1;
     }
     return added;
@@ -554,7 +588,12 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   private async sendThroughMeta(meta: NonNullable<Awaited<ReturnType<WhatsappCloudService['creds']>>>, message: { kind: string; toPhone: string; params: unknown }): Promise<void> {
     const values = (message.params ?? null) as Record<string, unknown> | null;
     // A payment confirmation written with a receipt link goes as the template that carries it.
-    const t = message.kind === 'PAYMENT_RECEIVED' && values?.receipt ? templateOf('PAYMENT_RECEIPT') : templateOf(message.kind);
+    const t =
+      message.kind === 'PAYMENT_RECEIVED' && values?.receipt
+        ? templateOf('PAYMENT_RECEIPT')
+        : message.kind === 'REMINDER' && values?.followUp
+          ? templateOf('REMINDER_FINAL')
+          : templateOf(message.kind);
     if (!t) throw new GatewayError(`There is no WhatsApp template for ${message.kind} messages.`, undefined, false, true);
     // A message queued before the society switched to Meta has no values to fill the template with.
     if (!values) throw new GatewayError('This message was written for a linked number and cannot be sent as a template.', undefined, false, true);

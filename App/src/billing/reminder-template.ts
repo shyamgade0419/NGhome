@@ -17,6 +17,23 @@ export const DEFAULT_REMINDER_TEMPLATE = [
   '_{society}_',
 ].join('\n');
 
+/**
+ * The follow-up: the reminder a flat gets when it has already been reminded about this bill and still has not paid. Stored in
+ * `finalReminderTemplate`; a society that has not written its own gets this, a little firmer than the first.
+ */
+export const DEFAULT_FINAL_REMINDER_TEMPLATE = [
+  'Dear {name},',
+  '',
+  'This is a *second reminder*: the *{month}* maintenance for Flat *{flat}* is still unpaid.',
+  '',
+  'Amount due: *₹{amount}*',
+  'Due date: *{dueDate}*',
+  '',
+  'Please pay at the earliest in the NG Home app. Ignore this message if you have already paid.',
+  '',
+  '_{society}_',
+].join('\n');
+
 export const MAX_TEMPLATE_LENGTH = 1500;
 
 export const MONTH_NAMES = [
@@ -53,6 +70,12 @@ export interface ReminderVars {
 export function readReminderTemplate(additionalConfig: unknown): string {
   const raw = (additionalConfig as { reminderTemplate?: unknown } | null | undefined)?.reminderTemplate;
   return typeof raw === 'string' && raw.trim() ? raw : DEFAULT_REMINDER_TEMPLATE;
+}
+
+/** The follow-up wording stored, or the default. */
+export function readFinalReminderTemplate(additionalConfig: unknown): string {
+  const raw = (additionalConfig as { finalReminderTemplate?: unknown } | null | undefined)?.finalReminderTemplate;
+  return typeof raw === 'string' && raw.trim() ? raw : DEFAULT_FINAL_REMINDER_TEMPLATE;
 }
 
 /**

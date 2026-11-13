@@ -16,6 +16,10 @@ export interface ReminderTemplate {
   template: string;
   isDefault: boolean;
   defaultTemplate: string;
+  /** The second reminder's wording and its standard. Absent on a server that does not have a second reminder yet. */
+  finalTemplate?: string;
+  isFinalDefault?: boolean;
+  defaultFinalTemplate?: string;
   placeholders: { token: string; meaning: string }[];
 }
 
