@@ -78,7 +78,8 @@ async function openMarkPaid(tree: any) {
 beforeEach(() => {
   mockExpenses = [];
   mockPost.mockReset().mockResolvedValue({ data: { data: { id: 'new-exp' } } });
-  jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  // spyOn hands back the same spy each time, so clear what an earlier test recorded: a test waiting for its own alert must not be satisfied by a previous one.
+  jest.spyOn(Alert, 'alert').mockClear().mockImplementation(() => {});
 });
 
 describe('Expenses — the fund an expense is spent from', () => {
@@ -106,6 +107,9 @@ describe('Expenses — the fund an expense is spent from', () => {
 
     await until(() => mockPost.mock.calls.length === 1);
     expect(mockPost).toHaveBeenCalledWith('/expenses', expect.objectContaining({ description: 'Ganesh idol', amount: 5000, fundId: 'f1' }));
+    // The confirmation alert is raised 400 ms after the sheet closes. Wait for it here, so that timer never outlives the test
+    // and fires inside whichever test file this worker runs next (it did, and failed that one in CI).
+    await until(() => (Alert.alert as jest.Mock).mock.calls.some((c) => c[0] === 'Added'));
   });
 
   it('sends no fund when none is chosen on the form', async () => {
@@ -118,6 +122,9 @@ describe('Expenses — the fund an expense is spent from', () => {
     await act(async () => { byText(tree, 'Save Expense')[0].props.onPress(); });
     await until(() => mockPost.mock.calls.length === 1);
     expect(mockPost.mock.calls[0][1].fundId).toBeUndefined();
+    // The confirmation alert is raised 400 ms after the sheet closes. Wait for it here, so that timer never outlives the test
+    // and fires inside whichever test file this worker runs next (it did, and failed that one in CI).
+    await until(() => (Alert.alert as jest.Mock).mock.calls.some((c) => c[0] === 'Added'));
   });
 
   it('starts Mark Paid on the fund it was posted against, and pays from it', async () => {
