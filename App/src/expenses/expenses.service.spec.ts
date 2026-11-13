@@ -42,6 +42,8 @@ function makePrisma() {
     expense: {
       create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'e1', ...data })),
     },
+    // No month is closed, so nothing is locked.
+    billingPeriod: { findMany: jest.fn().mockResolvedValue([]) },
   } as unknown as PrismaService;
   return prisma;
 }

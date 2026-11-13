@@ -8,6 +8,7 @@ const LINKED_ENTITY_TYPE = 'EVENT';
 import { CreateEventDto } from './dto/create-event.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { eventCancelled, eventNotice, eventRescheduled } from '../notifications/notification-content';
+import { isLocked, loadExpenseLock, lockMessage } from '../expenses/expense-lock';
 export { CreateEventDto } from './dto/create-event.dto';
 
 const FUND_SELECT = { id: true, name: true } satisfies Prisma.FundSelect;
@@ -183,6 +184,9 @@ export class EventsService {
     if (!event.fundId) {
       throw new BadRequestException('Link a fund to this event before recording it as an expense.');
     }
+    // The expense is dated on the event, so it cannot go into a month whose books are closed.
+    const lock = await loadExpenseLock(this.prisma, societyId);
+    if (isLocked(event.eventDate, lock)) throw new BadRequestException(lockMessage(lock));
 
     const existing = await this.prisma.expense.findFirst({
       where: { societyId, linkedEntityType: LINKED_ENTITY_TYPE, linkedEntityId: id },
@@ -294,6 +298,8 @@ export class EventsService {
     if (!expense) {
       throw new NotFoundException('This event has no recorded expense to undo.');
     }
+    const lock = await loadExpenseLock(this.prisma, societyId);
+    if (isLocked(expense.expenseDate, lock)) throw new ConflictException(lockMessage(lock));
     if (expense.status === ExpenseStatus.PAID) {
       throw new ConflictException(
         'This expense has already been paid from an account, so it can no longer be undone here. ' +

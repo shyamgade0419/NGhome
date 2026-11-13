@@ -9,6 +9,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes } from '@ne
 import { SystemRole, ExpenseStatus } from '@prisma/client';
 import { ExpensesService, CreateExpenseDto } from './expenses.service';
 import { UpdateExpenseDto } from './dto/create-expense.dto';
+import { parseMonth } from './expense-lock';
 import { RejectExpenseDto } from './dto/reject-expense.dto';
 import { MarkExpensePaidDto } from './dto/mark-expense-paid.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -42,13 +43,17 @@ export class ExpensesController {
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'status', required: false, enum: ExpenseStatus })
+  @ApiQuery({ name: 'year', required: false, description: 'With month: only that month (Indian time). Both or neither.' })
+  @ApiQuery({ name: 'month', required: false })
   findAll(
     @SocietyId() societyId: string,
     @Query('page') page = 1,
     @Query('limit') limit = 20,
     @Query('status') status?: ExpenseStatus,
+    @Query('year') year?: string,
+    @Query('month') month?: string,
   ) {
-    return this.expensesService.findAll(societyId, +page, +limit, status);
+    return this.expensesService.findAll(societyId, +page, +limit, status, parseMonth(year, month));
   }
 
   @Get('categories')
@@ -70,7 +75,7 @@ export class ExpensesController {
   @Get(':id')
   @ApiOperation({ summary: 'Get expense by ID' })
   findOne(@SocietyId() societyId: string, @Param('id') id: string) {
-    return this.expensesService.findOne(societyId, id);
+    return this.expensesService.findOneWithLock(societyId, id);
   }
 
   @Patch(':id')

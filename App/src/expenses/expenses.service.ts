@@ -11,6 +11,7 @@ import {
 } from './expense-receipts';
 
 import { CreateExpenseDto, UpdateExpenseDto } from './dto/create-expense.dto';
+import { YearMonth, isLocked, loadExpenseLock, lockMessage, monthRange } from './expense-lock';
 import {
   MAX_EXPENSE_AMOUNT, amountDelta, correctionLedgerText, correctionRefusal, planExpenseChanges,
 } from './expense-corrections';
@@ -27,6 +28,16 @@ export class ExpensesService {
     private readonly paths: StoragePathService,
     private readonly documents: DocumentsService,
   ) {}
+
+  /**
+   * Refuses a change to an expense dated in a closed month, or any month before one. The books for those months were closed
+   * on what they held, so nothing in them is added, changed, approved, rejected, paid or deleted afterwards. (Receipts are
+   * proof, not figures, and can still be added.)
+   */
+  private async assertOpen(societyId: string, date: Date): Promise<void> {
+    const lock = await loadExpenseLock(this.prisma, societyId);
+    if (isLocked(date, lock)) throw new ForbiddenException(lockMessage(lock));
+  }
 
   /**
    * Find-or-create a category by name, scoped to the society. Same pattern as
@@ -64,6 +75,7 @@ export class ExpensesService {
   }
 
   async create(societyId: string, createdById: string, dto: CreateExpenseDto) {
+    await this.assertOpen(societyId, new Date(dto.expenseDate));
     const categoryId = await this.resolveCategoryId(societyId, dto);
 
     if (dto.accountId) {
@@ -95,14 +107,15 @@ export class ExpensesService {
     });
   }
 
-  async findAll(societyId: string, page: number, limit: number, status?: ExpenseStatus) {
+  async findAll(societyId: string, page: number, limit: number, status?: ExpenseStatus, month?: YearMonth | null) {
     const { skip, take } = getPaginationParams({ page, limit });
     const where: Prisma.ExpenseWhereInput = {
       societyId,
       ...(status ? { status } : {}),
+      ...(month ? { expenseDate: monthRange(month) } : {}),
     };
 
-    const [data, total] = await Promise.all([
+    const [data, total, lock] = await Promise.all([
       this.prisma.expense.findMany({
         skip,
         take,
@@ -117,9 +130,15 @@ export class ExpensesService {
         orderBy: { expenseDate: 'desc' },
       }),
       this.prisma.expense.count({ where }),
+      loadExpenseLock(this.prisma, societyId),
     ]);
 
-    return { data, meta: buildPaginationMeta(total, page, limit) };
+    // Each expense says whether it is in a closed month, and the page says how far the books are closed, so the app can
+    // show the lock and offer no edit on it.
+    return {
+      data: data.map((e) => ({ ...e, locked: isLocked(e.expenseDate, lock) })),
+      meta: { ...buildPaginationMeta(total, page, limit), lockedThrough: lock.through },
+    };
   }
 
   async findOne(societyId: string, id: string) {
@@ -136,6 +155,12 @@ export class ExpensesService {
     });
     if (!expense) throw new NotFoundException('Expense not found');
     return expense;
+  }
+
+  /** The expense as the screen needs it, with whether its month is closed. */
+  async findOneWithLock(societyId: string, id: string) {
+    const [expense, lock] = await Promise.all([this.findOne(societyId, id), loadExpenseLock(this.prisma, societyId)]);
+    return { ...expense, locked: isLocked(expense.expenseDate, lock), lockedThrough: lock.through };
   }
 
   /**
@@ -251,7 +276,8 @@ export class ExpensesService {
 
   async approve(societyId: string, expenseId: string, approvedById: string) {
     // Fetch for scope verification; status gate moves inside the transaction
-    await this.findOne(societyId, expenseId);
+    const found = await this.findOne(societyId, expenseId);
+    await this.assertOpen(societyId, found.expenseDate);
 
     return this.prisma.$transaction(async (tx) => {
       const { count } = await tx.expense.updateMany({
@@ -283,6 +309,7 @@ export class ExpensesService {
   async reject(societyId: string, expenseId: string, reason: string, actorId: string) {
     // Fetch for scope verification and to preserve any existing note
     const expense = await this.findOne(societyId, expenseId);
+    await this.assertOpen(societyId, expense.expenseDate);
 
     return this.prisma.$transaction(async (tx) => {
       const { count } = await tx.expense.updateMany({
@@ -321,6 +348,7 @@ export class ExpensesService {
   async markPaid(societyId: string, expenseId: string, accountId: string, actorId: string, requestedFundId?: string | null) {
     // Fetch for scope verification; the status gate and the amount are taken again inside the transaction
     const expense = await this.findOne(societyId, expenseId);
+    await this.assertOpen(societyId, expense.expenseDate);
     const eventLinked = expense.linkedEntityType === 'EVENT';
     if (requestedFundId && eventLinked) {
       throw new BadRequestException("This expense came from an event and has already been taken from the event's fund.");
@@ -399,6 +427,7 @@ export class ExpensesService {
    */
   async update(societyId: string, expenseId: string, dto: UpdateExpenseDto, actor: { id: string; role?: string }) {
     const current = await this.findOne(societyId, expenseId);
+    await this.assertOpen(societyId, current.expenseDate);
 
     let wantedAmount: Prisma.Decimal | undefined;
     if (dto.amount !== undefined) {
@@ -410,6 +439,8 @@ export class ExpensesService {
     if (dto.expenseDate !== undefined) {
       wantedDate = new Date(dto.expenseDate);
       if (Number.isNaN(wantedDate.getTime())) throw new BadRequestException('That is not a valid date.');
+      // Nor can an expense be moved into a month that is closed.
+      await this.assertOpen(societyId, wantedDate);
     }
 
     const categoryWanted = dto.categoryId !== undefined || !!dto.category?.trim();
@@ -591,6 +622,7 @@ export class ExpensesService {
 
   async remove(societyId: string, expenseId: string, actorId: string) {
     const expense = await this.findOne(societyId, expenseId);
+    await this.assertOpen(societyId, expense.expenseDate);
     if (expense.status !== ExpenseStatus.PENDING) {
       throw new ForbiddenException('Only pending expenses can be deleted');
     }

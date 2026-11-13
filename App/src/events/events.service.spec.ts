@@ -51,6 +51,8 @@ function makePrisma(opts: {
   };
 
   return {
+    // No month is closed, so nothing is locked.
+    billingPeriod: { findMany: jest.fn().mockResolvedValue([]) },
     event: { findFirst: jest.fn().mockResolvedValue(opts.event) },
     expense: {
       findFirst: jest.fn().mockResolvedValue(opts.existingExpense ?? null),
@@ -164,6 +166,8 @@ function makeUnrecordPrisma(opts: {
   };
 
   const prisma = {
+    // No month is closed, so nothing is locked.
+    billingPeriod: { findMany: jest.fn().mockResolvedValue([]) },
     expense: { findFirst: jest.fn().mockResolvedValue(expense) },
     transaction: { findFirst: jest.fn().mockResolvedValue(debit) },
     $transaction: jest.fn(async (cb: any) => cb(tx)),
@@ -171,6 +175,26 @@ function makeUnrecordPrisma(opts: {
 
   return { prisma, tx };
 }
+
+describe('EventsService — closed months', () => {
+  const closedOctober = { findMany: jest.fn().mockResolvedValue([{ periodYear: 2026, periodMonth: 10 }]) };
+
+  it('will not record the cost of an event as an expense dated in a closed month', async () => {
+    const prisma = makePrisma({ event: makeEvent() }); // the event is on 20 Oct 2026
+    (prisma as any).billingPeriod = closedOctober;
+    await expect(new EventsService(prisma).recordExpense(SOCIETY_ID, EVENT_ID, ACTOR_ID)).rejects.toThrow(/closed up to October 2026/);
+    expect((prisma as any).__tx.expense.create).not.toHaveBeenCalled();
+  });
+
+  it('will not undo the recording of an expense that is now in a closed month', async () => {
+    const { prisma, tx } = makeUnrecordPrisma({
+      expense: { id: EXPENSE_ID, societyId: SOCIETY_ID, description: 'Event', amount: new Prisma.Decimal(25000), status: 'APPROVED', expenseDate: new Date('2026-10-20T00:00:00Z') },
+    });
+    (prisma as any).billingPeriod = closedOctober;
+    await expect(new EventsService(prisma).unrecordExpense(SOCIETY_ID, EVENT_ID, ACTOR_ID)).rejects.toThrow(/closed up to October 2026/);
+    expect(tx.expense.delete).not.toHaveBeenCalled();
+  });
+});
 
 describe('EventsService — unrecordExpense', () => {
   it('deletes the expense and credits the fund back by the same amount', async () => {
