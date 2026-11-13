@@ -11,7 +11,7 @@ import {
 } from './expense-receipts';
 
 import { CreateExpenseDto, UpdateExpenseDto } from './dto/create-expense.dto';
-import { YearMonth, isLocked, loadExpenseLock, lockMessage, monthRange } from './expense-lock';
+import { YearMonth, isLocked, loadExpenseLock, lockMessage, monthRange } from '../common/books-lock';
 import {
   MAX_EXPENSE_AMOUNT, amountDelta, correctionLedgerText, correctionRefusal, planExpenseChanges,
 } from './expense-corrections';

@@ -1,12 +1,28 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, SalaryStatus } from '@prisma/client';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { ProcessSalaryDto } from './dto/process-salary.dto';
+import { ExpenseLock, isMonthLocked, loadExpenseLock, lockMessage } from '../common/books-lock';
 
 @Injectable()
 export class SalariesService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Refuses a salary for a closed month, or any month before one. Pay for those months is part of the books that were closed,
+   * so it is not processed, changed or paid afterwards. (An employee's own details, such as their base salary, are not
+   * month-bound and stay editable: they only matter from the next month on.)
+   */
+  private async assertMonthOpen(societyId: string, year: number, month: number): Promise<void> {
+    const lock = await loadExpenseLock(this.prisma, societyId);
+    if (isMonthLocked(year, month, lock)) throw new ForbiddenException(lockMessage(lock, 'salary'));
+  }
+
+  /** How far the books are closed, for the screen to show. */
+  async lockedThrough(societyId: string): Promise<{ lockedThrough: ExpenseLock['through'] }> {
+    return { lockedThrough: (await loadExpenseLock(this.prisma, societyId)).through };
+  }
 
   async createEmployee(societyId: string, dto: CreateEmployeeDto) {
     return this.prisma.societyEmployee.create({
@@ -31,6 +47,7 @@ export class SalariesService {
   }
 
   async processSalary(societyId: string, dto: ProcessSalaryDto) {
+    await this.assertMonthOpen(societyId, dto.salaryYear, dto.salaryMonth);
     const employee = await this.prisma.societyEmployee.findFirst({
       where: { id: dto.employeeId, societyId },
     });
@@ -104,6 +121,7 @@ export class SalariesService {
     if (record.status !== SalaryStatus.PROCESSED && record.status !== SalaryStatus.DRAFT) {
       throw new BadRequestException('Salary must be in DRAFT or PROCESSED state');
     }
+    await this.assertMonthOpen(societyId, record.salaryYear, record.salaryMonth);
     if (!record.accountId) throw new BadRequestException('Account not set for salary payment');
 
     return this.prisma.$transaction(async (tx) => {
@@ -181,6 +199,12 @@ export class SalariesService {
   }
 
   async findSalaryRecords(societyId: string, month?: number, year?: number) {
+    const [records, lock] = await Promise.all([this.findSalaryRecordRows(societyId, month, year), loadExpenseLock(this.prisma, societyId)]);
+    // Each record says whether its month is closed, so the screen can show the lock and offer nothing on it.
+    return records.map((r) => ({ ...r, locked: isMonthLocked(r.salaryYear, r.salaryMonth, lock) }));
+  }
+
+  private findSalaryRecordRows(societyId: string, month?: number, year?: number) {
     return this.prisma.salaryRecord.findMany({
       where: {
         societyId,

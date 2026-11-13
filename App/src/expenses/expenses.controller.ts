@@ -9,7 +9,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes } from '@ne
 import { SystemRole, ExpenseStatus } from '@prisma/client';
 import { ExpensesService, CreateExpenseDto } from './expenses.service';
 import { UpdateExpenseDto } from './dto/create-expense.dto';
-import { parseMonth } from './expense-lock';
+import { parseMonth } from '../common/books-lock';
 import { RejectExpenseDto } from './dto/reject-expense.dto';
 import { MarkExpensePaidDto } from './dto/mark-expense-paid.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';

@@ -87,8 +87,12 @@ function makeStatefulPrisma() {
 
   const tx = { salaryRecord: salaryRecordApi, account: accountApi, transaction: transactionApi };
 
+  // Months whose books are closed: empty means nothing is locked. Tests push { periodYear, periodMonth } to close one.
+  const closedPeriods: Array<{ periodYear: number; periodMonth: number }> = [];
+
   const prisma = {
     ...tx,
+    billingPeriod: { findMany: jest.fn(async () => closedPeriods) },
     $transaction: jest.fn(async (cb: any) => cb(tx)),
   } as unknown as PrismaService;
 
@@ -118,7 +122,7 @@ function makeStatefulPrisma() {
     return row;
   }
 
-  return { prisma, salaryRecords, accounts, transactions, seedAccount, seedSalary };
+  return { prisma, salaryRecords, accounts, transactions, closedPeriods, seedAccount, seedSalary };
 }
 
 describe('SalariesService.paySalary — normal flow', () => {
@@ -245,5 +249,69 @@ describe('SalariesService.paySalary — concurrency', () => {
     // assertion as the balance check above, stated in terms of the write
     // count rather than the arithmetic result.
     expect((prisma.account.update as jest.Mock).mock.calls).toHaveLength(1);
+  });
+});
+
+describe('SalariesService — closed months', () => {
+  const closeThrough = (closedPeriods: Array<{ periodYear: number; periodMonth: number }>, year: number, month: number) =>
+    closedPeriods.push({ periodYear: year, periodMonth: month });
+
+  it('will not pay a salary for a closed month, and leaves the account and the record untouched', async () => {
+    const { prisma, seedAccount, seedSalary, accounts, transactions, salaryRecords, closedPeriods } = makeStatefulPrisma();
+    seedAccount('account-1');
+    seedSalary('salary-1'); // September 2026, PROCESSED
+    closeThrough(closedPeriods, 2026, 9);
+
+    await expect(new SalariesService(prisma).paySalary(SOCIETY_ID, 'salary-1', ACTOR_ID)).rejects.toThrow(/closed up to September 2026/);
+
+    expect(accounts.get('account-1').currentBalance.toString()).toBe('100000');
+    expect(transactions).toHaveLength(0);
+    expect(salaryRecords.get('salary-1').status).toBe(SalaryStatus.PROCESSED);
+  });
+
+  it('locks the months before a closed month too, even ones never closed on their own', async () => {
+    const { prisma, seedAccount, seedSalary, closedPeriods } = makeStatefulPrisma();
+    seedAccount('account-1');
+    seedSalary('salary-aug', { salaryMonth: 8 });
+    closeThrough(closedPeriods, 2026, 9);
+    await expect(new SalariesService(prisma).paySalary(SOCIETY_ID, 'salary-aug', ACTOR_ID)).rejects.toThrow(/closed up to September 2026/);
+  });
+
+  it('still pays a salary for the month after the closed one', async () => {
+    const { prisma, seedAccount, seedSalary, transactions, closedPeriods } = makeStatefulPrisma();
+    seedAccount('account-1');
+    seedSalary('salary-oct', { salaryMonth: 10 });
+    closeThrough(closedPeriods, 2026, 9);
+    const result = await new SalariesService(prisma).paySalary(SOCIETY_ID, 'salary-oct', ACTOR_ID);
+    expect(result!.status).toBe(SalaryStatus.PAID);
+    expect(transactions).toHaveLength(1);
+  });
+
+  it('answers a retry of a payment that already went through, even though its month has since been closed', async () => {
+    const { prisma, seedAccount, seedSalary, transactions, closedPeriods } = makeStatefulPrisma();
+    seedAccount('account-1');
+    seedSalary('salary-1', { status: SalaryStatus.PAID, paymentDate: new Date('2026-09-28') });
+    closeThrough(closedPeriods, 2026, 9);
+    const result = await new SalariesService(prisma).paySalary(SOCIETY_ID, 'salary-1', ACTOR_ID);
+    expect(result!.status).toBe(SalaryStatus.PAID);
+    expect(transactions).toHaveLength(0);
+  });
+
+  it('will not process a salary for a closed month, and does not look anything else up first', async () => {
+    const { prisma, closedPeriods } = makeStatefulPrisma();
+    closeThrough(closedPeriods, 2026, 9);
+    await expect(
+      new SalariesService(prisma).processSalary(SOCIETY_ID, { employeeId: 'employee-1', salaryMonth: 9, salaryYear: 2026 } as never),
+    ).rejects.toThrow(/closed up to September 2026.*salary/s);
+    await expect(
+      new SalariesService(prisma).processSalary(SOCIETY_ID, { employeeId: 'employee-1', salaryMonth: 3, salaryYear: 2025 } as never),
+    ).rejects.toThrow(/closed up to September 2026/);
+  });
+
+  it('says how far the books are closed', async () => {
+    const { prisma, closedPeriods } = makeStatefulPrisma();
+    expect(await new SalariesService(prisma).lockedThrough(SOCIETY_ID)).toEqual({ lockedThrough: null });
+    closeThrough(closedPeriods, 2026, 9);
+    expect(await new SalariesService(prisma).lockedThrough(SOCIETY_ID)).toEqual({ lockedThrough: { year: 2026, month: 9 } });
   });
 });

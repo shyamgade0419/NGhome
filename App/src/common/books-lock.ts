@@ -1,7 +1,8 @@
 /**
  * Closing a month closes its books. Once a billing month is closed, every expense dated in that month, or in any month
- * before it, is part of what was closed: it cannot be added, changed, approved, rejected, paid or deleted. Closing a month
- * therefore closes the earlier ones with it, even if they were never closed one by one.
+ * before it, and every salary for such a month, is part of what was closed: it cannot be added, changed, approved,
+ * rejected, paid or deleted. Closing a month therefore closes the earlier ones with it, even if they were never closed one
+ * by one.
  *
  * Months are the society's calendar months in Indian time, so an expense dated late on the 31st or early on the 1st lands
  * in the month it was meant for whichever way the date was stored.
@@ -51,11 +52,17 @@ export function latestClosed(periods: Array<{ periodYear: number; periodMonth: n
   return best;
 }
 
-/** What the admin is told when they try to touch a closed month. */
-export function lockMessage(lock: ExpenseLock): string {
+/** Whether a month (a salary is kept by month, not by date) is closed, or before a closed one. */
+export function isMonthLocked(year: number, month: number, lock: ExpenseLock): boolean {
+  return lock.through !== null && keyOf(year, month) <= keyOf(lock.through.year, lock.through.month);
+}
+
+/** What the admin is told when they try to touch a closed month. `what` is the thing that was refused. */
+export function lockMessage(lock: ExpenseLock, what: 'expense' | 'salary' = 'expense'): string {
+  const thing = what === 'salary' ? 'a salary for then or an earlier month' : 'an expense dated then or earlier';
   return lock.through
-    ? `The books are closed up to ${monthTitle(lock.through)}, so an expense dated then or earlier cannot be added or changed.`
-    : 'This expense is in a closed month and cannot be changed.';
+    ? `The books are closed up to ${monthTitle(lock.through)}, so ${thing} cannot be added or changed.`
+    : `This ${what} is in a closed month and cannot be changed.`;
 }
 
 /**

@@ -1,6 +1,7 @@
 import {
   NO_LOCK,
   isLocked,
+  isMonthLocked,
   keyOf,
   latestClosed,
   loadExpenseLock,
@@ -10,7 +11,7 @@ import {
   monthRange,
   monthTitle,
   parseMonth,
-} from './expense-lock';
+} from './books-lock';
 
 const closedThrough = (year: number, month: number) => ({ through: { year, month } });
 
@@ -54,6 +55,20 @@ describe('expense lock', () => {
     });
   });
 
+  describe('isMonthLocked (a salary is kept by month, not by date)', () => {
+    it('locks the closed month and every month before it, across years, and nothing after', () => {
+      const oct = closedThrough(2026, 10);
+      expect(isMonthLocked(2026, 10, oct)).toBe(true);
+      expect(isMonthLocked(2026, 3, oct)).toBe(true);
+      expect(isMonthLocked(2025, 12, oct)).toBe(true);
+      expect(isMonthLocked(2026, 11, oct)).toBe(false);
+      expect(isMonthLocked(2027, 1, oct)).toBe(false);
+    });
+    it('locks nothing when no month has been closed', () => {
+      expect(isMonthLocked(2020, 1, NO_LOCK)).toBe(false);
+    });
+  });
+
   describe('latestClosed', () => {
     it('is the latest month, wherever it sits in the list and across years', () => {
       expect(latestClosed([{ periodYear: 2026, periodMonth: 3 }, { periodYear: 2026, periodMonth: 10 }, { periodYear: 2025, periodMonth: 12 }])).toEqual({ year: 2026, month: 10 });
@@ -81,9 +96,10 @@ describe('expense lock', () => {
   });
 
   describe('wording', () => {
-    it('names the month the books are closed up to', () => {
+    it('names the month the books are closed up to, and says what was refused', () => {
       expect(lockMessage(closedThrough(2026, 10))).toContain('October 2026');
-      expect(lockMessage(closedThrough(2026, 10))).toMatch(/cannot be added or changed/);
+      expect(lockMessage(closedThrough(2026, 10))).toMatch(/an expense dated then or earlier cannot be added or changed/);
+      expect(lockMessage(closedThrough(2026, 10), 'salary')).toMatch(/a salary for then or an earlier month cannot be added or changed/);
       expect(monthTitle({ year: 2026, month: 3 })).toBe('March 2026');
     });
   });

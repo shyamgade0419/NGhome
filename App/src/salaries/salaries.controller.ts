@@ -50,6 +50,12 @@ export class SalariesController {
     return this.salariesService.paySalary(societyId, id, user.id);
   }
 
+  @Get('lock')
+  @ApiOperation({ summary: 'How far the books are closed: salaries for those months cannot be changed' })
+  lock(@SocietyId() societyId: string) {
+    return this.salariesService.lockedThrough(societyId);
+  }
+
   @Get('records')
   @ApiOperation({ summary: 'Get salary records, optionally filtered by month/year' })
   findRecords(

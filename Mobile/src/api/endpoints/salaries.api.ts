@@ -28,6 +28,8 @@ export interface SalaryRecord {
   paymentDate: string | null;
   notes: string | null;
   employee?: { name: string; designation: string } | null;
+  /** Its month, or an earlier one, has been closed: it can no longer be processed, changed or paid. */
+  locked?: boolean;
 }
 
 function unwrap<T>(data: any): T {
@@ -35,6 +37,12 @@ function unwrap<T>(data: any): T {
 }
 
 export const salariesApi = {
+  /** How far the books are closed: salaries for those months cannot be processed or paid. */
+  lockedThrough: async (): Promise<{ year: number; month: number } | null> => {
+    const { data } = await apiClient.get('/salaries/lock');
+    return unwrap<{ lockedThrough: { year: number; month: number } | null }>(data).lockedThrough ?? null;
+  },
+
   listEmployees: async () => {
     const { data } = await apiClient.get('/salaries/employees');
     return unwrap<Employee[]>(data);

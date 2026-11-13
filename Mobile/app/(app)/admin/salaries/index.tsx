@@ -26,6 +26,7 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { lockNotice } from '@/utils/expenseLock';
 import { colors, spacing, typography, radius } from '@/theme';
 
 const MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -114,6 +115,10 @@ function RecordsTab() {
     queryFn: () => salariesApi.listRecords({ month, year }),
   });
 
+  // How far the books are closed: those months' salaries can no longer be processed or paid.
+  const { data: lockedThrough } = useQuery({ queryKey: ['salary-lock'], queryFn: salariesApi.lockedThrough });
+  const notice = lockNotice(lockedThrough, 'salary');
+
   const payMutation = useMutation({
     mutationFn: (id: string) => salariesApi.pay(id),
     onSuccess: () => {
@@ -151,6 +156,12 @@ function RecordsTab() {
               <Ionicons name="chevron-forward" size={18} color={colors.primary} />
             </TouchableOpacity>
           </View>
+          {notice && (
+            <View style={styles.lockBanner} accessibilityLabel="Books closed">
+              <Ionicons name="lock-closed-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.lockBannerText}>{notice}</Text>
+            </View>
+          )}
           {records.length > 0 && (
             <View style={[styles.banner, { marginBottom: spacing.md }]}>
               <Text style={styles.bannerLabel}>Net Payable</Text>
@@ -170,7 +181,15 @@ function RecordsTab() {
                 <Text style={styles.rowMeta}>{item.employee.designation}</Text>
               ) : null}
             </View>
-            <StatusBadge label={item.status} variant={statusVariant(item.status)} size="sm" />
+            <View style={{ alignItems: 'flex-end', gap: 2 }}>
+              <StatusBadge label={item.status} variant={statusVariant(item.status)} size="sm" />
+              {item.locked && (
+                <View style={styles.lockChip} accessibilityLabel="Closed month">
+                  <Ionicons name="lock-closed" size={11} color={colors.textSecondary} />
+                  <Text style={styles.lockChipText}>Closed</Text>
+                </View>
+              )}
+            </View>
           </View>
 
           <View style={styles.amountRow}>
@@ -192,7 +211,7 @@ function RecordsTab() {
             </View>
           </View>
 
-          {item.status === 'PROCESSED' && (
+          {!item.locked && item.status === 'PROCESSED' && (
             <TouchableOpacity
               style={styles.payBtn}
               onPress={() =>
@@ -255,6 +274,13 @@ export default function SalariesScreen() {
 }
 
 const styles = StyleSheet.create({
+  lockBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md,
+    padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+  },
+  lockBannerText: { ...typography.bodySmall, color: colors.textSecondary, flex: 1 },
+  lockChip: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  lockChipText: { ...typography.bodySmall, color: colors.textSecondary },
   safe: { flex: 1, backgroundColor: colors.background },
   list: { padding: spacing.base },
 

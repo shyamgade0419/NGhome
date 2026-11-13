@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, UserCircle, IndianRupee, CheckCircle2, X } from 'lucide-react';
+import { Plus, UserCircle, IndianRupee, CheckCircle2, X, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { isLockedMonth, lockNotice, monthTitle } from '@/lib/expenseLock';
 import { salariesApi, accountsApi } from '@/lib/api/endpoints';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
@@ -103,10 +104,12 @@ function AddEmployeeModal({ onClose }: { onClose: () => void }) {
 function ProcessSalaryModal({
   employees,
   accounts,
+  lockedThrough,
   onClose,
 }: {
   employees: any[];
   accounts: any[];
+  lockedThrough?: { year: number; month: number } | null;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -122,6 +125,8 @@ function ProcessSalaryModal({
   });
 
   const selectedEmp = employees.find((e: any) => e.id === form.employeeId);
+  // A salary for a closed month would be refused; say so here, and keep the button off, instead of after the click.
+  const monthClosed = isLockedMonth(Number(form.salaryYear), Number(form.salaryMonth), lockedThrough);
 
   const mutation = useMutation({
     mutationFn: () => salariesApi.processSalary({
@@ -174,6 +179,11 @@ function ProcessSalaryModal({
             <Select label="Month *" value={form.salaryMonth} onChange={set('salaryMonth')} options={MONTHS} />
             <Input label="Year *" type="number" value={form.salaryYear} onChange={set('salaryYear')} />
           </div>
+          {monthClosed && lockedThrough && (
+            <p className="-mt-2 text-sm text-red-600" role="alert">
+              {monthTitle(lockedThrough)} and earlier months are closed. Choose a later month.
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <Input label="Additions (₹)" type="number" placeholder="Bonus, overtime…" value={form.additions} onChange={set('additions')} />
             <Input label="Deductions (₹)" type="number" placeholder="Advance, absent…" value={form.deductions} onChange={set('deductions')} />
@@ -199,7 +209,7 @@ function ProcessSalaryModal({
           <Button
             onClick={() => mutation.mutate()}
             loading={mutation.isPending}
-            disabled={!form.employeeId || !form.salaryMonth || !form.salaryYear}
+            disabled={!form.employeeId || !form.salaryMonth || !form.salaryYear || monthClosed}
           >
             Process Salary
           </Button>
@@ -235,6 +245,14 @@ export default function SalariesPage() {
     }).then((r: any) => r.data ?? r),
   });
 
+  // How far the books are closed: those months' salaries can no longer be processed or paid.
+  const { data: lockData } = useQuery({
+    queryKey: ['salary-lock'],
+    queryFn: () => salariesApi.lock().then((r: any) => r.data ?? r),
+  });
+  const lockedThrough: { year: number; month: number } | null = (lockData?.lockedThrough ?? lockData?.data?.lockedThrough) ?? null;
+  const notice = lockNotice(lockedThrough, 'salary');
+
   const { data: accountsData } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => accountsApi.listAccounts().then((r: any) => r.data ?? r),
@@ -258,6 +276,7 @@ export default function SalariesPage() {
       {showAddEmp && <AddEmployeeModal onClose={() => setShowAddEmp(false)} />}
       {showProcess && (
         <ProcessSalaryModal
+          lockedThrough={lockedThrough}
           employees={empList}
           accounts={accountList}
           onClose={() => setShowProcess(false)}
@@ -277,6 +296,12 @@ export default function SalariesPage() {
         ) : undefined}
       />
       <PageContainer>
+        {notice && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600" role="note">
+            <Lock size={14} className="shrink-0" />
+            {notice}
+          </div>
+        )}
         {/* Tab selector */}
         <div className="mb-4 flex gap-1 rounded-lg bg-slate-100 p-1 w-fit">
           {(['records', 'employees'] as const).map((t) => (
@@ -341,10 +366,17 @@ export default function SalariesPage() {
                         {rec.deductions ? `-${formatCurrency(rec.deductions)}` : '—'}
                       </Td>
                       <Td className="text-right font-mono text-sm font-semibold">{formatCurrency(rec.netSalary ?? rec.baseSalary ?? 0)}</Td>
-                      <Td>{salaryStatusBadge(rec.status)}</Td>
+                      <Td>
+                        {salaryStatusBadge(rec.status)}
+                        {rec.locked && (
+                          <span className="mt-1 flex items-center gap-1 text-xs text-slate-500" title="Its month is closed">
+                            <Lock size={11} /> Closed
+                          </span>
+                        )}
+                      </Td>
                       {isAdmin && (
                         <Td>
-                          {rec.status === 'PROCESSED' && (
+                          {!rec.locked && rec.status === 'PROCESSED' && (
                             <Button
                               size="sm"
                               variant="secondary"

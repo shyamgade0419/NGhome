@@ -512,6 +512,8 @@ export const salariesApi = {
     accountId?: string; notes?: string;
   }) => api.post('/salaries/process', data),
   paySalary: (recordId: string) => api.post(`/salaries/${recordId}/pay`),
+  /** How far the books are closed: salaries for those months cannot be processed or paid. */
+  lock: () => api.get('/salaries/lock'),
 };
 
 // Meetings

@@ -8,7 +8,7 @@ const LINKED_ENTITY_TYPE = 'EVENT';
 import { CreateEventDto } from './dto/create-event.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { eventCancelled, eventNotice, eventRescheduled } from '../notifications/notification-content';
-import { isLocked, loadExpenseLock, lockMessage } from '../expenses/expense-lock';
+import { isLocked, loadExpenseLock, lockMessage } from '../common/books-lock';
 export { CreateEventDto } from './dto/create-event.dto';
 
 const FUND_SELECT = { id: true, name: true } satisfies Prisma.FundSelect;
