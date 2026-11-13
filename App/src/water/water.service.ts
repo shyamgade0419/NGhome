@@ -27,6 +27,58 @@ export class WaterService {
     });
   }
 
+  /**
+   * The society's charge for heavy water use as it stands now: the limit per flat and what is charged above it, or null for
+   * none. It lives on the society's water allocation rules, the same place every calculation reads it from.
+   */
+  async getUsageLimit(societyId: string): Promise<{ usageLimit: UsageLimit | null }> {
+    const config = await this.prisma.waterBillingConfig.findFirst({
+      where: { societyId, billingModel: 'SOCIETY_ALLOCATION' },
+      orderBy: { createdAt: 'desc' },
+    });
+    return { usageLimit: readUsageLimit(config?.config) };
+  }
+
+  /**
+   * Sets, or with null switches off, the charge for heavy water use, without calculating any month. It applies from the next
+   * calculation: charges already worked out for a month are not touched. A bad rule is refused and nothing changes.
+   */
+  async setUsageLimit(societyId: string, raw: unknown): Promise<{ usageLimit: UsageLimit | null }> {
+    let limit: UsageLimit | null = null;
+    if (raw !== null && raw !== undefined) {
+      const problem = validateUsageLimit(raw);
+      if (problem) throw new BadRequestException(problem);
+      const { limitUnits, mode, value } = raw as UsageLimit;
+      limit = { limitUnits, mode, value };
+    }
+
+    const config = await this.prisma.waterBillingConfig.findFirst({
+      where: { societyId, billingModel: 'SOCIETY_ALLOCATION' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!config) {
+      if (limit === null) return { usageLimit: null }; // nothing saved, nothing to switch off
+      await this.prisma.waterBillingConfig.create({
+        data: {
+          societyId,
+          name: 'Society Water Allocation',
+          billingModel: 'SOCIETY_ALLOCATION',
+          effectiveFrom: new Date(),
+          config: { usageLimit: limit } as unknown as Prisma.InputJsonValue,
+        },
+      });
+      return { usageLimit: limit };
+    }
+
+    const rest = { ...((config.config as Record<string, unknown>) ?? {}) };
+    delete rest['usageLimit'];
+    await this.prisma.waterBillingConfig.update({
+      where: { id: config.id },
+      data: { config: (limit ? { ...rest, usageLimit: limit } : rest) as Prisma.InputJsonValue },
+    });
+    return { usageLimit: limit };
+  }
+
   async findConfigs(societyId: string) {
     return this.prisma.waterBillingConfig.findMany({
       where: { societyId },

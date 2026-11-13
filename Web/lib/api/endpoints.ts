@@ -167,12 +167,12 @@ export const whatsappApi = {
   connect: (): Promise<{ data: WhatsappConnection }> => api.post('/whatsapp/connect'),
   /** Unlinks this society's number (admin only). */
   disconnect: (): Promise<{ data: WhatsappConnection }> => api.post('/whatsapp/disconnect'),
-  /** This society's own Meta WhatsApp Business account: connected or not, and the state of its four message templates. */
+  /** This society's own Meta WhatsApp Business account: connected or not, and the state of its message templates. */
   cloud: (): Promise<{ data: WhatsappCloud }> => api.get('/whatsapp/cloud'),
   /** Connects the society's Meta account (checked with Meta first) and sends through it. A blank token keeps the saved one (admin only). */
   connectCloud: (body: { phoneNumberId: string; accessToken?: string; wabaId?: string }): Promise<{ data: WhatsappCloud }> => api.put('/whatsapp/cloud', body),
   disconnectCloud: (): Promise<{ data: WhatsappCloud }> => api.delete('/whatsapp/cloud'),
-  /** Submits NG Home's four message templates to Meta for approval (admin only). */
+  /** Submits NG Home's message templates to Meta for approval (admin only). */
   submitCloudTemplates: (): Promise<{ data: WhatsappCloud & { submitted: string[]; failed: { name: string; error: string }[] } }> => api.post('/whatsapp/cloud/templates'),
   /** Chooses how messages are sent: a linked number or the Meta account (admin only). */
   setProvider: (provider: 'OPENWA' | 'CLOUD'): Promise<{ data: WhatsappCloud }> => api.put('/whatsapp/provider', { provider }),
@@ -421,6 +421,12 @@ export const waterApi = {
   ) => api.post(`/water/periods/${periodId}/allocate`, data),
 
   getPeriodSummary: (periodId: string) => api.get(`/water/periods/${periodId}/summary`),
+
+  /** The charge for heavy water use: the limit per flat and what is charged above it, or null for none. */
+  getUsageLimit: () => api.get('/water/usage-limit'),
+  /** Sets it (applies from the next calculation), or with null switches it off. Admin only. */
+  setUsageLimit: (usageLimit: { limitUnits: number; mode: 'PERCENT' | 'PER_UNIT' | 'ONE_TIME'; value: number } | null) =>
+    api.put('/water/usage-limit', { usageLimit }),
 };
 
 // Billing period report (all bills + line items)

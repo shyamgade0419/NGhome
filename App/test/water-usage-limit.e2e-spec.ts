@@ -244,6 +244,80 @@ describe('Water usage limit (e2e, real Postgres)', () => {
     expect(row.excessCharge).toBe(250);
   });
 
+  describe('set on its own, from Settings, without calculating a month', () => {
+    const getLimit = (token = admin) => http().get('/api/v1/water/usage-limit').set(auth(token));
+    const putLimit = (usageLimit: unknown, token = admin) => http().put('/api/v1/water/usage-limit').set(auth(token)).send({ usageLimit });
+
+    it('is saved on its own, read back, and used by the next calculation without being told', async () => {
+      const set = await putLimit({ limitUnits: 20, mode: 'PER_UNIT', value: 50 }).expect(200);
+      expect(set.body.data.usageLimit).toEqual({ limitUnits: 20, mode: 'PER_UNIT', value: 50 });
+      expect((await getLimit().expect(200)).body.data.usageLimit).toEqual({ limitUnits: 20, mode: 'PER_UNIT', value: 50 });
+      expect(await savedRule()).toEqual({ limitUnits: 20, mode: 'PER_UNIT', value: 50 });
+
+      const next = await allocate(await newPeriod()).expect(201); // no usageLimit in the body
+      expect(next.body.data.usageLimit).toEqual({ limitUnits: 20, mode: 'PER_UNIT', value: 50 });
+      expect(chargeOf(next.body, big).charge).toBe(3500); // 3000 + 10 KL above the limit × ₹50
+      expect(chargeOf(next.body, small).charge).toBe(1000); // within the limit: unchanged
+    });
+
+    it('keeps the other water rules saved beside it', async () => {
+      const before = await prisma.waterBillingConfig.findFirstOrThrow({ where: { societyId, billingModel: 'SOCIETY_ALLOCATION' }, orderBy: { createdAt: 'desc' } });
+      await prisma.waterBillingConfig.update({ where: { id: before.id }, data: { config: { ...(before.config as object), somethingElse: 'kept' } } });
+      await putLimit({ limitUnits: 25, mode: 'PERCENT', value: 10 }).expect(200);
+      const after = await prisma.waterBillingConfig.findFirstOrThrow({ where: { id: before.id } });
+      expect((after.config as any).somethingElse).toBe('kept');
+      expect((after.config as any).usageLimit).toEqual({ limitUnits: 25, mode: 'PERCENT', value: 10 });
+    });
+
+    it('is switched off on its own, and the next calculation charges the normal rate', async () => {
+      await putLimit({ limitUnits: 20, mode: 'PERCENT', value: 10 }).expect(200);
+      expect((await putLimit(null).expect(200)).body.data.usageLimit).toBeNull();
+      expect((await getLimit().expect(200)).body.data.usageLimit).toBeNull();
+      expect(await savedRule()).toBeNull();
+      const next = await allocate(await newPeriod()).expect(201);
+      expect(next.body.data.usageLimit).toBeNull();
+      expect(chargeOf(next.body, big).charge).toBe(3000);
+    });
+
+    it('does not touch what was already calculated for a month', async () => {
+      await putLimit({ limitUnits: 20, mode: 'PERCENT', value: 10 }).expect(200);
+      const period = await newPeriod();
+      const done = await allocate(period).expect(201);
+      expect(chargeOf(done.body, big).charge).toBe(3100);
+      await putLimit({ limitUnits: 5, mode: 'PERCENT', value: 100 }).expect(200);
+      const stored = await prisma.waterMeterReading.findFirstOrThrow({ where: { societyId, billingPeriodId: period, flatId: big } });
+      expect(Number(stored.calculatedAmount)).toBe(3100);
+    });
+
+    it('refuses a bad rule and changes nothing', async () => {
+      await putLimit({ limitUnits: 20, mode: 'PERCENT', value: 25 }).expect(200);
+      const before = await savedRule();
+      for (const bad of [
+        { limitUnits: 0, mode: 'PERCENT', value: 25 },
+        { limitUnits: -5, mode: 'PERCENT', value: 25 },
+        { limitUnits: 20, mode: 'PERCENT', value: -1 },
+        { limitUnits: 20, mode: 'PERCENT', value: 5000 },
+        { limitUnits: 20, mode: 'DOUBLE', value: 25 },
+        { limitUnits: 20, mode: 'PER_UNIT', value: 1.234 },
+        { limitUnits: 20, mode: 'PERCENT' },
+        { mode: 'PERCENT', value: 25 },
+      ]) {
+        const res = await putLimit(bad).expect(400);
+        expect(messageOf(res.body)).toBeTruthy();
+      }
+      expect(await savedRule()).toEqual(before);
+    });
+
+    it('is for the admin to change; the accountant can read it; a resident can do neither', async () => {
+      await putLimit({ limitUnits: 20, mode: 'PERCENT', value: 25 }).expect(200);
+      await putLimit({ limitUnits: 30, mode: 'PERCENT', value: 5 }, accountant).expect(403);
+      await putLimit(null, resident).expect(403);
+      expect((await getLimit(accountant).expect(200)).body.data.usageLimit).toEqual({ limitUnits: 20, mode: 'PERCENT', value: 25 });
+      await getLimit(resident).expect(403);
+      expect(await savedRule()).toEqual({ limitUnits: 20, mode: 'PERCENT', value: 25 });
+    });
+  });
+
   it('is for the admin and the accountant, not residents', async () => {
     const period = await newPeriod();
     await allocate(period, { usageLimit: { limitUnits: 20, mode: 'PERCENT', value: 25 } }, resident).expect(403);

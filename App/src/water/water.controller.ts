@@ -1,10 +1,11 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SystemRole } from '@prisma/client';
 import { WaterService } from './water.service';
 import { CreateWaterConfigDto } from './dto/create-water-config.dto';
 import { RecordReadingDto } from './dto/record-reading.dto';
 import { AllocateWaterCostsBodyDto } from './dto/allocate-water-costs.dto';
+import { SetUsageLimitDto } from './dto/set-usage-limit.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -32,6 +33,22 @@ export class WaterController {
   @ApiOperation({ summary: 'List water billing configurations' })
   findConfigs(@SocietyId() societyId: string) {
     return this.waterService.findConfigs(societyId);
+  }
+
+  @Get('usage-limit')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
+  @ApiOperation({ summary: 'The charge for heavy water use: the limit per flat and what is charged above it, or null' })
+  getUsageLimit(@SocietyId() societyId: string) {
+    return this.waterService.getUsageLimit(societyId);
+  }
+
+  @Put('usage-limit')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN)
+  @ApiOperation({ summary: 'Set, or with null switch off, the charge for heavy water use (applies from the next calculation)' })
+  setUsageLimit(@SocietyId() societyId: string, @Body() dto: SetUsageLimitDto) {
+    return this.waterService.setUsageLimit(societyId, dto.usageLimit ?? null);
   }
 
   @Post('readings')

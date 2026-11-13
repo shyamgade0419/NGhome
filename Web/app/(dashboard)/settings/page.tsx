@@ -9,7 +9,11 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
-import { societyApi, billingRulesApi, usersApi } from '@/lib/api/endpoints';
+import { societyApi, billingRulesApi, usersApi, waterApi } from '@/lib/api/endpoints';
+import {
+  DEFAULT_LIMIT_FORM, MODE_OPTIONS, describeLimit, formFromSaved, limitFromForm, validateLimitForm,
+  type UsageLimit, type UsageLimitForm,
+} from '@/lib/waterUsageLimit';
 import { WhatsappSection } from '@/components/settings/WhatsappSection';
 import { FeaturesSection } from '@/components/settings/FeaturesSection';
 import { BASIS_LABEL, KIND_LABEL, buildRulePayload, describeRule } from '@/lib/billingRules';
@@ -126,6 +130,119 @@ function SocietyDetailsSection({ admin }: { admin: boolean }) {
 }
 
 /* ─── Billing Config section ────────────────────────────────────── */
+/**
+ * Water: charge more for heavy use. Each flat pays the normal rate for its units up to a limit; units above it cost more.
+ * It was set on the Water Billing screen; it is a billing rule, so it lives here, and the Water Billing screen shows it and
+ * uses it. It has its own Save: it is kept with the water rules, not with the society configuration above.
+ */
+function WaterHeavyUseSection({ admin }: { admin: boolean }) {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['water-usage-limit'],
+    queryFn: () => waterApi.getUsageLimit().then((r: any) => (r.data?.usageLimit ?? r.usageLimit ?? null) as UsageLimit | null),
+    enabled: admin,
+  });
+  const [form, setForm] = useState<UsageLimitForm>(DEFAULT_LIMIT_FORM);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    if (data === undefined || loaded) return;
+    setForm(formFromSaved(data));
+    setLoaded(true);
+  }, [data, loaded]);
+
+  const saved = data ?? null;
+  const wanted = limitFromForm(form);
+  const problem = validateLimitForm(form);
+  // Changed from what is saved: switched on or off, or any number different.
+  const dirty = loaded && JSON.stringify(wanted) !== JSON.stringify(saved);
+
+  const mutation = useMutation({
+    mutationFn: () => waterApi.setUsageLimit(wanted),
+    onSuccess: () => {
+      toast.success(wanted ? 'Heavy-use charge saved' : 'Heavy-use charge switched off');
+      qc.invalidateQueries({ queryKey: ['water-usage-limit'] });
+      qc.invalidateQueries({ queryKey: ['water-configs'] });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to save'),
+  });
+
+  // Only the admin can change it, and only the admin and accountant can read it: other roles see nothing here.
+  if (!admin) return null;
+  if (isLoading) return null;
+
+  return (
+    <>
+      <div id="water-heavy-use" />
+      <SectionDivider title="Water" icon={<IndianRupee size={14} />} />
+      <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+        <label className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            checked={form.enabled}
+            onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
+            className="mt-1"
+          />
+          <span>
+            <span className="text-sm font-semibold text-slate-900">Charge more for heavy use</span>
+            <span className="block text-xs text-slate-500">
+              A flat pays the normal rate for its units up to a limit. Units above the limit cost more. The normal rate and
+              every flat within the limit are unchanged.
+            </span>
+          </span>
+        </label>
+
+        {form.enabled && (
+          <>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Input
+                label="Limit per flat (KL)"
+                type="number"
+                min="0"
+                step="0.5"
+                value={form.limitUnits}
+                onChange={(e) => setForm((f) => ({ ...f, limitUnits: e.target.value }))}
+              />
+              <div className="flex flex-col gap-1">
+                <label htmlFor="excess-mode" className="text-sm font-medium text-slate-700">Above the limit, charge</label>
+                <select
+                  id="excess-mode"
+                  value={form.mode}
+                  onChange={(e) => setForm((f) => ({ ...f, mode: e.target.value as UsageLimitForm['mode'] }))}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                >
+                  {MODE_OPTIONS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
+              <Input
+                label={form.mode === 'PERCENT' ? 'Extra (%)' : form.mode === 'PER_UNIT' ? 'Extra (₹ per KL)' : 'Fee (₹)'}
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.value}
+                onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))}
+              />
+            </div>
+            {problem ? (
+              <p role="alert" className="text-xs text-red-600">{problem}</p>
+            ) : wanted ? (
+              <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">{describeLimit(wanted)}</p>
+            ) : null}
+          </>
+        )}
+        <p className="text-xs text-slate-400">
+          Used when you calculate water charges on the Water Billing screen, from the next calculation on. Charges already worked
+          out for a month are not changed.
+        </p>
+        <div className="flex justify-end">
+          <Button onClick={() => mutation.mutate()} loading={mutation.isPending} disabled={!dirty || !!problem} size="sm">
+            <Save size={14} className="mr-1.5" /> Save heavy-use charge
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function BillingConfigSection({ admin }: { admin: boolean }) {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
@@ -259,6 +376,8 @@ function BillingConfigSection({ admin }: { admin: boolean }) {
         />
         <Input label="Max Late Fee (₹)" type="number" value={form.lateFeeMaxAmount ?? ''} onChange={inp('lateFeeMaxAmount')} disabled={!admin} placeholder="Optional cap" />
       </div>
+
+      <WaterHeavyUseSection admin={admin} />
 
       <SectionDivider title="Transparency" icon={<Shield size={14} />} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
