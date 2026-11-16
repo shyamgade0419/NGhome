@@ -1,5 +1,6 @@
 'use client';
 
+import { LookSwitch } from '@/components/LookSwitch';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -416,8 +417,9 @@ export default function RegisterPage() {
 
   return (
     <div className="flex min-h-screen bg-slate-50">
+      <LookSwitch floating />
       {/* Left branding panel */}
-      <div className="hidden lg:flex lg:w-5/12 relative flex-col items-center justify-center overflow-hidden px-12 text-white" style={{ background: HERO_GRADIENT }}>
+      <div className="hidden lg:flex lg:w-5/12 relative flex-col items-center justify-center overflow-hidden px-12 text-white g-hero" style={{ background: HERO_GRADIENT }}>
         <div aria-hidden className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-white/10" />
         <div aria-hidden className="pointer-events-none absolute -bottom-24 -left-16 h-60 w-60 rounded-full bg-white/5" />
         <div className="max-w-sm text-center">

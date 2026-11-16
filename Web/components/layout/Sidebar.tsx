@@ -1,4 +1,5 @@
 'use client';
+import { LookSwitch } from '@/components/LookSwitch';
 import { areaForPath } from '@/lib/areas';
 import { tint, tones } from '@/lib/tones';
 
@@ -195,6 +196,10 @@ export function Sidebar() {
 
         {/* User footer */}
         <div className="flex-shrink-0 border-t border-slate-100 p-3">
+          <div className="mb-2 flex items-center justify-between px-2">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Look</span>
+            <LookSwitch />
+          </div>
           <div className="flex items-center gap-2.5 rounded-lg px-2 py-2">
             <Link
               href="/profile"

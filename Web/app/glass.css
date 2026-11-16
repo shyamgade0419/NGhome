@@ -1,0 +1,183 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   The glass look. Everything here is under html[data-look='glass'], so with the Classic look not one rule applies and the app
+   is exactly what it was. The accents come from the society's own brand colour (--primary-*, set by lib/branding.ts) with a teal
+   and a green beside it, so a branded society still looks like itself.
+   Light first; a dark mode can be added by redefining the --g-* tokens.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+html[data-look='glass'] {
+  --g-a: rgb(var(--primary-500));
+  --g-a-deep: rgb(var(--primary-600));
+  --g-b: #14b8a6; /* teal */
+  --g-c: #4ade80; /* green */
+  --g-ink: #14213d;
+  --g-glass: rgba(255, 255, 255, 0.62);
+  --g-glass-strong: rgba(255, 255, 255, 0.86);
+  --g-edge: rgba(255, 255, 255, 0.92);
+  --g-hair: rgba(20, 33, 61, 0.09);
+  --g-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 2px 6px rgba(20, 33, 61, 0.05), 0 18px 34px -16px rgba(20, 33, 61, 0.3),
+    0 30px 60px -36px rgb(var(--primary-600) / 0.35);
+}
+
+/* ── the canvas: a soft mist with slow colour pools ─────────────────────────── */
+html[data-look='glass']::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -3;
+  background: linear-gradient(135deg, #eef3f8 0%, #e8f2f1 55%, #f3f0e8 100%);
+}
+html[data-look='glass'] body {
+  background: transparent;
+  color: var(--g-ink);
+}
+html[data-look='glass'] body::before {
+  content: '';
+  position: fixed;
+  inset: -18%;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(34% 38% at 14% 18%, rgb(var(--primary-400) / 0.42), transparent 70%),
+    radial-gradient(30% 36% at 86% 22%, color-mix(in srgb, var(--g-b) 46%, transparent), transparent 70%),
+    radial-gradient(34% 34% at 70% 88%, color-mix(in srgb, var(--g-c) 34%, transparent), transparent 70%),
+    radial-gradient(28% 30% at 22% 82%, rgba(232, 214, 176, 0.55), transparent 70%);
+  filter: blur(26px);
+  animation: g-drift 32s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@keyframes g-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(3%, 2.5%, 0) scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-look='glass'] body::before { animation: none; }
+}
+
+/* page wrappers that were a flat colour let the canvas through */
+html[data-look='glass'] :is(.min-h-screen, .h-screen).bg-slate-50,
+html[data-look='glass'] :is(.min-h-screen, .h-screen).bg-white { background-color: transparent; }
+
+/* ── surfaces ───────────────────────────────────────────────────────────────── */
+html[data-look='glass'] .bg-white { background-color: var(--g-glass); }
+html[data-look='glass'] .bg-slate-50 { background-color: rgba(255, 255, 255, 0.42); }
+html[data-look='glass'] .border-slate-200 { border-color: var(--g-hair); }
+html[data-look='glass'] .border-slate-100 { border-color: rgba(20, 33, 61, 0.06); }
+
+/* cards: the Card component, and the raw "rounded white box" every page also uses */
+html[data-look='glass'] .g-card,
+html[data-look='glass'] :is(div, section, article).rounded-xl.bg-white,
+html[data-look='glass'] :is(div, section, article).rounded-2xl.bg-white {
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(255, 255, 255, 0.7), transparent 55%),
+    linear-gradient(150deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.46));
+  border: 1px solid var(--g-edge);
+  border-radius: 18px;
+  box-shadow: var(--g-shadow);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  backdrop-filter: blur(18px) saturate(150%);
+}
+/* a dialog carries content that must stay readable: more opaque */
+html[data-look='glass'] div.rounded-2xl.bg-white.shadow-xl {
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.86));
+  -webkit-backdrop-filter: blur(26px) saturate(160%);
+  backdrop-filter: blur(26px) saturate(160%);
+}
+
+/* the sidebar and the page header */
+html[data-look='glass'] aside.bg-white {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.5));
+  border-color: var(--g-edge);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.6) inset, 16px 0 40px -28px rgba(20, 33, 61, 0.35);
+}
+@media (max-width: 1023px) {
+  /* the phone drawer slides over content: opaque enough to read */
+  html[data-look='glass'] aside.bg-white { background: rgba(250, 252, 253, 0.97); }
+}
+/* the header sets an area tint inline; the glass look replaces it with frost */
+html[data-look='glass'] header.bg-white {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.5)) !important;
+  border-bottom-color: var(--g-edge) !important;
+  border-bottom-width: 1px !important;
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+  box-shadow: 0 10px 30px -22px rgba(20, 33, 61, 0.4);
+}
+
+/* ── the liquid, glossy primary button (and any brand-filled block) ─────────── */
+html[data-look='glass'] .bg-primary-600 {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0) 52%),
+    linear-gradient(135deg, rgb(var(--primary-500)) 0%, rgb(var(--primary-600)) 52%, color-mix(in srgb, rgb(var(--primary-600)) 55%, var(--g-b)) 135%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.4) inset, 0 -10px 18px -12px rgba(0, 0, 0, 0.35) inset,
+    0 10px 22px -10px rgb(var(--primary-600) / 0.65);
+}
+html[data-look='glass'] .bg-primary-600:hover:not(:disabled) { filter: brightness(1.1) saturate(1.05); }
+html[data-look='glass'] button.border-slate-300.bg-white,
+html[data-look='glass'] button.bg-slate-100 {
+  border-color: var(--g-edge);
+  background-color: rgba(255, 255, 255, 0.55);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+/* ── fields ─────────────────────────────────────────────────────────────────── */
+html[data-look='glass'] :is(input, select, textarea).bg-white,
+html[data-look='glass'] :is(input:not([type='checkbox']):not([type='radio']), select, textarea):not([class*='bg-']) {
+  background-color: rgba(255, 255, 255, 0.78);
+  border-color: rgba(20, 33, 61, 0.14);
+  box-shadow: 0 1px 2px rgba(20, 33, 61, 0.05) inset;
+}
+html[data-look='glass'] :is(input, select, textarea):focus {
+  border-color: var(--g-b);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--g-b) 26%, transparent);
+}
+
+/* tables sit on the glass: header band and row hover are translucent */
+html[data-look='glass'] :is(th, thead).bg-slate-50 { background-color: rgba(255, 255, 255, 0.5); }
+html[data-look='glass'] tr:hover > td.bg-white,
+html[data-look='glass'] .hover\:bg-slate-50:hover { background-color: rgba(255, 255, 255, 0.55); }
+
+/* ── sign-in, register and join: the liquid showcase panel ──────────────────── */
+html[data-look='glass'] .g-hero {
+  background: linear-gradient(135deg, rgb(var(--primary-800)) 0%, rgb(var(--primary-600)) 48%, color-mix(in srgb, rgb(var(--primary-600)) 45%, #0f766e) 120%) !important;
+  box-shadow: 0 40px 80px -30px rgb(var(--primary-600) / 0.7);
+}
+@media (min-width: 1024px) {
+  /* floats as a rounded panel beside the form instead of running edge to edge */
+  html[data-look='glass'] .g-hero { margin: 16px 0 16px 16px; border-radius: 32px; min-height: calc(100vh - 32px); }
+}
+html[data-look='glass'] .g-hero > :not([aria-hidden='true']) { position: relative; z-index: 2; }
+html[data-look='glass'] .g-hero::before,
+html[data-look='glass'] .g-hero::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.06) 55%, transparent 70%);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  animation: g-morph 14s ease-in-out infinite;
+}
+html[data-look='glass'] .g-hero::before { width: 360px; height: 360px; right: -90px; top: -80px; background-color: color-mix(in srgb, var(--g-b) 34%, transparent); }
+html[data-look='glass'] .g-hero::after { width: 300px; height: 300px; left: -70px; bottom: -60px; background-color: color-mix(in srgb, var(--g-c) 26%, transparent); animation-duration: 19s; animation-direction: reverse; }
+@keyframes g-morph {
+  0%, 100% { border-radius: 42% 58% 63% 37% / 41% 44% 56% 59%; transform: rotate(0deg) translate(0, 0); }
+  50% { border-radius: 60% 40% 38% 62% / 56% 61% 39% 44%; transform: rotate(18deg) translate(14px, -10px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-look='glass'] .g-hero::before,
+  html[data-look='glass'] .g-hero::after { animation: none; }
+}
+/* the feature tiles inside the showcase are frosted too */
+html[data-look='glass'] .g-hero .bg-white\/10 {
+  background-color: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset;
+}
+
+/* the look switch itself: frosted, not white */
+html[data-look='glass'] .look-switch { background-color: rgba(255, 255, 255, 0.6); border-color: var(--g-edge); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }

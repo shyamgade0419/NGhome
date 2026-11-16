@@ -1,5 +1,6 @@
 'use client';
 
+import { LookSwitch } from '@/components/LookSwitch';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Building2 } from 'lucide-react';
@@ -40,6 +41,7 @@ export default function SelectSocietyPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+      <LookSwitch floating />
       <div className="w-full max-w-md">
         <div className="mb-8 flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-600">

@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import { Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
+import './glass.css';
+import { LOOK_BOOT_SCRIPT } from '@/lib/look';
 import { Providers } from '@/components/Providers';
 import { PwaRegister } from '@/components/PwaRegister';
 
@@ -45,7 +47,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={display.variable}>
+    // data-look starts as the default (glass); the script in <head> corrects it to the saved choice before first paint, which is why
+    // React is told the attribute may differ from the server's.
+    <html lang="en" className={display.variable} data-look="glass" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: LOOK_BOOT_SCRIPT }} />
+      </head>
       <body>
         <Providers>{children}</Providers>
         <PwaRegister />

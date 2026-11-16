@@ -1,5 +1,6 @@
 'use client';
 
+import { LookSwitch } from '@/components/LookSwitch';
 import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
@@ -36,6 +37,7 @@ function ResetPasswordForm() {
   if (!token) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+      <LookSwitch floating />
         <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
           <p className="font-semibold text-slate-900">Invalid reset link</p>
           <p className="mt-1 text-sm text-slate-500">
@@ -64,6 +66,7 @@ function ResetPasswordForm() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+      <LookSwitch floating />
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-2">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-600">
