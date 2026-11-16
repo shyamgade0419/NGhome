@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, typography } from '@/theme';
+import { isGlass } from '@/theme/look';
 
 interface InputProps extends TextInputProps {
   label?: string;
@@ -119,15 +120,15 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: isGlass ? 'rgba(255,255,255,0.78)' : colors.surface,
     borderWidth: 1.5,
     borderColor: colors.border,
     borderRadius: radius.md,
     minHeight: 48,
   },
   inputFocused: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
+    borderColor: isGlass ? '#14B8A6' : colors.primary,
+    backgroundColor: isGlass ? 'rgba(255,255,255,0.95)' : colors.primaryLight,
   },
   inputError: {
     borderColor: colors.error,

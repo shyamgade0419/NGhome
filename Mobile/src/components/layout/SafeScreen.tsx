@@ -8,7 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from '@/components/layout/GlassSafeArea';
 import { colors, spacing } from '@/theme';
 
 interface SafeScreenProps {

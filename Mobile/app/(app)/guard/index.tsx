@@ -12,7 +12,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, RefreshControl, Alert, ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from '@/components/layout/GlassSafeArea';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { GateFlat, VisitorEntry, VisitorType, visitorsApi } from '@/api/endpoints/visitors.api';

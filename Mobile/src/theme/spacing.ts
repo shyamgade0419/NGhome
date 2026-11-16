@@ -1,3 +1,5 @@
+import { isGlass } from './look';
+
 export const spacing = {
   xs: 4,
   sm: 8,
@@ -19,7 +21,7 @@ export const radius = {
   full: 9999,
 } as const;
 
-export const shadow = {
+const classicShadow = {
   sm: {
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -42,3 +44,17 @@ export const shadow = {
     elevation: 8,
   },
 } as const;
+
+type Shadow = { shadowColor: string; shadowOffset: { width: number; height: number }; shadowOpacity: number; shadowRadius: number; elevation: number };
+
+/**
+ * Glass shadows: a soft navy lift. Elevation is 0 because on Android it would draw a grey box through the frosted surface; there the
+ * edge highlight on the card does that job (see ui/Card).
+ */
+const glassShadow: { sm: Shadow; md: Shadow; lg: Shadow } = {
+  sm: { shadowColor: '#14213D', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 10, elevation: 0 },
+  md: { shadowColor: '#14213D', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 0 },
+  lg: { shadowColor: '#0D2147', shadowOffset: { width: 0, height: 14 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 0 },
+};
+
+export const shadow: { sm: Shadow; md: Shadow; lg: Shadow } = isGlass ? glassShadow : classicShadow;

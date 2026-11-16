@@ -26,7 +26,7 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from '@/components/layout/GlassSafeArea';
 import { ReminderTemplateEditor } from '@/components/billing/ReminderTemplateEditor';
 import { WhatsappAutomationCard } from '@/components/billing/WhatsappAutomationCard';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';

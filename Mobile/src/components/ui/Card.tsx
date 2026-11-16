@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ViewStyle, StyleProp, TouchableOpacity } from 'react-native';
 import { colors, spacing, radius, shadow, typography } from '@/theme';
+import { isGlass } from '@/theme/look';
 
 interface CardProps {
   children: React.ReactNode;
@@ -67,8 +68,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadow.sm,
+    borderColor: isGlass ? 'rgba(255,255,255,0.95)' : colors.border,
+    // Glass: a rounder card with a soft navy lift (see theme/spacing); the bright edge above does what elevation cannot on Android.
+    ...(isGlass ? { borderRadius: radius.xl - 4, ...shadow.md } : shadow.sm),
   },
   none: { padding: 0 },
   sm: { padding: spacing.md },

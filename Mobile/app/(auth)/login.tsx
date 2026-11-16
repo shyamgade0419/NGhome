@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from '@/components/layout/GlassSafeArea';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -24,6 +24,7 @@ import { colors, spacing, typography, radius } from '@/theme';
 import { LinearGradient } from 'expo-linear-gradient';
 import { fonts } from '@/theme/typography';
 import { HERO_GRADIENT, tint, tones } from '@/theme/tones';
+import { isGlass } from '@/theme/look';
 
 /* ─── Brand colours matching the logo design ─────────────────── */
 const BRAND_NAVY   = '#0D2147';
@@ -86,7 +87,7 @@ export default function LoginScreen() {
           edge-to-edge (forced from targetSdk 35+) makes the status bar an
           overlay everywhere rather than its own reserved, colorable strip.
           One control mechanism for the whole app, matching root _layout.tsx. */}
-      <StatusBar style="light" />
+      <StatusBar style={isGlass ? 'dark' : 'light'} />
       <SafeAreaView style={styles.safe}>
         <KeyboardAvoidingView
           style={styles.flex}
@@ -214,12 +215,13 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: BRAND_NAVY,
+    // Glass: the aurora behind everything (GlassSafeArea); classic: the brand navy.
+    backgroundColor: isGlass ? 'transparent' : BRAND_NAVY,
   },
   flex: { flex: 1 },
   scroll: {
     flexGrow: 1,
-    backgroundColor: BRAND_NAVY,
+    backgroundColor: isGlass ? 'transparent' : BRAND_NAVY,
   },
 
   /* ── Hero ──────────────────────────────────────────────────── */
@@ -228,9 +230,11 @@ const styles = StyleSheet.create({
     paddingTop: 48,
     paddingBottom: 36,
     overflow: 'hidden',
+    // Glass: the hero floats as a rounded panel instead of running edge to edge.
+    ...(isGlass ? { marginHorizontal: 16, marginTop: 8, borderRadius: 32, paddingTop: 36 } : {}),
   },
-  glowTop: { position: 'absolute', right: -60, top: -70, width: 210, height: 210, borderRadius: 105, backgroundColor: 'rgba(255,255,255,0.08)' },
-  glowBottom: { position: 'absolute', left: -50, bottom: -60, width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(255,255,255,0.06)' },
+  glowTop: { position: 'absolute', right: -60, top: -70, width: 210, height: 210, borderRadius: 105, backgroundColor: isGlass ? 'rgba(20,184,166,0.32)' : 'rgba(255,255,255,0.08)' },
+  glowBottom: { position: 'absolute', left: -50, bottom: -60, width: 150, height: 150, borderRadius: 75, backgroundColor: isGlass ? 'rgba(74,222,128,0.24)' : 'rgba(255,255,255,0.06)' },
   logoWrap: {
     marginBottom: 20,
     /* Subtle glow ring behind the shield */
@@ -268,7 +272,7 @@ const styles = StyleSheet.create({
 
   /* ── Card ──────────────────────────────────────────────────── */
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: isGlass ? 'rgba(255,255,255,0.8)' : '#FFFFFF',
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     paddingHorizontal: 24,
@@ -276,6 +280,10 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
     flex: 1,
     minHeight: 420,
+    // Glass: a frosted card with a bright edge, clear of the hero and the screen edges.
+    ...(isGlass
+      ? { borderBottomLeftRadius: 32, borderBottomRightRadius: 32, marginHorizontal: 16, marginTop: 16, flexGrow: 0, flexShrink: 0, flexBasis: 'auto', minHeight: 0, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', shadowColor: '#14213D', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.12, shadowRadius: 20, elevation: 0 }
+      : {}),
   },
   heading: {
     fontFamily: fonts.bold,
@@ -300,7 +308,7 @@ const styles = StyleSheet.create({
 
   /* ── Footer ────────────────────────────────────────────────── */
   footer: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: isGlass ? 'transparent' : '#FFFFFF',
     paddingHorizontal: 24,
     paddingBottom: 40,
     gap: 10,

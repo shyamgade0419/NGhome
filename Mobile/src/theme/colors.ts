@@ -1,3 +1,5 @@
+import { isGlass } from './look';
+
 /**
  * Brand-aligned palette — warm beige canvas, navy brand.
  *
@@ -21,7 +23,7 @@
  * used only for placeholders and hints, and it's still a real improvement on
  * the previous palette's tertiary, which sat at ~2.8:1 and cleared neither.
  */
-export const colors = {
+export const classicColors = {
   primary: '#0D2147',
   // Warm sand tint of the navy's role, not a blue tint — a cool #E7EAF2 chip
   // on a beige card reads as a foreign element pasted onto the screen.
@@ -78,4 +80,45 @@ export const colors = {
   overlayLight: 'rgba(43,38,32,0.08)',
 } as const;
 
-export type ColorKey = keyof typeof colors;
+export type ColorKey = keyof typeof classicColors;
+export type Colors = { [K in ColorKey]: string };
+
+/**
+ * The glass look: cool light surfaces over a soft aurora (see components/layout/GlassBackdrop). Same names as the classic palette, so
+ * every screen picks it up. The background is transparent: each screen draws the aurora itself (GlassSafeArea), and a flat fill
+ * would hide it. The surface is frosted white, so what is behind a card tints it. The brand navy and green stay; text is a cool
+ * ink rather than the classic's warm brown. Contrast is held: text 14:1, textSecondary 6.6:1 and textTertiary 4.9:1 on white.
+ * primary and primaryLight stay plain hex (two screens add an alpha suffix to them).
+ */
+export const glassColors: Colors = {
+  primary: '#0D2147',
+  primaryLight: '#DCE6F2',
+  primaryDark: '#071428',
+  secondary: '#2F6E2E',
+  secondaryLight: '#DDEFE1',
+  accent: '#A85A32',
+  accentLight: '#F6E4DA',
+  success: '#2F6E2E',
+  successLight: '#DDEFE1',
+  warning: '#B45309',
+  warningLight: '#FBEBD7',
+  error: '#C2410C',
+  errorLight: '#FBE3D8',
+  info: '#3B82F6',
+  infoLight: '#DBEAFE',
+  background: 'transparent',
+  surface: 'rgba(255,255,255,0.82)',
+  surfaceSecondary: 'rgba(20,33,61,0.06)',
+  border: 'rgba(20,33,61,0.12)',
+  borderLight: 'rgba(20,33,61,0.07)',
+  text: '#14213D',
+  textSecondary: '#4A5873',
+  textTertiary: '#66728C',
+  textInverse: '#FFFFFF',
+  textDisabled: '#AEB7C8',
+  overlay: 'rgba(13,33,71,0.5)',
+  overlayLight: 'rgba(13,33,71,0.08)',
+};
+
+/** The palette in use for this run of the app (see theme/look.ts). */
+export const colors: Colors = isGlass ? glassColors : classicColors;

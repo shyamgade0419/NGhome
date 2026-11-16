@@ -7,7 +7,7 @@ import {
   Alert,
   Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from '@/components/layout/GlassSafeArea';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation } from '@tanstack/react-query';
 import { authApi } from '@/api/endpoints/auth.api';
@@ -17,6 +17,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { SupportLink } from '@/components/ui/SupportLink';
+import { LookPicker } from '@/components/settings/LookPicker';
 import { colors, spacing, typography } from '@/theme';
 
 export default function AdminProfileScreen() {
@@ -93,6 +94,8 @@ export default function AdminProfileScreen() {
             </View>
           ) : null}
         </Card>
+
+        <LookPicker />
 
         <SupportLink />
 

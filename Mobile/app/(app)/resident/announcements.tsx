@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, FlatList, RefreshControl } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from '@/components/layout/GlassSafeArea';
 import { useQuery } from '@tanstack/react-query';
 import { societiesApi } from '@/api/endpoints/societies.api';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';

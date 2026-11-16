@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from '@/components/layout/GlassSafeArea';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { paymentsApi } from '@/api/endpoints/payments.api';
 import apiClient from '@/api/client';

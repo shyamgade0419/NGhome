@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, DimensionValue, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from '@/components/layout/GlassSafeArea';
 import { colors, radius, spacing } from '@/theme';
 import { useAnimate } from './motion';
 

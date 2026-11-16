@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { colors, spacing, typography, shadow } from '@/theme';
 import { Area, areaForTitle } from '@/theme/areas';
 import { tint, tones } from '@/theme/tones';
+import { isGlass } from '@/theme/look';
 
 interface ScreenHeaderProps {
   title: string;
@@ -36,7 +37,13 @@ export function ScreenHeader({
   };
 
   return (
-    <View style={[styles.header, area && { borderBottomWidth: 2, borderBottomColor: tint(tones[area.tone], 0.55), backgroundColor: tint(tones[area.tone], 0.94) }]}>
+    <View
+      style={[
+        styles.header,
+        // Classic tints the whole bar in the area's colour; glass keeps it frosted and lets the icon chip carry the colour.
+        area && (isGlass ? { borderBottomColor: 'rgba(255,255,255,0.9)' } : { borderBottomWidth: 2, borderBottomColor: tint(tones[area.tone], 0.55), backgroundColor: tint(tones[area.tone], 0.94) }),
+      ]}
+    >
       <View style={styles.left}>
         {showBack && (
           <TouchableOpacity onPress={handleBack} style={styles.backButton} hitSlop={8}>
@@ -74,7 +81,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: isGlass ? 'rgba(255,255,255,0.7)' : colors.surface,
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.md,
     minHeight: 56,

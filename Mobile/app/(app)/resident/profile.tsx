@@ -8,7 +8,7 @@ import {
   Alert,
   Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from '@/components/layout/GlassSafeArea';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -19,6 +19,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { SupportLink } from '@/components/ui/SupportLink';
+import { LookPicker } from '@/components/settings/LookPicker';
 import { colors, spacing, typography, radius } from '@/theme';
 import { SheetHeader } from '@/components/ui/SheetHeader';
 
@@ -95,6 +96,8 @@ export default function ResidentProfileScreen() {
             </View>
           ))}
         </Card>
+
+        <LookPicker />
 
         {/* Actions */}
         <Card style={styles.actionsCard} padding="none">

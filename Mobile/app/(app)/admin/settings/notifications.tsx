@@ -8,7 +8,7 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from '@/components/layout/GlassSafeArea';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/api/client';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
