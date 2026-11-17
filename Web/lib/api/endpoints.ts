@@ -17,6 +17,7 @@ import type { SlotFor, SlotRow, SlotStatus, VehicleRow } from '@/lib/vehicles';
 import type { AttendanceStatus, DayRow, MonthDay, RosterRow, Shift, SummaryRow } from '@/lib/attendance';
 import type { OpeningBalances, OpeningInputRow, OpeningSaveResult } from '@/lib/openingBalances';
 import type { AdvanceCredits, FlatDiscount, FlatDiscountInput } from '@/lib/flatDiscounts';
+import type { OnlineGateway, OnlineOrder, OnlineRecent } from '@/lib/onlinePayments';
 import type { BillReminder, ReminderTemplate, WhatsappCloud, WhatsappConnection, WhatsappGatewayView, WhatsappMessageRow, WhatsappSessionsOverview, WhatsappStatus } from '@/lib/reminders';
 
 // Dashboard — composites several report endpoints
@@ -201,6 +202,22 @@ export const paymentsApi = {
 
   reject: (id: string, reason: string): Promise<{ data: Payment }> =>
     api.post(`/payments/${id}/reject`, { reason }),
+};
+
+// Online payments through the society's own Razorpay account
+export const onlinePaymentsApi = {
+  /** The society's Razorpay connection (admin or accountant); never the secret. */
+  config: (): Promise<{ data: OnlineGateway }> => api.get('/online-payments/config'),
+  /** Connect or update it (admin only). The keys are checked with Razorpay first. A blank secret keeps the saved one. */
+  save: (data: { keyId: string; keySecret?: string; settlementAccountId: string; enabled: boolean }): Promise<{ data: OnlineGateway }> =>
+    api.put('/online-payments/config', data),
+  disconnect: (): Promise<{ data: OnlineGateway }> => api.delete('/online-payments/config'),
+  recent: (): Promise<{ data: OnlineRecent[] }> => api.get('/online-payments/recent'),
+  /** Whether residents are offered "Pay online". */
+  available: (): Promise<{ data: { enabled: boolean } }> => api.get('/online-payments/available'),
+  /** Resident: start a payment for one of their bills; returns the Razorpay page to open. */
+  start: (data: { maintenanceBillId: string; amount: string }): Promise<{ data: OnlineOrder }> => api.post('/online-payments/start', data),
+  status: (id: string): Promise<{ data: OnlineOrder }> => api.get(`/online-payments/${id}/status`),
 };
 
 // Expenses

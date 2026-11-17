@@ -2079,6 +2079,60 @@ model PlatformWhatsappSettings {
 /// A society's own Meta WhatsApp Business Cloud API account: the official way to send WhatsApp messages. One row per
 /// society, created when its admin connects it. The access token is encrypted (AES-256-GCM) and never sent back to
 /// any client. No foreign keys, like the message log: the row goes with its society through the schema-derived purge.
+/// How a payment started from the app is going: waiting for the resident to pay, paid, or given up on.
+enum GatewayOrderStatus {
+  CREATED
+  PAID
+  EXPIRED
+  FAILED
+}
+
+/// A society's OWN Razorpay account, used for online payments from the app. The money goes from the resident to the society's
+/// Razorpay account and from there to its bank: NG Home never receives or holds any of it, and holds no account of its own.
+/// The secret is stored encrypted and never leaves the server.
+model SocietyPaymentGateway {
+  id                  String   @id @default(uuid())
+  societyId           String   @unique
+  provider            String   @default("RAZORPAY")
+  /// The public key id, rzp_test_… or rzp_live_… (which one says whether real money moves).
+  keyId               String
+  keySecretEnc        String
+  /// The society account an online payment is credited to in the books (where Razorpay settles to).
+  settlementAccountId String
+  enabled             Boolean  @default(false)
+  updatedById         String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("society_payment_gateway")
+}
+
+/// One payment started from the app: a Razorpay Payment Link for a bill, and what came of it.
+model GatewayOrder {
+  id                  String             @id @default(uuid())
+  societyId           String
+  flatId              String
+  userId              String
+  maintenanceBillId   String
+  provider            String             @default("RAZORPAY")
+  /// The Payment Link id (plink_…).
+  providerLinkId      String?            @unique
+  /// The payment id (pay_…) once paid; unique, so one payment can only ever be applied once.
+  providerPaymentId   String?            @unique
+  amount              Decimal            @db.Decimal(12, 2)
+  status              GatewayOrderStatus @default(CREATED)
+  failureReason       String?
+  /// The payment recorded in the books when this was paid.
+  paymentSubmissionId String?            @unique
+  paidAt              DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([societyId, status])
+  @@index([userId])
+  @@map("gateway_orders")
+}
+
 model SocietyWhatsappCloud {
   id             String   @id @default(uuid())
   societyId      String   @unique

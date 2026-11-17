@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Receipt, Download, ChevronDown, ChevronUp, CheckCircle2, Clock, AlertCircle, Copy, Check, Smartphone, ExternalLink, Paperclip, X } from 'lucide-react';
-import { billingApi, societyApi } from '@/lib/api/endpoints';
+import { billingApi, onlinePaymentsApi, societyApi } from '@/lib/api/endpoints';
+import { isOpen, outcomeMessage } from '@/lib/onlinePayments';
+import type { OnlineOutcome } from '@/lib/onlinePayments';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
@@ -17,6 +19,121 @@ const MONTH_NAMES = [
   '', 'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
+
+/**
+ * "Pay online": the society's own Razorpay page (UPI apps, cards, netbanking). Opens in a new tab; this card then asks the
+ * server where the payment stands every few seconds, and the bill updates by itself the moment Razorpay confirms it.
+ * Shown only when the society has switched online payments on.
+ */
+function PayOnlineCard({ bill, owed, onPaid }: { bill: any; owed: number; onPaid: () => void }) {
+  const { data: available } = useQuery({
+    queryKey: ['online-payments-available'],
+    queryFn: () => onlinePaymentsApi.available().then((r: any) => (r.data ?? r) as { enabled: boolean }),
+    staleTime: 60_000,
+  });
+  const [amountText, setAmountText] = useState(owed > 0 ? owed.toFixed(2) : '');
+  const [starting, setStarting] = useState(false);
+  const [orderId, setOrderId] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<OnlineOutcome | null>(null);
+  const done = useRef(false);
+
+  async function check(id: string) {
+    try {
+      const res: any = await onlinePaymentsApi.status(id);
+      const o = (res.data ?? res) as { outcome: OnlineOutcome };
+      setOutcome(o.outcome);
+      if (!isOpen(o.outcome) && !done.current) {
+        done.current = true;
+        const m = outcomeMessage(o.outcome);
+        if (m?.kind === 'error') toast.error(m.text);
+        else if (m) toast.success(m.text);
+        setOrderId(null);
+        if (o.outcome === 'PAID' || o.outcome === 'NEEDS_REVIEW') onPaid();
+      }
+    } catch {
+      /* try again on the next tick */
+    }
+  }
+
+  useEffect(() => {
+    if (!orderId) return;
+    done.current = false;
+    const t = setInterval(() => void check(orderId), 4000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId]);
+
+  if (!available?.enabled) return null;
+  const amount = parseFloat(amountText) > 0 ? parseFloat(amountText) : 0;
+
+  async function pay() {
+    if (amount <= 0) { toast.error('Enter the amount you are paying'); return; }
+    // Opened straight from the click, so the browser does not take it for a pop-up; pointed at Razorpay once we have the page.
+    const tab = window.open('', '_blank');
+    setStarting(true);
+    try {
+      const res: any = await onlinePaymentsApi.start({ maintenanceBillId: bill.id, amount: amount.toFixed(2) });
+      const order = res.data ?? res;
+      if (tab) tab.location.href = order.url; else window.location.href = order.url;
+      setOutcome('WAITING');
+      setOrderId(order.id);
+    } catch (e: any) {
+      tab?.close();
+      const m = e?.response?.data?.message;
+      toast.error(Array.isArray(m) ? m.join(', ') : (m ?? 'Could not start the payment'));
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-green-200 bg-green-50/50 p-4 space-y-3">
+      <p className="text-xs font-semibold text-green-800 uppercase tracking-wide">Pay online</p>
+      {orderId ? (
+        <div className="space-y-2" role="status">
+          <p className="text-sm text-slate-700">Waiting for your payment. Finish it in the Razorpay tab; this page updates by itself.</p>
+          <div className="flex gap-2">
+            <button onClick={() => void check(orderId)} className="rounded-lg border border-green-300 bg-white px-3 py-1.5 text-xs font-semibold text-green-800 hover:bg-green-50">Check now</button>
+            <button onClick={() => { setOrderId(null); setOutcome(null); }} className="rounded-lg px-3 py-1.5 text-xs text-slate-500 hover:text-slate-800">Stop waiting</button>
+          </div>
+          {outcome && outcome !== 'WAITING' && <p className="text-xs text-slate-500">{OUTCOME_HINT[outcome]}</p>}
+        </div>
+      ) : (
+        <>
+          <div className="text-center">
+            <label htmlFor="online-amount" className="text-xs text-slate-500">Amount to pay (₹)</label>
+            <input
+              id="online-amount"
+              type="number"
+              min="0"
+              step="0.01"
+              value={amountText}
+              onChange={(e) => setAmountText(e.target.value)}
+              className="mx-auto mt-1 block w-48 rounded-lg border border-green-200 bg-white px-3 py-2 text-center text-2xl font-bold text-green-800 focus:outline-none focus:ring-2 focus:ring-green-400"
+            />
+          </div>
+          <button
+            onClick={() => void pay()}
+            disabled={starting || amount <= 0}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-700 py-3 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-50"
+          >
+            <ExternalLink size={15} />
+            {starting ? 'Opening…' : `Pay ${formatCurrency(amount)} online`}
+          </button>
+          <p className="text-center text-[11px] text-slate-500">UPI apps, cards or netbanking, on Razorpay&apos;s secure page. Your bill is updated as soon as it is paid.</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+const OUTCOME_HINT: Record<OnlineOutcome, string> = {
+  WAITING: '',
+  PAID: '',
+  NEEDS_REVIEW: '',
+  EXPIRED: 'That page expired.',
+  FAILED: 'That payment did not go through.',
+};
 
 function UpiPayCard({
   bill,
@@ -329,6 +446,9 @@ function BillCard({ bill, owed, upiId, societyName, verificationRequired, onPaid
               </span>
             </div>
           </div>
+
+          {/* Online payment, when the society has Razorpay switched on */}
+          {hasPending && <PayOnlineCard bill={bill} owed={owed} onPaid={onPaid} />}
 
           {/* UPI Pay section (only for unpaid bills with UPI configured) */}
           {hasPending && upiId && (

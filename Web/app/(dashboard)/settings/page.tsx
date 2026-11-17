@@ -15,6 +15,7 @@ import {
   type UsageLimit, type UsageLimitForm,
 } from '@/lib/waterUsageLimit';
 import { WhatsappSection } from '@/components/settings/WhatsappSection';
+import { OnlinePaymentsSection } from '@/components/settings/OnlinePaymentsSection';
 import { FeaturesSection } from '@/components/settings/FeaturesSection';
 import { BASIS_LABEL, KIND_LABEL, buildRulePayload, describeRule } from '@/lib/billingRules';
 import { ruleDetailRows } from '@/lib/billingRuleDetails';
@@ -1078,6 +1079,19 @@ export default function SettingsPage() {
           <SocietyDetailsSection admin={admin} />
           <BillingConfigSection admin={admin} />
         </Card>
+
+        {/* Online payments through the society's own Razorpay account */}
+        {admin && (
+          <Card padding="lg">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <IndianRupee size={18} className="text-primary-600" />
+                <CardTitle>Online Payments</CardTitle>
+              </div>
+            </CardHeader>
+            <OnlinePaymentsSection />
+          </Card>
+        )}
 
         {/* Resident Invite Code */}
         {admin && (

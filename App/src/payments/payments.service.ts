@@ -417,7 +417,7 @@ export class PaymentsService {
     billId: string,
     accountId: string,
     actorId: string,
-    method: 'auto' | 'auto-resume',
+    method: 'auto' | 'auto-resume' | 'online',
   ) {
     const now = new Date();
 
@@ -443,7 +443,10 @@ export class PaymentsService {
         transactionType: 'CREDIT',
         amount: payment.amount,
         transactionDate: payment.paymentDate,
-        description: `Payment received (auto-approved)${payment.utrNumber ? ` — UTR ${payment.utrNumber}` : ''}`,
+        description:
+          method === 'online'
+            ? `Online payment received — ${payment.utrNumber}`
+            : `Payment received (auto-approved)${payment.utrNumber ? ` — UTR ${payment.utrNumber}` : ''}`,
         linkedEntityType: 'PaymentSubmission',
         linkedEntityId: payment.id,
         balanceAfter: updatedAccount.currentBalance,
@@ -554,6 +557,63 @@ export class PaymentsService {
       },
       `payment ${paymentId} (WhatsApp receipt)`,
     );
+  }
+
+  /**
+   * A payment made from the app through the society's own Razorpay account, once Razorpay itself has said it was paid. It is
+   * recorded the way an approved payment is (the money goes into the society's chosen account, the flat's oldest dues are
+   * settled first, the resident is told and a receipt goes out), with no person in between: Razorpay, not the resident, is
+   * the source of truth that the money moved. providerPaymentId is the payment's id at Razorpay; one of them can only be
+   * applied once, however many times this is called (a return page, a status check and a background pass can all arrive).
+   *
+   * If the books cannot take it (the bill was settled another way meanwhile, or it is more than the flat can pay) the money
+   * is already at Razorpay, so it is never dropped: it is left as a pending payment with a note for the admin, who can approve
+   * or refund it from Razorpay.
+   */
+  async recordOnline(
+    societyId: string,
+    o: { userId: string; flatId: string; billId: string; amount: Prisma.Decimal; providerPaymentId: string; paidAt: Date; accountId: string | null },
+  ): Promise<{ payment: { id: string; status: PaymentStatus }; applied: boolean }> {
+    const known = () => this.prisma.paymentSubmission.findFirst({ where: { societyId, flatId: o.flatId, utrNumber: o.providerPaymentId } });
+    const before = await known();
+    if (before) return { payment: before, applied: before.status === PaymentStatus.APPROVED };
+
+    const base = {
+      societyId,
+      flatId: o.flatId,
+      userId: o.userId,
+      maintenanceBillId: o.billId,
+      amount: o.amount,
+      paymentDate: o.paidAt,
+      paymentMethod: 'UPI' as const,
+      referenceNumber: o.providerPaymentId,
+      utrNumber: o.providerPaymentId,
+    };
+    try {
+      const payment = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.paymentSubmission.create({
+          data: { ...base, notes: 'Paid online through Razorpay', status: PaymentStatus.PENDING },
+        });
+        // The society disconnected online payments after this one started: there is no account to credit, so it goes to a person.
+        if (!o.accountId) throw new Error('the society no longer has an account set for online payments');
+        return (await this.creditAndApprove(tx, societyId, created, o.billId, o.accountId, o.userId, 'online')) ?? created;
+      });
+      if (payment.status === PaymentStatus.APPROVED) await this.notifyAutoApproved(societyId, o.userId, payment);
+      return { payment, applied: payment.status === PaymentStatus.APPROVED };
+    } catch (err) {
+      // Two arrivals at once: the unique (flat, payment id) pair means the other one won and already recorded it.
+      const winner = await known();
+      if (winner) return { payment: winner, applied: winner.status === PaymentStatus.APPROVED };
+      const why = err instanceof Error ? err.message : String(err);
+      const payment = await this.prisma.paymentSubmission.create({
+        data: {
+          ...base,
+          status: PaymentStatus.PENDING,
+          notes: `Paid online through Razorpay (${o.providerPaymentId}) but could not be applied to the bill automatically: ${why}. Check it, then approve it or refund it from your Razorpay dashboard.`,
+        },
+      });
+      return { payment, applied: false };
+    }
   }
 
   /**

@@ -42,6 +42,7 @@ import { VehiclesModule } from './vehicles/vehicles.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReceiptsModule } from './receipts/receipts.module';
+import { OnlinePaymentsModule } from './online-payments/online-payments.module';
 import { ReportsModule } from './reports/reports.module';
 import { EventsModule } from './events/events.module';
 import { ForumModule } from './forum/forum.module';
@@ -86,6 +87,7 @@ import { ChatModule } from './chat/chat.module';
     HelpdeskModule,
     NotificationsModule,
     ReceiptsModule,
+    OnlinePaymentsModule,
     ReportsModule,
     EventsModule,
     ForumModule,

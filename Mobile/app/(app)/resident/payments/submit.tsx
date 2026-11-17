@@ -27,6 +27,7 @@ import { billingPeriodName } from '@/types/billing.types';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
+import { PayOnlineCard } from '@/components/payments/PayOnlineCard';
 import { colors, spacing, typography, radius } from '@/theme';
 import { toNum, inr } from '@/utils/format';
 import { totalDue, earlierDue } from '@/utils/dues';
@@ -181,6 +182,21 @@ export default function SubmitPaymentScreen() {
                 </Text>
               )}
             </View>
+          )}
+
+          {/* Paying inside the app, when the society has its own Razorpay switched on: settled automatically, no UTR or approval. */}
+          {myBill && (
+            <PayOnlineCard
+              maintenanceBillId={myBill.id}
+              owed={owedStr}
+              onPaid={() => {
+                queryClient.invalidateQueries({ queryKey: ['my-payments'] });
+                queryClient.invalidateQueries({ queryKey: ['my-bill'] });
+                queryClient.invalidateQueries({ queryKey: ['my-bills-all'] });
+                queryClient.invalidateQueries({ queryKey: ['my-bills'] });
+                router.back();
+              }}
+            />
           )}
 
           <Text style={styles.sectionTitle}>Payment Details</Text>
