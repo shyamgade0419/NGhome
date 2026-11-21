@@ -18,6 +18,7 @@ import type { AttendanceStatus, DayRow, MonthDay, RosterRow, Shift, SummaryRow }
 import type { OpeningBalances, OpeningInputRow, OpeningSaveResult } from '@/lib/openingBalances';
 import type { AdvanceCredits, FlatDiscount, FlatDiscountInput } from '@/lib/flatDiscounts';
 import type { OnlineGateway, OnlineOrder, OnlineRecent } from '@/lib/onlinePayments';
+import type { UtilityConnection, UtilityProvider } from '@/lib/utilities';
 import type { BillReminder, ReminderTemplate, WhatsappCloud, WhatsappConnection, WhatsappGatewayView, WhatsappMessageRow, WhatsappSessionsOverview, WhatsappStatus } from '@/lib/reminders';
 
 // Dashboard — composites several report endpoints
@@ -202,6 +203,15 @@ export const paymentsApi = {
 
   reject: (id: string, reason: string): Promise<{ data: Payment }> =>
     api.post(`/payments/${id}/reject`, { reason }),
+};
+
+// A flat's electricity connection and its monthly reminder (residents only; no bill is fetched, nothing is paid here)
+export const utilitiesApi = {
+  providers: (): Promise<{ data: { electricity: UtilityProvider[]; defaultReminderDay: number } }> => api.get('/utility-connections/providers'),
+  mine: (): Promise<{ data: UtilityConnection[] }> => api.get('/utility-connections'),
+  create: (data: Record<string, unknown>): Promise<{ data: UtilityConnection }> => api.post('/utility-connections', data),
+  update: (id: string, data: Record<string, unknown>): Promise<{ data: UtilityConnection }> => api.patch(`/utility-connections/${id}`, data),
+  remove: (id: string): Promise<unknown> => api.delete(`/utility-connections/${id}`),
 };
 
 // Online payments through the society's own Razorpay account

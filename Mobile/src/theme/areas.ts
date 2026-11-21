@@ -22,6 +22,8 @@ const RULES: ReadonlyArray<readonly [RegExp, Area | null]> = [
   [/payment/i, { tone: 'green', icon: 'card-outline' }],
   [/expense|salar/i, { tone: 'coral', icon: 'wallet-outline' }],
   [/water/i, { tone: 'teal', icon: 'water-outline' }],
+  // Before the general "bill": an electricity bill is not a maintenance bill.
+  [/electric|power|utilit/i, { tone: 'amber', icon: 'flash-outline' }],
   [/bill|maintenance|invoice|credit|discount|opening/i, { tone: 'blue', icon: 'receipt-outline' }],
   [/helpdesk|request/i, { tone: 'amber', icon: 'construct-outline' }],
   [/announce|community|forum|chat|message|board/i, { tone: 'violet', icon: 'chatbubbles-outline' }],

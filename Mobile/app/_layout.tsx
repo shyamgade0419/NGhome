@@ -91,6 +91,8 @@ export default function RootLayout() {
         router.push('/(app)/household-help' as any);
       } else if (type === 'PARKING_ALLOCATED' || type === 'PARKING_RELEASED' || type === 'VEHICLE_REMOVED') {
         router.push('/(app)/vehicles' as any);
+      } else if (type === 'UTILITY_REMINDER') {
+        router.push('/(app)/electricity' as any);
       } else if (type === 'PARCEL_RECEIVED') {
         router.push('/(app)/deliveries' as any);
       } else if (type === 'VISITOR_DECISION') {

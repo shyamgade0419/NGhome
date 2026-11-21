@@ -1,7 +1,9 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from './notifications.service';
-import { announcementNotice, eventReminder, meetingReminder } from './notification-content';
+import { announcementNotice, eventReminder, meetingReminder, utilityReminder } from './notification-content';
+import { istParts } from '../whatsapp/whatsapp-settings';
+import { GRACE_DAYS, REMIND_FROM_HOUR, monthKey } from '../utilities/utility-reminders';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 
 const MINUTE_MS = 60 * 1000;
@@ -19,6 +21,7 @@ export interface SchedulerResult {
   announcements: number;
   meetingReminders: number;
   eventReminders: number;
+  utilityReminders: number;
 }
 
 /**
@@ -57,12 +60,13 @@ export class NotificationSchedulerService implements OnModuleInit, OnModuleDestr
   }
 
   async run(now = new Date()): Promise<SchedulerResult> {
-    const result: SchedulerResult = { announcements: 0, meetingReminders: 0, eventReminders: 0 };
+    const result: SchedulerResult = { announcements: 0, meetingReminders: 0, eventReminders: 0, utilityReminders: 0 };
     // One failing kind must not stop the others.
     for (const [key, job] of [
       ['announcements', () => this.dueAnnouncements(now)],
       ['meetingReminders', () => this.meetingReminders(now)],
       ['eventReminders', () => this.eventReminders(now)],
+      ['utilityReminders', () => this.utilityReminders(now)],
     ] as const) {
       try {
         result[key] = await job();
@@ -133,6 +137,45 @@ export class NotificationSchedulerService implements OnModuleInit, OnModuleDestr
         ?.enqueueNotice(e.societyId, { type: 'EVENT', stage: 'REMINDER', id: e.id, title: e.title, when: e.eventDate, details: e.description })
         .catch((err) => this.logger.error(`WhatsApp event reminder ${e.id} failed: ${err instanceof Error ? err.message : err}`));
       sent += 1;
+    }
+    return sent;
+  }
+
+  /**
+   * The monthly electricity reminder: each saved connection whose reminder day it is (or was in the last two days, if the server was
+   * down), from 9 a.m. India time, once a month. Every resident of the flat is told. The month is claimed first with one atomic update,
+   * so two runs, or two servers, at the same moment send it once.
+   */
+  async utilityReminders(now: Date): Promise<number> {
+    const { day, hour } = istParts(now);
+    if (hour < REMIND_FROM_HOUR) return 0;
+    const month = monthKey(now);
+    const due = await this.prisma.utilityConnection.findMany({
+      where: {
+        remindersOn: true,
+        reminderDay: { gte: Math.max(1, day - GRACE_DAYS), lte: day },
+        OR: [{ lastRemindedMonth: null }, { lastRemindedMonth: { not: month } }],
+      },
+    });
+    let sent = 0;
+    for (const c of due) {
+      const claimed = await this.prisma.utilityConnection.updateMany({
+        where: { id: c.id, OR: [{ lastRemindedMonth: null }, { lastRemindedMonth: { not: month } }] },
+        data: { lastRemindedMonth: month },
+      });
+      if (claimed.count !== 1) continue;
+      try {
+        const residents = await this.prisma.societyMembership.findMany({
+          where: { societyId: c.societyId, flatId: c.flatId, status: 'ACTIVE' },
+          select: { userId: true },
+        });
+        await this.notifications.sendToUsers(c.societyId, residents.map((r) => r.userId), utilityReminder(c));
+        sent += 1;
+      } catch (e) {
+        // Not sent: give the month back so the next run tries again.
+        await this.prisma.utilityConnection.updateMany({ where: { id: c.id, lastRemindedMonth: month }, data: { lastRemindedMonth: c.lastRemindedMonth } });
+        this.logger.error(`Electricity reminder ${c.id} failed: ${e instanceof Error ? e.message : e}`);
+      }
     }
     return sent;
   }

@@ -325,7 +325,7 @@ describe('Notification reach (e2e, real Postgres)', () => {
   it('runs all the clock-driven jobs together and reports what each sent', async () => {
     const before = (await inbox('res1')).length;
     const result = await scheduler.run(new Date());
-    expect(Object.keys(result).sort()).toEqual(['announcements', 'eventReminders', 'meetingReminders']);
+    expect(Object.keys(result).sort()).toEqual(['announcements', 'eventReminders', 'meetingReminders', 'utilityReminders']);
     expect((await inbox('res1')).length).toBe(before); // everything above is already told
   });
 });

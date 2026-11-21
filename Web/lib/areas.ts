@@ -1,7 +1,7 @@
 import {
   BarChart3, BadgePercent, Bell, BookOpen, CalendarCheck, CalendarDays, Car, ClipboardCheck, CreditCard, Droplets, DoorOpen,
   FileText, FolderOpen, HelpCircle, Home, Landmark, LayoutDashboard, LayoutList, Megaphone, Package, PiggyBank, Receipt,
-  Settings, ShieldCheck, UserCheck, UserCircle, Users, Wallet, Wrench,
+  Settings, ShieldCheck, UserCheck, UserCircle, Users, Wallet, Wrench, Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Tone } from '@/lib/tones';
@@ -35,6 +35,7 @@ const AREAS: ReadonlyArray<readonly [string, Area]> = [
   ['/reports', { tone: 'green', icon: BarChart3 }],
   ['/community', { tone: 'violet', icon: Megaphone }],
   ['/helpdesk', { tone: 'amber', icon: Wrench }],
+  ['/electricity', { tone: 'amber', icon: Zap }],
   ['/meetings', { tone: 'teal', icon: CalendarDays }],
   ['/documents', { tone: 'blue', icon: FolderOpen }],
   ['/amenities', { tone: 'teal', icon: CalendarCheck }],

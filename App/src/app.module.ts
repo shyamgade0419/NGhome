@@ -43,6 +43,7 @@ import { AttendanceModule } from './attendance/attendance.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReceiptsModule } from './receipts/receipts.module';
 import { OnlinePaymentsModule } from './online-payments/online-payments.module';
+import { UtilitiesModule } from './utilities/utilities.module';
 import { ReportsModule } from './reports/reports.module';
 import { EventsModule } from './events/events.module';
 import { ForumModule } from './forum/forum.module';
@@ -88,6 +89,7 @@ import { ChatModule } from './chat/chat.module';
     NotificationsModule,
     ReceiptsModule,
     OnlinePaymentsModule,
+    UtilitiesModule,
     ReportsModule,
     EventsModule,
     ForumModule,

@@ -38,6 +38,7 @@ import {
   ClipboardCheck,
   BookOpen,
   BadgePercent,
+  Zap,
 } from 'lucide-react';
 import { cn, initials } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -86,6 +87,7 @@ const RESIDENT_NAV = [
   { href: '/meetings', icon: CalendarDays, label: 'Meetings' },
   { href: '/community', icon: Megaphone, label: 'Community' },
   { href: '/helpdesk', icon: Wrench, label: 'Helpdesk' },
+  { href: '/electricity', icon: Zap, label: 'Electricity' },
   { href: '/documents', icon: FolderOpen, label: 'Documents' },
   { href: '/notifications', icon: Bell, label: 'Notifications' },
 ];

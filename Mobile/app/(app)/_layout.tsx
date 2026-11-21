@@ -31,6 +31,7 @@ export default function AppLayout() {
       <Stack.Screen name="deliveries" />
       <Stack.Screen name="household-help" />
       <Stack.Screen name="vehicles" />
+      <Stack.Screen name="electricity" />
       <Stack.Screen name="guard" />
     </Stack>
   );

@@ -47,6 +47,7 @@ const QUICK_LINKS: readonly ActionItem[] = [
   { label: 'Deliveries', icon: 'cube-outline', tone: 'amber', route: '/(app)/deliveries' },
   { label: 'Household Help', icon: 'people-circle-outline', tone: 'green', route: '/(app)/household-help' },
   { label: 'Vehicles', icon: 'car-outline', tone: 'blue', route: '/(app)/vehicles' },
+  { label: 'Electricity', icon: 'flash-outline', tone: 'amber', route: '/(app)/electricity' },
 ];
 
 const when = (iso: string | null | undefined) =>

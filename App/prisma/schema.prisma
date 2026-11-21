@@ -2079,6 +2079,36 @@ model PlatformWhatsappSettings {
 /// A society's own Meta WhatsApp Business Cloud API account: the official way to send WhatsApp messages. One row per
 /// society, created when its admin connects it. The access token is encrypted (AES-256-GCM) and never sent back to
 /// any client. No foreign keys, like the message log: the row goes with its society through the schema-derived purge.
+/// A flat's electricity connection (company and consumer number), so the app can remind the residents to check and pay the bill
+/// each month. Nothing is fetched from the company and nothing is paid through NG Home: it is a saved number and a reminder.
+/// Only the flat's own residents can see or change it.
+model UtilityConnection {
+  id                String   @id @default(uuid())
+  societyId         String
+  flatId            String
+  addedById         String
+  kind              String   @default("ELECTRICITY")
+  /// A company from the server's list, or OTHER.
+  providerCode      String
+  providerName      String
+  /// The company's website to pay on (https); from the list, or the resident's own for OTHER.
+  providerUrl       String?
+  consumerNumber    String
+  nickname          String?
+  /// Day of the month (1 to 28) the reminder goes out.
+  reminderDay       Int      @default(8)
+  remindersOn       Boolean  @default(true)
+  /// 'YYYY-MM' (India calendar) of the last reminder sent, so it goes once a month.
+  lastRemindedMonth String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([flatId, kind, consumerNumber])
+  @@index([societyId, flatId])
+  @@index([remindersOn, reminderDay])
+  @@map("utility_connections")
+}
+
 /// How a payment started from the app is going: waiting for the resident to pay, paid, or given up on.
 enum GatewayOrderStatus {
   CREATED

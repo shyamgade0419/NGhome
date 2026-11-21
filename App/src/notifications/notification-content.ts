@@ -75,3 +75,20 @@ export function eventRescheduled(e: { id: string; title: string; eventDate: Date
 export function eventCancelled(e: { id: string; title: string; eventDate: Date }): Notice {
   return { title: `Event cancelled: ${e.title}`, body: `It was planned for ${whenText(e.eventDate)}`, type: 'EVENT_CANCELLED', data: { eventId: e.id } };
 }
+
+/**
+ * The monthly "check and pay your electricity bill" reminder. It does not know the amount or the due date (nothing is fetched from the
+ * company), so it says what to do, not what is owed. Only the last four characters of the consumer number appear, since a notification
+ * can be read on a locked screen.
+ */
+export function utilityReminder(c: { id: string; providerCode: string; providerName: string; nickname: string | null; consumerNumber: string }): Notice {
+  const label = c.nickname?.trim() || c.providerName;
+  const t = c.consumerNumber.replace(/\s+/g, '');
+  const masked = t.length > 4 ? `•••• ${t.slice(-4)}` : t;
+  return {
+    title: 'Time to check your electricity bill',
+    body: `Check and pay your ${label} bill (consumer no. ${masked}) before it is due.`,
+    type: 'UTILITY_REMINDER',
+    data: { connectionId: c.id, providerCode: c.providerCode },
+  };
+}
