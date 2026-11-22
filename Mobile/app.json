@@ -57,7 +57,8 @@
           "microphonePermission": false
         }
       ],
-      "./plugins/withReleaseSigning"
+      "./plugins/withReleaseSigning",
+      "./plugins/withOptionalHardware"
     ],
     "experiments": {
       "typedRoutes": true
