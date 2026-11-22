@@ -84,6 +84,15 @@ export class DocumentsController {
     return this.documentsService.findAll(societyId, user.currentRole === 'RESIDENT', category, user.flatId);
   }
 
+  // Declared before ':id' so "payment-proofs" is not read as a document id.
+  @Get('payment-proofs')
+  @UseGuards(RolesGuard)
+  @Roles(SystemRole.SOCIETY_ADMIN, SystemRole.SOCIETY_ACCOUNTANT)
+  @ApiOperation({ summary: 'The Payment Proofs folder: payment screenshots, each tagged with its month' })
+  paymentProofs(@SocietyId() societyId: string) {
+    return this.documentsService.findPaymentProofs(societyId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get document metadata' })
   findOne(

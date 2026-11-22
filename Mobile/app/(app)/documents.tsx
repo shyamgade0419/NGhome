@@ -36,7 +36,7 @@ import { SafeAreaView } from '@/components/layout/GlassSafeArea';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { documentsApi, SocietyDocument, DocumentAccessLevel } from '@/api/endpoints/documents.api';
+import { documentsApi, SocietyDocument, DocumentAccessLevel, PaymentProof } from '@/api/endpoints/documents.api';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -450,6 +450,104 @@ function DocumentRow({ doc, onDeleted }: { doc: SocietyDocument; onDeleted?: () 
 
 type Tab = 'society' | 'flat';
 
+/** Payment screenshots, kept apart from society documents: Payment Proofs → one folder per month. */
+function PaymentProofsFolder({ onBack }: { onBack: () => void }) {
+  const [month, setMonth] = useState<string | null>(null);
+  const { data, isLoading, isError, refetch, isRefetching } = useQuery({
+    queryKey: ['documents', 'payment-proofs'],
+    queryFn: () => documentsApi.paymentProofs(),
+  });
+
+  const months = useMemo(() => {
+    const list: { key: string; label: string; items: PaymentProof[] }[] = [];
+    for (const p of data ?? []) {
+      let m = list.find((x) => x.key === p.month);
+      if (!m) {
+        m = { key: p.month, label: p.monthLabel, items: [] };
+        list.push(m);
+      }
+      m.items.push(p);
+    }
+    return list;
+  }, [data]);
+  const open = month ? months.find((m) => m.key === month) : undefined;
+
+  const openProof = async (p: PaymentProof) => {
+    if (!p.paymentId) return;
+    try {
+      await documentsApi.openProof(p.paymentId, p.fileName);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Failed to open screenshot.');
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <ScreenHeader title={open ? open.label : 'Payment Proofs'} showBack onBack={open ? () => setMonth(null) : onBack} />
+      {isLoading ? (
+        <LoadingState message="Loading payment proofs…" />
+      ) : isError ? (
+        <EmptyState icon="alert-circle-outline" title="Couldn't load payment proofs" description="Pull down to try again." />
+      ) : !open ? (
+        <FlatList
+          data={months}
+          keyExtractor={(m) => m.key}
+          contentContainerStyle={styles.list}
+          ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />}
+          ListEmptyComponent={
+            <EmptyState
+              icon="folder-open-outline"
+              title="No payment proofs"
+              description="Screenshots residents attach to a payment appear here, month by month."
+            />
+          }
+          renderItem={({ item }) => (
+            <TouchableOpacity style={styles.card} activeOpacity={0.8} onPress={() => setMonth(item.key)}>
+              <View style={[styles.iconWrap, { backgroundColor: colors.primary + '18' }]}>
+                <Ionicons name="folder" size={20} color={colors.primary} />
+              </View>
+              <View style={styles.cardBody}>
+                <Text style={styles.title}>{item.label}</Text>
+                <Text style={styles.meta}>{item.items.length} screenshot{item.items.length === 1 ? '' : 's'}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+            </TouchableOpacity>
+          )}
+        />
+      ) : (
+        <FlatList
+          data={open.items}
+          keyExtractor={(p) => p.id}
+          contentContainerStyle={styles.list}
+          ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />}
+          renderItem={({ item }) => (
+            <TouchableOpacity style={styles.card} activeOpacity={0.8} onPress={() => openProof(item)}>
+              <View style={[styles.iconWrap, { backgroundColor: tintFor(item.mimeType) + '18' }]}>
+                <Ionicons name={iconFor(item.mimeType)} size={20} color={tintFor(item.mimeType)} />
+              </View>
+              <View style={styles.cardBody}>
+                <Text style={styles.title} numberOfLines={1}>
+                  {[item.flatCode, item.submittedBy].filter(Boolean).join(' · ') || 'Payment proof'}
+                </Text>
+                <View style={styles.metaRow}>
+                  {item.amount != null && <Text style={styles.meta}>₹{item.amount.toLocaleString('en-IN')}</Text>}
+                  {item.amount != null && <Text style={styles.metaDot}>·</Text>}
+                  <Text style={styles.meta}>
+                    {new Date(item.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+            </TouchableOpacity>
+          )}
+        />
+      )}
+    </SafeAreaView>
+  );
+}
+
 export default function DocumentsScreen() {
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
@@ -459,6 +557,9 @@ export default function DocumentsScreen() {
   const canUploadSociety = canUploadOfficial(user?.currentRole);
   const canLink = canAddLink(user?.currentRole);
   const hasFlat = !!user?.flatId;
+  const [inProofs, setInProofs] = useState(false);
+  // Same people the API lets open a payment proof.
+  const canSeeProofs = user?.currentRole === 'SOCIETY_ADMIN' || user?.currentRole === 'SOCIETY_ACCOUNTANT';
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['documents'],
@@ -484,6 +585,8 @@ export default function DocumentsScreen() {
     const matchCat = !category || d.category === category;
     return matchSearch && matchCat;
   });
+
+  if (inProofs && canSeeProofs) return <PaymentProofsFolder onBack={() => setInProofs(false)} />;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -594,6 +697,25 @@ export default function DocumentsScreen() {
           ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
           refreshControl={
             <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />
+          }
+          ListHeaderComponent={
+            canSeeProofs && tab === 'society' ? (
+              <TouchableOpacity
+                style={[styles.card, { marginBottom: spacing.sm }]}
+                activeOpacity={0.8}
+                onPress={() => setInProofs(true)}
+                accessibilityLabel="Open the Payment Proofs folder"
+              >
+                <View style={[styles.iconWrap, { backgroundColor: colors.primary + '18' }]}>
+                  <Ionicons name="folder" size={20} color={colors.primary} />
+                </View>
+                <View style={styles.cardBody}>
+                  <Text style={styles.title}>Payment Proofs</Text>
+                  <Text style={styles.meta}>Screenshots, month by month</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+              </TouchableOpacity>
+            ) : null
           }
           ListEmptyComponent={
             tab === 'flat' ? (

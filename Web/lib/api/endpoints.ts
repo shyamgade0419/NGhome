@@ -580,6 +580,8 @@ export const documentsApi = {
   }) => api.post('/documents', data),
   get: (id: string) => api.get(`/documents/${id}`),
   remove: (id: string) => api.delete(`/documents/${id}`),
+  // The "Payment Proofs" folder (admin / accountant): payment screenshots, each tagged with its month.
+  paymentProofs: () => api.get('/documents/payment-proofs'),
 };
 
 // Helpdesk / Maintenance Requests

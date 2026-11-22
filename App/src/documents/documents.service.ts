@@ -27,9 +27,20 @@ const ADMIN_SELECTABLE_LEVELS: string[] = [
  * ADMIN_ONLY level would also show them to the committee.
  */
 const OWN_ROUTE_ONLY: Prisma.DocumentWhereInput = {
-  // Spelled out because `not: 'EXPENSE'` would also drop every document with no link at all (SQL NULL).
-  AND: [{ OR: [{ linkedEntityType: null }, { linkedEntityType: { not: 'EXPENSE' } }] }],
+  // Spelled out because `not: ...` would also drop every document with no link at all (SQL NULL).
+  // A payment's proof screenshot is evidence, not a society document: it is listed in the
+  // "Payment Proofs" folder (findPaymentProofs) and opened through its payment.
+  AND: [{ OR: [{ linkedEntityType: null }, { linkedEntityType: { notIn: ['EXPENSE', 'PaymentSubmission'] } }] }],
 };
+
+/** Calendar month of a date as the society sees it (India time), e.g. { key: '2026-10', label: 'October 2026' }. */
+function monthOf(date: Date): { key: string; label: string } {
+  const ist = new Date(date.getTime() + (5 * 60 + 30) * 60 * 1000);
+  const year = ist.getUTCFullYear();
+  const month = ist.getUTCMonth();
+  const name = new Date(Date.UTC(year, month, 1)).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
+  return { key: `${year}-${String(month + 1).padStart(2, '0')}`, label: `${name} ${year}` };
+}
 
 @Injectable()
 export class DocumentsService {
@@ -203,6 +214,49 @@ export class DocumentsService {
       orderBy: { createdAt: 'desc' },
     });
     return docs.map(toClient);
+  }
+
+  /**
+   * The "Payment Proofs" folder: every payment's proof screenshot, newest first, each tagged
+   * with the month it was submitted so a screen can fold them into month folders. Callers
+   * are limited to admin and accountant by the controller, the same people who may open a
+   * proof through the payments route.
+   */
+  async findPaymentProofs(societyId: string) {
+    const docs = await this.prisma.document.findMany({
+      where: { societyId, isActive: true, linkedEntityType: 'PaymentSubmission' },
+      include: {
+        payments: {
+          select: {
+            id: true,
+            amount: true,
+            status: true,
+            flat: { select: { flatCode: true } },
+            user: { select: { firstName: true, lastName: true } },
+          },
+          take: 1,
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return docs.map((d) => {
+      const payment = d.payments[0];
+      const { key, label } = monthOf(d.createdAt);
+      return {
+        id: d.id,
+        paymentId: payment?.id ?? d.linkedEntityId,
+        fileName: d.fileName,
+        fileSize: d.fileSize,
+        mimeType: d.mimeType,
+        createdAt: d.createdAt,
+        month: key,
+        monthLabel: label,
+        flatCode: payment?.flat?.flatCode ?? null,
+        amount: payment ? Number(payment.amount) : null,
+        status: payment?.status ?? null,
+        submittedBy: payment?.user ? `${payment.user.firstName} ${payment.user.lastName}`.trim() : null,
+      };
+    });
   }
 
   async findOne(

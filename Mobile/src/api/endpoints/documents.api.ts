@@ -32,6 +32,22 @@ export interface SocietyDocument {
   uploadedBy?: { firstName: string; lastName: string } | null;
 }
 
+export interface PaymentProof {
+  id: string;
+  paymentId: string | null;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  createdAt: string;
+  /** 'YYYY-MM' and its label, e.g. '2026-10' / 'October 2026'. */
+  month: string;
+  monthLabel: string;
+  flatCode: string | null;
+  amount: number | null;
+  status: string | null;
+  submittedBy: string | null;
+}
+
 export const documentsApi = {
   /**
    * List society documents. The API scopes by accessLevel for the caller's role
@@ -114,6 +130,27 @@ export const documentsApi = {
     const token = await tokenService.getAccessToken();
     const localUri = `${FileSystem.cacheDirectory}${Date.now()}-${fileName}`;
     const result = await FileSystem.downloadAsync(`${API_BASE_URL}/documents/${id}/file`, localUri, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (result.status !== 200) {
+      throw new Error(`Failed to download file (status ${result.status})`);
+    }
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(result.uri);
+    }
+  },
+
+  /** The "Payment Proofs" folder (admin / accountant): screenshots, each tagged with its month. */
+  paymentProofs: async (): Promise<PaymentProof[]> => {
+    const { data } = await apiClient.get<PaymentProof[] | { data: PaymentProof[] }>('/documents/payment-proofs');
+    return Array.isArray(data) ? data : (data?.data ?? []);
+  },
+
+  /** Opens a payment's proof screenshot (GET /payments/:id/proof) in the OS share/preview sheet. */
+  openProof: async (paymentId: string, fileName: string): Promise<void> => {
+    const token = await tokenService.getAccessToken();
+    const localUri = `${FileSystem.cacheDirectory}${Date.now()}-${fileName}`;
+    const result = await FileSystem.downloadAsync(`${API_BASE_URL}/payments/${paymentId}/proof`, localUri, {
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });
     if (result.status !== 200) {

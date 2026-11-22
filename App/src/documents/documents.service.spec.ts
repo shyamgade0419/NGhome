@@ -138,3 +138,33 @@ describe('DocumentsService — findOne resident visibility (DEFECT-7)', () => {
     });
   });
 });
+
+describe('DocumentsService — findPaymentProofs (Payment Proofs folder)', () => {
+  const proof = (id: string, createdAt: string) => ({
+    id,
+    linkedEntityId: `pay-${id}`,
+    fileName: `${id}.jpg`,
+    fileSize: 10,
+    mimeType: 'image/jpeg',
+    createdAt: new Date(createdAt),
+    payments: [{ id: `pay-${id}`, amount: '1500.00', status: 'APPROVED', flat: { flatCode: 'A-101' }, user: { firstName: 'Asha', lastName: 'Rao' } }],
+  });
+
+  it('tags each proof with the month it was submitted, in India time, and asks only for proof documents', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      proof('nov', '2026-11-05T10:00:00Z'),
+      proof('oct', '2026-10-31T19:00:00Z'), // 00:30 on 1 Nov in India
+      proof('oct2', '2026-10-12T10:00:00Z'),
+    ]);
+    const prisma = { document: { findMany } } as any;
+    const out = await new DocumentsService(prisma, NULL_STORAGE, NULL_PATHS).findPaymentProofs(SOCIETY_ID);
+
+    expect(findMany.mock.calls[0][0].where).toMatchObject({ societyId: SOCIETY_ID, isActive: true, linkedEntityType: 'PaymentSubmission' });
+    expect(out.map((p) => [p.id, p.month, p.monthLabel])).toEqual([
+      ['nov', '2026-11', 'November 2026'],
+      ['oct', '2026-11', 'November 2026'],
+      ['oct2', '2026-10', 'October 2026'],
+    ]);
+    expect(out[0]).toMatchObject({ paymentId: 'pay-nov', flatCode: 'A-101', amount: 1500, submittedBy: 'Asha Rao' });
+  });
+});

@@ -277,15 +277,122 @@ function LinkDocumentModal({ onClose, canPickAccess }: { onClose: () => void; ca
   );
 }
 
+/**
+ * The "Payment Proofs" folder: payment screenshots, kept apart from society documents and
+ * folded into one folder per month (by the day the screenshot was submitted).
+ */
+function PaymentProofsFolder({ onBack }: { onBack: () => void }) {
+  const [month, setMonth] = useState<string | null>(null);
+  const { data, isLoading } = useQuery({
+    queryKey: ['documents', 'payment-proofs'],
+    queryFn: () => documentsApi.paymentProofs().then((r: any) => r.data ?? r),
+  });
+  const proofs: any[] = Array.isArray(data) ? data : (data?.data ?? []);
+
+  // Newest month first (the API already returns newest first, so first-seen order is right).
+  const months: { key: string; label: string; items: any[] }[] = [];
+  for (const p of proofs) {
+    let m = months.find((x) => x.key === p.month);
+    if (!m) {
+      m = { key: p.month, label: p.monthLabel, items: [] };
+      months.push(m);
+    }
+    m.items.push(p);
+  }
+  const open = month ? months.find((m) => m.key === month) : null;
+
+  return (
+    <>
+      <Header
+        title={open ? `Payment Proofs / ${open.label}` : 'Payment Proofs'}
+        actions={
+          <Button size="sm" variant="secondary" onClick={open ? () => setMonth(null) : onBack}>
+            {open ? 'All months' : 'Documents'}
+          </Button>
+        }
+      />
+      <PageContainer>
+        {isLoading ? (
+          <div className="flex justify-center py-12"><Spinner /></div>
+        ) : months.length === 0 ? (
+          <EmptyState icon={FolderOpen} title="No payment proofs" description="Screenshots residents attach to a payment appear here, month by month." />
+        ) : !open ? (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {months.map((m) => (
+              <button
+                key={m.key}
+                onClick={() => setMonth(m.key)}
+                className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left hover:border-primary-300 hover:bg-primary-50"
+              >
+                <FolderOpen size={22} className="flex-shrink-0 text-primary-600" />
+                <div>
+                  <p className="font-medium text-slate-900">{m.label}</p>
+                  <p className="text-xs text-slate-500">{m.items.length} screenshot{m.items.length === 1 ? '' : 's'}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <Table>
+            <Thead>
+              <Tr>
+                <Th>Screenshot</Th>
+                <Th>Flat</Th>
+                <Th>Amount</Th>
+                <Th>Submitted</Th>
+                <Th></Th>
+              </Tr>
+            </Thead>
+            <Tbody>
+              {open.items.map((p: any) => (
+                <Tr key={p.id}>
+                  <Td>
+                    <div className="flex items-center gap-2">
+                      <FileText size={15} className="text-slate-400 flex-shrink-0" />
+                      <div>
+                        <p className="font-medium text-slate-900">{p.submittedBy ?? 'Payment proof'}</p>
+                        <p className="text-xs text-slate-400 font-mono">{p.fileName}</p>
+                      </div>
+                    </div>
+                  </Td>
+                  <Td><span className="text-sm text-slate-600">{p.flatCode ?? '—'}</span></Td>
+                  <Td><span className="text-sm text-slate-600">{p.amount != null ? `₹${p.amount.toLocaleString('en-IN')}` : '—'}</span></Td>
+                  <Td><span className="text-sm text-slate-500">{formatDate(p.createdAt)}</span></Td>
+                  <Td>
+                    {p.paymentId && (
+                      <a
+                        href={`/api/backend-file/payments/${p.paymentId}/proof`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                        title="View / Download"
+                      >
+                        <Download size={14} />
+                      </a>
+                    )}
+                  </Td>
+                </Tr>
+              ))}
+            </Tbody>
+          </Table>
+        )}
+      </PageContainer>
+    </>
+  );
+}
+
 export default function DocumentsPage() {
   const { user, activeMembership } = useAuth();
   const qc = useQueryClient();
   const [modal, setModal] = useState<null | 'upload' | 'link'>(null);
   const [category, setCategory] = useState('');
+  const [inProofs, setInProofs] = useState(false);
 
   const role = activeMembership?.role;
   const isPlatformAdmin = !!user?.isPlatformAdmin;
   const isAdmin = role === 'SOCIETY_ADMIN' || isPlatformAdmin;
+  // Same people the API lets open a payment proof (PaymentsController REVIEWER_ROLES).
+  const canSeeProofs = isAdmin || role === 'SOCIETY_ACCOUNTANT';
   const canUpload = can.uploadDocument(role, isPlatformAdmin);
   const canLink = can.linkDocument(role, isPlatformAdmin);
   // A resident always gets FLAT_PRIVATE forced onto their own flat
@@ -309,6 +416,8 @@ export default function DocumentsPage() {
   });
 
   const docs: any[] = Array.isArray(data) ? data : (data?.data ?? []);
+
+  if (inProofs && canSeeProofs) return <PaymentProofsFolder onBack={() => setInProofs(false)} />;
 
   return (
     <>
@@ -339,6 +448,18 @@ export default function DocumentsPage() {
         }
       />
       <PageContainer>
+        {canSeeProofs && (
+          <button
+            onClick={() => setInProofs(true)}
+            className="mb-4 flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left hover:border-primary-300 hover:bg-primary-50 sm:w-72"
+          >
+            <FolderOpen size={22} className="flex-shrink-0 text-primary-600" />
+            <div>
+              <p className="font-medium text-slate-900">Payment Proofs</p>
+              <p className="text-xs text-slate-500">Screenshots, month by month</p>
+            </div>
+          </button>
+        )}
         {isLoading ? (
           <div className="flex justify-center py-12"><Spinner /></div>
         ) : docs.length === 0 ? (
